@@ -154,32 +154,96 @@ legend {
     .k-col.l12 { width: 99.99999%; }
 }
 
-/* -- buttons ------------------------------------------------------------ */
+/* -- buttons ------------------------------------------------------------
+ * One button system for the whole app, matching the app shell's palette.
+ * Three variants: the default (neutral, for ordinary actions), `primary`
+ * (green, for the action that sets something up) and `danger` (red, for the
+ * ones that cut power or tear something down).
+ *
+ * Deliberately free of `!important`, unlike the W3.CSS colour helpers these
+ * replaced, so component stylesheets can still override layout and colour.
+ */
 .k-button {
-    border: none;
-    display: inline-block;
-    padding: 8px 16px;
-    vertical-align: middle;
-    overflow: hidden;
-    text-decoration: none;
-    color: inherit;
-    background-color: inherit;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 14px;
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+    background-color: #f6f8fa;
+    /* 12.6:1 on the button face. */
+    color: #24292f;
     text-align: center;
+    text-decoration: none;
+    vertical-align: middle;
     cursor: pointer;
     white-space: nowrap;
     user-select: none;
+    transition: background-color 0.15s ease, border-color 0.15s ease,
+        color 0.15s ease;
+}
+
+.k-button:hover:not(:disabled) {
+    background-color: #eaeef2;
+    border-color: #afb8c1;
+}
+
+.k-button:active:not(:disabled) {
+    background-color: #dfe3e8;
+    border-color: #afb8c1;
+}
+
+.k-button:focus-visible {
+    outline: 2px solid #2196f3;
+    outline-offset: 2px;
 }
 
 .k-button:disabled {
     cursor: not-allowed;
-    opacity: 0.3;
+    opacity: 0.5;
 }
 
-/* !important mirrors W3.CSS: the hover state must win over the colour
- * helpers further down, which carry !important but lower specificity. */
-.k-button:hover {
-    color: #000 !important;
-    background-color: #ccc !important;
+/* Darker than the usual #2da44e: white on that is only 3.22:1, which fails
+ * WCAG AA for 14px text. This tone measures 5.08:1. */
+.k-button-primary {
+    background-color: #1a7f37;
+    border-color: #176b2f;
+    color: #fff;
+}
+
+.k-button-primary:hover:not(:disabled) {
+    background-color: #176b2f;
+    border-color: #145c28;
+}
+
+.k-button-primary:active:not(:disabled) {
+    background-color: #145c28;
+    border-color: #145c28;
+}
+
+/* Quiet by default so a wall of stop buttons doesn't shout, but unmistakably
+ * red once the pointer is on it. */
+.k-button-danger {
+    background-color: #fff;
+    border-color: #d0d7de;
+    /* 5.36:1 on white. */
+    color: #cf222e;
+}
+
+.k-button-danger:hover:not(:disabled) {
+    background-color: #cf222e;
+    border-color: #bc1c29;
+    color: #fff;
+}
+
+.k-button-danger:active:not(:disabled) {
+    background-color: #bc1c29;
+    border-color: #bc1c29;
+    color: #fff;
 }
 
 /* -- forms -------------------------------------------------------------- */
@@ -201,10 +265,4 @@ legend {
 /* -- borders ------------------------------------------------------------ */
 .k-border {
     border: 1px solid #ccc !important;
-}
-
-/* -- colours ------------------------------------------------------------ */
-.k-blue {
-    color: #fff !important;
-    background-color: #2196f3 !important;
 }

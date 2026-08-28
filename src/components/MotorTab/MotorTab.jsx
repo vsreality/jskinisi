@@ -124,14 +124,14 @@ function MotorTab(){
             <p>
                 <label className='label-for-check'>Is Reverse </label>
                 <input type='checkbox' className='k-check' checked={isMotorReversed[motorIndex]} onChange={handleMotorReversedChange}/>
-                <button className='k-button k-blue' onClick={initializeMotorFunction}>Initialize Motor</button>
+                <button className='k-button k-button-primary' onClick={initializeMotorFunction}>Initialize Motor</button>
             </p>
             <p>
                 <label htmlFor='motorSpeed'>Speed (PWM):</label>
                 <input className='' type='range' min='-100' max='100' value={motorSpeed} id='motorSpeed' onChange={handleMotorSpeedChange}/>
-                <button className='k-button k-blue' onClick={setMotorSpeedFunction}>Set motor Speed</button>
-                <button className='k-button k-blue' onClick={stopMotorFunction}>Stop motor</button>
-                <button className='k-button k-blue' onClick={brakeMotorFunction}>Brake motor</button>
+                <button className='k-button' onClick={setMotorSpeedFunction}>Set motor Speed</button>
+                <button className='k-button k-button-danger' onClick={stopMotorFunction}>Stop motor</button>
+                <button className='k-button k-button-danger' onClick={brakeMotorFunction}>Brake motor</button>
             </p>
 
             {/* Encoder Controls */}
@@ -150,18 +150,18 @@ function MotorTab(){
                 <input type='number' value={encoderResolution[encoderIndex]} onChange={handleEncoderResolutionChange}/>
                 <label className='label-for-check'>Is Reverse </label>
                 <input type='checkbox' className='k-check' checked={isEncoderReversed[encoderIndex]} onChange={handleEncoderReversedChange}/>
-                <button className='k-button k-blue' onClick={initializeEncoderFunction}>Initialize encoder</button>
-                <button className='k-button k-blue' onClick={getEncoderValueFunction}>Get Encoder Value</button>
+                <button className='k-button k-button-primary' onClick={initializeEncoderFunction}>Initialize encoder</button>
+                <button className='k-button' onClick={getEncoderValueFunction}>Get Encoder Value</button>
                 <div id='encoderValue'>{encoderValue}</div>
             </div>
             
             {/* Odometry */}
             <div className={!isEncoderInitialized[encoderIndex] ? 'disabled-div' : ''}>
-                <button className='k-button k-blue' onClick={startOdometryFunction}>Start Odometry</button>
+                <button className='k-button' onClick={startOdometryFunction}>Start Odometry</button>
                 <div className={!isOdometryStarted[encoderIndex] ? 'disabled-div' : ''}> 
-                    <button className='k-button k-blue' onClick={resetOdometryFunction}>Reset Odometry</button>
-                    <button className='k-button k-blue' onClick={stopOdometryFunction}>Stop Odometry</button>
-                    <button className='k-button k-blue' onClick={getOdometryFunction}>Get Odometry</button>
+                    <button className='k-button' onClick={resetOdometryFunction}>Reset Odometry</button>
+                    <button className='k-button k-button-danger' onClick={stopOdometryFunction}>Stop Odometry</button>
+                    <button className='k-button' onClick={getOdometryFunction}>Get Odometry</button>
                     <div>{encoderOdometry[encoderIndex]}</div>
                 </div>
             </div>

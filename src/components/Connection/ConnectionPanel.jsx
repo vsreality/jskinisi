@@ -186,7 +186,7 @@ function ConnectionPanel({ onConnect, onDisconnect }) {
                             />
                             <button
                                 type="button"
-                                className="conn-button conn-button-secondary"
+                                className="k-button"
                                 disabled={busy}
                                 onClick={listPorts}
                             >
@@ -228,7 +228,7 @@ function ConnectionPanel({ onConnect, onDisconnect }) {
             )}
 
             <button
-                className="conn-button conn-button-primary"
+                className="k-button k-button-primary"
                 id="buttonConnectController"
                 // The proxy path needs a port picked first; the USB path gets
                 // its device from the browser's own chooser.

@@ -1,6 +1,11 @@
+/* Stacked, left-aligned actions. They share a floor width so a column of them
+ * lines up, but grow with their label rather than clipping it — several are
+ * long ("Initialize Motor Controller"). */
 .motor-tab .k-button{
-    margin-top: 4px;
-    width: 200px;
+    margin-top: 6px;
+    min-width: 200px;
+    width: fit-content;
+    max-width: 100%;
     display: block;
 }
 

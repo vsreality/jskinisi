@@ -1,6 +1,8 @@
 .platform-tab .k-button{
-    margin-top: 4px;
-    width: 200px;
+    margin-top: 6px;
+    min-width: 200px;
+    width: fit-content;
+    max-width: 100%;
     display: block;
 }
 

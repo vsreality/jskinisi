@@ -453,7 +453,7 @@ function PlatformTab() {
                         <input type='number' id='mecanum_width' value={mecanumWidth} onChange={handleMecanumWidthChange}/>
                         <label htmlFor='encoderResolution'>Encoder Resolution (ticks/rev):</label>
                         <input type='number' id='encoderResolution' value={encoderResolution} onChange={handleEncoderResolutionChange}/>
-                        <button className='k-button k-blue' onClick={() => initializePlatform('mecanum')}>Initialize</button><br/>
+                        <button className='k-button k-button-primary' onClick={() => initializePlatform('mecanum')}>Initialize</button><br/>
                     </div>
                 )}
 
@@ -500,7 +500,7 @@ function PlatformTab() {
                         <input type='number' id='omni_radius' value={omniRadius} onChange={handleOmniRadiusChange}/>
                         <label htmlFor='encoderResolution'>Encoder Resolution (ticks/rev):</label>
                         <input type='number' id='encoderResolution' value={encoderResolution} onChange={handleEncoderResolutionChange}/>
-                        <button className='k-button k-blue' onClick={() => initializePlatform('omni')}>Initialize</button><br/>
+                        <button className='k-button k-button-primary' onClick={() => initializePlatform('omni')}>Initialize</button><br/>
                     </div>
                 )}
 
@@ -547,7 +547,7 @@ function PlatformTab() {
                         <input type='number' id='differential_wheel_base' value={differentialWheelBase} onChange={handleDifferentialWheelBaseChange}/>
                         <label htmlFor='encoderResolution'>Encoder Resolution (ticks/rev):</label>
                         <input type='number' id='encoderResolution' value={encoderResolution} onChange={handleEncoderResolutionChange}/>
-                        <button className='k-button k-blue' onClick={() => initializePlatform('differential')}>Initialize</button><br/>
+                        <button className='k-button k-button-primary' onClick={() => initializePlatform('differential')}>Initialize</button><br/>
                     </div>
                 )}
 
@@ -582,9 +582,9 @@ function PlatformTab() {
                         id="platformVelocityT" 
                         onChange={handleVelocityChange('t')}
                     />
-                    <button className='k-button k-blue' onClick={setPlatformVelocity}>Set Platform Velocity</button>
-                    <button className='k-button k-blue' onClick={handleBrakePlatform}>Brake Platform</button>
-                    <button className='k-button k-blue' onClick={handleCoastPlatform}>Coast Platform</button>
+                    <button className='k-button' onClick={setPlatformVelocity}>Set Platform Velocity</button>
+                    <button className='k-button k-button-danger' onClick={handleBrakePlatform}>Brake Platform</button>
+                    <button className='k-button' onClick={handleCoastPlatform}>Coast Platform</button>
 
                     <div className='keyboard-drive'>
                         <span className='span-check'>
@@ -662,8 +662,8 @@ function PlatformTab() {
                 <div>
                     <label htmlFor='controllerFrequency'>Controller Frequency (Hz, 1-1000):</label>
                     <input type='number' id='controllerFrequency' min='1' max='1000' value={controllerFrequency} onChange={handleControllerFrequencyChange}/>
-                    <button className='k-button k-blue' onClick={handleSetControllerFrequency}>Set Frequency</button>
-                    <button className='k-button k-blue' onClick={handleGetControllerFrequency}>Get Frequency</button>
+                    <button className='k-button' onClick={handleSetControllerFrequency}>Set Frequency</button>
+                    <button className='k-button' onClick={handleGetControllerFrequency}>Get Frequency</button>
                 </div>
                 <div className={!isPlatformInitialized ? 'disabled-div' : ''}>
                     <label htmlFor='kp'>Kp:</label>
@@ -674,10 +674,10 @@ function PlatformTab() {
                     <input type='number' id='kd' value={kd} onChange={handleKdChange}/>
                     <label htmlFor='integralLimit'>Integral Limit:</label>
                     <input type='number' id='integralLimit' value={integralLimit} onChange={handleIntegralLimitChange}/>
-                    <button className='k-button k-blue' onClick={initializePlatformController}>Initialize Platform Controller</button>
+                    <button className='k-button k-button-primary' onClick={initializePlatformController}>Initialize Platform Controller</button>
 
                     <div className={!isControllerInitialized ? 'disabled-div' : ''}>
-                    <button className='k-button k-blue' onClick={handlePlatforControllerStop} disabled={!isControllerInitialized}>Stop Platform Controller</button>
+                    <button className='k-button k-button-danger' onClick={handlePlatforControllerStop} disabled={!isControllerInitialized}>Stop Platform Controller</button>
                         <label htmlFor="platformVelocityTargetX">X (m/s)</label>
                         <input type="number" id="platformVelocityTargetX" step={0.1} value={velocityTarget.x} onChange={handleVelocityTargetChange('x')}/>
                         <label htmlFor="platformVelocityTargetY">Y (m/s)</label>
@@ -685,7 +685,7 @@ function PlatformTab() {
                         <label htmlFor="platformVelocityTargetT">T (radian/s)</label>
                         <input type="number" id="platformVelocityTargetT" step={0.1} value={velocityTarget.t} onChange={handleVelocityTargetChange('t')}/>
 
-                        <button className='k-button k-blue' onClick={setVelocityTargetHandler}>Set Platform Velocity Target</button>
+                        <button className='k-button' onClick={setVelocityTargetHandler}>Set Platform Velocity Target</button>
                     </div>
                 </div>
             </div>
@@ -694,14 +694,14 @@ function PlatformTab() {
                     <div>
                         <label htmlFor='odometryFrequency'>Odometry Frequency (Hz, 1-1000):</label>
                         <input type='number' id='odometryFrequency' min='1' max='1000' value={odometryFrequency} onChange={handleOdometryFrequencyChange}/>
-                        <button className='k-button k-blue' onClick={handleSetOdometryFrequency}>Set Frequency</button>
-                        <button className='k-button k-blue' onClick={handleGetOdometryFrequency}>Get Frequency</button>
+                        <button className='k-button' onClick={handleSetOdometryFrequency}>Set Frequency</button>
+                        <button className='k-button' onClick={handleGetOdometryFrequency}>Get Frequency</button>
                     </div>
                     <div className={!isPlatformInitialized ? 'disabled-div' : ''}>
-                    <button className='k-button k-blue' onClick={() => handleOdometryStart()} disabled={isOdometryInitialized}>Start Odometry</button>
-                    <button className='k-button k-blue' onClick={() => handleOdometryReset()} disabled={!isOdometryInitialized}>Reset Odometry</button>
-                    <button className='k-button k-blue' onClick={() => handleOdometryStop()} disabled={!isOdometryInitialized}>Stop Odometry</button>
-                    <button className='k-button k-blue' onClick={() => handleGetOdometry()} disabled={!isOdometryInitialized}>Get Odometry</button>
+                    <button className='k-button' onClick={() => handleOdometryStart()} disabled={isOdometryInitialized}>Start Odometry</button>
+                    <button className='k-button' onClick={() => handleOdometryReset()} disabled={!isOdometryInitialized}>Reset Odometry</button>
+                    <button className='k-button k-button-danger' onClick={() => handleOdometryStop()} disabled={!isOdometryInitialized}>Stop Odometry</button>
+                    <button className='k-button' onClick={() => handleGetOdometry()} disabled={!isOdometryInitialized}>Get Odometry</button>
                     <p>Odometry: X: {odometry.x.toFixed(2)}, Y: {odometry.y.toFixed(2)}, Theta: {odometry.t.toFixed(2)}</p>
                 </div>
             </div>

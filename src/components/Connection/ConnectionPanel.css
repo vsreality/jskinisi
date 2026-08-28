@@ -1,9 +1,7 @@
 /* Connection section: the transport chooser and the single Connect action.
  *
- * The controls deliberately do not use the `k-button` / `k-green` / `k-blue`
- * utilities from styles/ui.css. Those carry `!important` on their colours
- * (inherited from the W3.CSS rules they replaced), which would win over the
- * hover and disabled states below.
+ * The buttons themselves use the shared `k-button` system from
+ * styles/ui.css; only the pieces unique to this section live here.
  */
 
 .connection-panel,
@@ -103,74 +101,6 @@
 .conn-segment:focus-visible {
     outline: 2px solid #2196f3;
     outline-offset: -2px;
-}
-
-.conn-button {
-    font: inherit;
-    font-size: 14px;
-    font-weight: 600;
-    line-height: 1.2;
-    padding: 9px 16px;
-    border: 1px solid transparent;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: background-color 0.15s ease, border-color 0.15s ease,
-        color 0.15s ease;
-}
-
-.conn-button:disabled {
-    cursor: not-allowed;
-    opacity: 0.45;
-}
-
-.conn-button:focus-visible {
-    outline: 2px solid #2196f3;
-    outline-offset: 2px;
-}
-
-.conn-button-primary {
-    /* Darker than the usual #2da44e: white on that is only 3.22:1, which
-     * fails WCAG AA for 14px text. This tone measures 5.08:1. */
-    background-color: #1a7f37;
-    border-color: #176b2f;
-    color: #fff;
-}
-
-.conn-button-primary:hover:not(:disabled) {
-    background-color: #176b2f;
-}
-
-.conn-button-primary:active:not(:disabled) {
-    background-color: #145c28;
-}
-
-.conn-button-secondary {
-    background-color: #f6f8fa;
-    border-color: #d0d7de;
-    color: #24292f;
-    white-space: nowrap;
-}
-
-.conn-button-secondary:hover:not(:disabled) {
-    background-color: #eaeef2;
-}
-
-/* Disconnect drops the motors and tears the link down, so it reads as a
- * destructive action: quiet by default, red once the pointer is on it. */
-.conn-button-danger {
-    background-color: #fff;
-    border-color: #d0d7de;
-    color: #cf222e;
-}
-
-.conn-button-danger:hover:not(:disabled) {
-    background-color: #cf222e;
-    border-color: #bc1c29;
-    color: #fff;
-}
-
-.conn-button-danger:active:not(:disabled) {
-    background-color: #bc1c29;
 }
 
 .conn-error {

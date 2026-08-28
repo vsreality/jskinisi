@@ -52,7 +52,7 @@ function Connection() {
                     : 'Connected to the controller.'}
             </p>
             <button
-                className="conn-button conn-button-danger"
+                className="k-button k-button-danger"
                 id="buttonDisconectController"
                 onClick={onDisconnect}
             >

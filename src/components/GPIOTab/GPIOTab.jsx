@@ -46,7 +46,7 @@ function GPIOTab() {
         <div id="tabGPIO" className="controllerTab k-panel">
             <h2>Status LED</h2>
             <div>
-                <button className='k-button k-blue' onClick={toggleStatusLED}>ToggleStatusLED</button>
+                <button className='k-button' onClick={toggleStatusLED}>ToggleStatusLED</button>
             </div>
             <hr/>
             <h2>GPIO Pins</h2>
@@ -84,7 +84,7 @@ function GPIOTab() {
                     </div>
                     <div className={`gpioPanel ${mode !== 3 ? '' : 'hidden'}`}>
                         <samp>Value: </samp><div id={`GPIO${index}Value`}>{gpioValues[index]}</div> 
-                        <button className='k-button k-blue' id={`buttonGPIO${index}Read`} onClick={() => readGPIO(index)}>Read</button>
+                        <button className='k-button' id={`buttonGPIO${index}Read`} onClick={() => readGPIO(index)}>Read</button>
                     </div>
                 </div>
             ))}

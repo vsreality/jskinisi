@@ -254,20 +254,20 @@ function MotorControllerTab(){
                 <div>
                     <label htmlFor='controllerFrequency'>Controller Frequency (Hz, 1-1000):</label><br/>
                     <input type='number' id='controllerFrequency' min='1' max='1000' value={controllerFrequency} onChange={handleControllerFrequencyChange}/><br/>
-                    <button className='k-button k-blue' onClick={setControllerFrequencyFunction}>Set Frequency</button>
-                    <button className='k-button k-blue' onClick={getControllerFrequencyFunction}>Get Frequency</button>
+                    <button className='k-button' onClick={setControllerFrequencyFunction}>Set Frequency</button>
+                    <button className='k-button' onClick={getControllerFrequencyFunction}>Get Frequency</button>
                 </div>
                 </fieldset>
                 <fieldset className='settings-card'>
                 <legend>Actions</legend>
                 <p>
-                    <button className='k-button k-blue' onClick={initializeMotorControllerFunction}>Initialize Motor Controller</button>
+                    <button className='k-button k-button-primary' onClick={initializeMotorControllerFunction}>Initialize Motor Controller</button>
                     <label htmlFor='motorSpeed'>Speed (radian/sec):</label>
                     <input className='' type='range' min='-8' max='8' step='0.5' value={motorSpeed} id='motorSpeed' onChange={handleMotorSpeedChange}/>
-                    <button className='k-button k-blue' onClick={setMotorSpeedFunction}>Set motor Speed</button>
-                    <button className='k-button k-blue' onClick={getControllerStateFunction}>GetControllerState</button>
-                    <button className='k-button k-blue' onClick={resetMotorControllerFunction}>Reset Controller</button>
-                    <button className='k-button k-blue' onClick={stopMotorControllerFunction}>Stop Controller</button>
+                    <button className='k-button' onClick={setMotorSpeedFunction}>Set motor Speed</button>
+                    <button className='k-button' onClick={getControllerStateFunction}>Get Controller State</button>
+                    <button className='k-button' onClick={resetMotorControllerFunction}>Reset Controller</button>
+                    <button className='k-button k-button-danger' onClick={stopMotorControllerFunction}>Stop Controller</button>
                 </p>
                 </fieldset>
             <div className='column'>

@@ -9,3 +9,13 @@
     min-width: 320px;
     padding: 10px;
 }
+
+/* Without this the actions are inline-level and collide with each other and
+ * with the sliders they sit beside. Matches the Motor and Platform tabs. */
+.motor-controller-options .k-button{
+    margin-top: 6px;
+    min-width: 200px;
+    width: fit-content;
+    max-width: 100%;
+    display: block;
+}
