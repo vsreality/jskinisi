@@ -1,16 +1,20 @@
 import { useState, useContext } from 'react';
 import { ControllerContext } from '../../contexts/ControllerContext';
-import ConnectionDialog from './ConnectionDialog';
+import ConnectionPanel from './ConnectionPanel';
+import './ConnectionPanel.css';
 
+// The Connection section. Shows the transport chooser while disconnected and
+// the teardown control once a controller is attached, so there is only ever
+// one connection action on screen.
 function Connection() {
     const { controller, setController, isConnected, setIsConnected } = useContext(ControllerContext);
-    const [showDialog, setShowDialog] = useState(false);
+    const [transport, setTransport] = useState('');
 
-    // Called by the dialog once a controller (local or proxy) is connected.
-    const onDialogConnect = (connectedController) => {
+    // Called by the panel once a controller (local or proxy) is connected.
+    const onConnected = (connectedController, usedTransport) => {
         setController(connectedController);
+        setTransport(usedTransport || '');
         setIsConnected(true);
-        setShowDialog(false);
     };
 
     const onDisconnect = async () => {
@@ -27,20 +31,33 @@ function Connection() {
 
         await controller.disconnect();
         setIsConnected(false);
+        setTransport('');
         console.log('Disconnected');
     };
 
+    if (!isConnected) {
+        return (
+            <ConnectionPanel
+                onConnect={onConnected}
+                onDisconnect={() => setIsConnected(false)}
+            />
+        );
+    }
+
     return (
-        <div className='connection-panel'>
-            <button className='k-button k-green' id="buttonConnectController" disabled={isConnected} onClick={() => setShowDialog(true)}>Connect</button>
-            <button className='k-button k-blue' id="buttonDisconectController" disabled={!isConnected} onClick={onDisconnect}>Diconnect</button>
-            {showDialog && (
-                <ConnectionDialog
-                    onConnect={onDialogConnect}
-                    onClose={() => setShowDialog(false)}
-                    onDisconnect={() => setIsConnected(false)}
-                />
-            )}
+        <div className="connection-summary">
+            <p className="conn-summary-text">
+                {transport
+                    ? `Connected over ${transport}.`
+                    : 'Connected to the controller.'}
+            </p>
+            <button
+                className="conn-button conn-button-danger"
+                id="buttonDisconectController"
+                onClick={onDisconnect}
+            >
+                Disconnect
+            </button>
         </div>
     );
 }

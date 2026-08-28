@@ -7,6 +7,23 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Sticky footer: the app and the footer are siblings, so making the mount
+ * point a full-height flex column lets the app absorb the spare space and
+ * keeps the footer on the bottom edge when the tab content is short. */
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+#root > .App {
+  flex: 1 0 auto;
+  /* Lets .app-body absorb the leftover height so the sidebar rail runs the
+   * full distance from the header to the footer. */
+  display: flex;
+  flex-direction: column;
+}
+
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;

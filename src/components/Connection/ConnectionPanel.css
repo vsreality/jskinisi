@@ -1,0 +1,181 @@
+/* Connection section: the transport chooser and the single Connect action.
+ *
+ * The controls deliberately do not use the `k-button` / `k-green` / `k-blue`
+ * utilities from styles/ui.css. Those carry `!important` on their colours
+ * (inherited from the W3.CSS rules they replaced), which would win over the
+ * hover and disabled states below.
+ */
+
+.connection-panel,
+.connection-summary {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+    max-width: 460px;
+}
+
+.conn-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+}
+
+.conn-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #24292f;
+}
+
+.conn-hint,
+.conn-summary-text {
+    margin: 0;
+    font-size: 14px;
+    color: #57606a;
+}
+
+.conn-row {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+}
+
+.conn-input {
+    font: inherit;
+    font-size: 14px;
+    flex: 1;
+    min-width: 0;
+    padding: 8px 10px;
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+    background-color: #fff;
+    color: #24292f;
+}
+
+.conn-input:focus-visible {
+    outline: 2px solid #2196f3;
+    outline-offset: -1px;
+}
+
+/* Two mutually exclusive choices. Rendered as `aria-pressed` toggles rather
+ * than a radiogroup: a radiogroup owes its users arrow-key roving focus,
+ * which two adjacent buttons do not. */
+.conn-segmented {
+    display: inline-flex;
+    /* The field is a stretched flex column, so without this the two segments
+     * would span its full width. */
+    align-self: flex-start;
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.conn-segment {
+    font: inherit;
+    font-size: 14px;
+    padding: 8px 14px;
+    border: none;
+    background-color: #fff;
+    color: #24292f;
+    cursor: pointer;
+}
+
+.conn-segment + .conn-segment {
+    border-left: 1px solid #d0d7de;
+}
+
+.conn-segment:hover:not(:disabled) {
+    background-color: #f3f4f6;
+}
+
+.conn-segment[aria-pressed='true'] {
+    background-color: #eaeef2;
+    color: #0860ca;
+    font-weight: 600;
+}
+
+.conn-segment:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.conn-segment:focus-visible {
+    outline: 2px solid #2196f3;
+    outline-offset: -2px;
+}
+
+.conn-button {
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.2;
+    padding: 9px 16px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease,
+        color 0.15s ease;
+}
+
+.conn-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+}
+
+.conn-button:focus-visible {
+    outline: 2px solid #2196f3;
+    outline-offset: 2px;
+}
+
+.conn-button-primary {
+    /* Darker than the usual #2da44e: white on that is only 3.22:1, which
+     * fails WCAG AA for 14px text. This tone measures 5.08:1. */
+    background-color: #1a7f37;
+    border-color: #176b2f;
+    color: #fff;
+}
+
+.conn-button-primary:hover:not(:disabled) {
+    background-color: #176b2f;
+}
+
+.conn-button-primary:active:not(:disabled) {
+    background-color: #145c28;
+}
+
+.conn-button-secondary {
+    background-color: #f6f8fa;
+    border-color: #d0d7de;
+    color: #24292f;
+    white-space: nowrap;
+}
+
+.conn-button-secondary:hover:not(:disabled) {
+    background-color: #eaeef2;
+}
+
+/* Disconnect drops the motors and tears the link down, so it reads as a
+ * destructive action: quiet by default, red once the pointer is on it. */
+.conn-button-danger {
+    background-color: #fff;
+    border-color: #d0d7de;
+    color: #cf222e;
+}
+
+.conn-button-danger:hover:not(:disabled) {
+    background-color: #cf222e;
+    border-color: #bc1c29;
+    color: #fff;
+}
+
+.conn-button-danger:active:not(:disabled) {
+    background-color: #bc1c29;
+}
+
+.conn-error {
+    margin: 0;
+    font-size: 14px;
+    /* 5.36:1 on white. */
+    color: #cf222e;
+}

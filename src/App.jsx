@@ -1,5 +1,6 @@
 import './App.css';
 import Connection from './components/Connection/Connection'
+import ConnectionStatus from './components/Connection/ConnectionStatus'
 import TabContainer from './components/Tabs/TabContainer'
 import MotorTab from './components/MotorTab/MotorTab'
 import PlatformTab from './components/PlatfirmTab/PlatfirmTab'
@@ -8,6 +9,8 @@ import ControllerProvider from './contexts/ControllerProvider';
 import MotorControllerTab from './components/MotorControllerTab/MotorControllerTab';
 
 const REPO_URL = 'https://github.com/vsreality/jskinisi';
+const SITE_URL = 'https://vsreality.com';
+const DOCS_URL = 'https://vsreality.com/docs/kinisi-motor-controller/commands';
 
 // Inlined rather than loaded as an <img>: the build ships a strict CSP and an
 // inline <svg> needs no additional img-src/network allowance.
@@ -29,27 +32,53 @@ function App() {
     <div className="App">
       <header className="app-header">
         <span className="app-title">Kinisi motor controller</span>
+        <div className="app-header-meta">
+          <ConnectionStatus />
+          <a
+            className="repo-link"
+            href={REPO_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Source code on GitHub"
+            title="Source code on GitHub"
+          >
+            <GitHubIcon />
+          </a>
+        </div>
+      </header>
+      <div className="app-body">
+        <TabContainer>
+          <Connection title="Connection" alwaysEnabled></Connection>
+          <MotorTab title="Motor"></MotorTab>
+          <PlatformTab title="Platform"></PlatformTab>
+          <GPIOTab title="GPIO"></GPIOTab>
+          <MotorControllerTab title="Motor Controller"></MotorControllerTab>
+        </TabContainer>
+      </div>
+    </div>
+    <footer className="app-footer">
+      <div className="app-footer-inner">
         <a
-          className="repo-link"
-          href={REPO_URL}
+          className="site-link"
+          href={SITE_URL}
           target="_blank"
           rel="noopener noreferrer"
-          aria-label="Source code on GitHub"
-          title="Source code on GitHub"
         >
-          <GitHubIcon />
+          VsReality
         </a>
-      </header>
-      <Connection/>
-      <TabContainer>
-        <MotorTab title="Motor"></MotorTab>
-        <PlatformTab title="Platform"></PlatformTab>
-        <GPIOTab title="GPIO"></GPIOTab>
-        <MotorControllerTab title="Motor Controller"></MotorControllerTab>
-      </TabContainer>
-    </div>
-    <footer>
-      VsReality
+        <nav className="app-footer-links" aria-label="Footer">
+          <a href={DOCS_URL} target="_blank" rel="noopener noreferrer">
+            Documentation
+          </a>
+          <a href={REPO_URL} target="_blank" rel="noopener noreferrer">
+            GitHub
+          </a>
+        </nav>
+      </div>
+      <div className="app-footer-legal">
+        Kinisi motor controller web client &middot; &copy;{' '}
+        {new Date().getFullYear()} VsReality
+      </div>
     </footer>
     </ControllerProvider>
   );

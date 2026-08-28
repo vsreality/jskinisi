@@ -1,19 +1,132 @@
-.tab {
-    padding: 10px;
-    border: none;
-    background-color: #eee;
-    cursor: pointer;
-}
+/* Left navigation rail. Pairs with the dark header and footer: a light rail
+ * between them keeps the controls legible while still reading as chrome
+ * rather than content. */
 
-.tab.active {
-    background-color: #ccc;
-}
-
-.tab-titles {
+.app-sidebar {
+    width: 220px;
+    flex-shrink: 0;
+    box-sizing: border-box;
     display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 18px 14px;
+    background-color: #f6f8fa;
+    border-right: 1px solid #d0d7de;
 }
 
-.tab-content {
-    border: 1px solid #ccc;
-    padding: 10px;
+.sidebar-heading {
+    margin: 0;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    /* 4.76:1 on #f6f8fa: passes AA, and stays quieter than the items below. */
+    color: #6a737d;
+}
+
+.sidebar-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.sidebar-nav-item {
+    font: inherit;
+    font-size: 14px;
+    text-align: left;
+    padding: 9px 12px;
+    border: none;
+    /* Reserves the space the active marker occupies so selecting an item does
+     * not shift the label sideways. */
+    border-left: 3px solid transparent;
+    border-radius: 0 6px 6px 0;
+    background-color: transparent;
+    color: #24292f;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.sidebar-nav-item:hover:not(:disabled) {
+    background-color: #eaeef2;
+}
+
+/* Sections need a controller, so they are disabled rather than hidden: the
+ * list stays a stable map of the app whether or not anything is connected.
+ * Disabled controls are exempt from the contrast minimum, but this tone still
+ * measures 4.93:1 on the rail so the map stays readable. */
+.sidebar-nav-item:disabled {
+    color: #656d76;
+    cursor: not-allowed;
+}
+
+.sidebar-nav-item:focus-visible {
+    outline: 2px solid #2196f3;
+    outline-offset: -2px;
+}
+
+.sidebar-nav-item.active {
+    background-color: #eaeef2;
+    /* The marker is a UI component, so 3:1 is the bar and #0969da (4.45:1 on
+     * the item background) clears it. The label is 14px text and needs 4.5:1,
+     * which #0969da misses, so it uses the darker tone at 5.09:1. */
+    border-left-color: #0969da;
+    color: #0860ca;
+    font-weight: 600;
+}
+
+.app-main {
+    flex: 1 1 auto;
+    /* Without this a wide child (the tables in the tabs) would stretch the
+     * flex item instead of scrolling inside it. */
+    min-width: 0;
+    padding: 16px 20px;
+}
+
+/* Names the section on screen; ui.css sizes bare h1 for page titles, which is
+ * far too large for a panel heading. */
+.app-main-title {
+    margin: 0 0 16px;
+    font-size: 18px;
+    font-weight: 600;
+    color: #24292f;
+}
+
+/* Below this the rail would leave too little room for the tab content, so it
+ * becomes a band across the top instead. */
+@media (max-width: 700px) {
+    .app-body {
+        flex-direction: column;
+    }
+
+    .app-sidebar {
+        width: auto;
+        flex-direction: row;
+        align-items: center;
+        gap: 6px 16px;
+        padding: 8px 10px;
+        border-right: none;
+        border-bottom: 1px solid #d0d7de;
+    }
+
+    /* A full-width band of section names needs no label. */
+    .sidebar-heading {
+        display: none;
+    }
+
+    .sidebar-nav {
+        flex: 1;
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+
+    .sidebar-nav-item {
+        border-left: none;
+        border-bottom: 3px solid transparent;
+        border-radius: 6px 6px 0 0;
+    }
+
+    .sidebar-nav-item.active {
+        border-left-color: transparent;
+        border-bottom-color: #0969da;
+    }
 }

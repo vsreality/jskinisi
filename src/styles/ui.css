@@ -2,7 +2,7 @@
  * ui.css - the small set of layout/utility classes this app actually uses.
  *
  * These replace W3.CSS, which used to be hot-linked from w3schools.com. Only
- * the ~29 classes the app references are implemented here; values match what
+ * the classes the app references are implemented here; values match what
  * W3.CSS 4.15 produced so the UI is unchanged. Prefix is `k-` (kinisi).
  *
  * Loaded first (see src/index.js) so component stylesheets can override it.
@@ -38,9 +38,9 @@ h1, h2, h3, h4, h5, h6 {
     margin: 10px 0;
 }
 
-/* Absolute sizes, not the browser's `em`-relative defaults. App.css sets a
- * global `header{font-size:30px}`, so an em-based heading inside any <header>
- * (e.g. the connection modal's title) would otherwise scale off that. */
+/* Absolute sizes, not the browser's `em`-relative defaults: this mirrors what
+ * W3.CSS produced, so headings keep the sizes the UI was laid out against
+ * wherever they are nested. */
 h1 { font-size: 36px; }
 h2 { font-size: 30px; }
 h3 { font-size: 24px; }
@@ -89,9 +89,7 @@ legend {
 .k-panel:before,
 .k-panel:after,
 .k-row:before,
-.k-row:after,
-.k-bar:before,
-.k-bar:after {
+.k-row:after {
     content: '';
     display: table;
     clear: both;
@@ -156,25 +154,6 @@ legend {
     .k-col.l12 { width: 99.99999%; }
 }
 
-/* -- tab bar ------------------------------------------------------------ */
-.k-bar {
-    width: 100%;
-    overflow: hidden;
-}
-
-.k-bar .k-bar-item {
-    padding: 8px 16px;
-    float: left;
-    width: auto;
-    border: none;
-    display: block;
-    outline: 0;
-}
-
-.k-bar .k-button {
-    white-space: normal;
-}
-
 /* -- buttons ------------------------------------------------------------ */
 .k-button {
     border: none;
@@ -203,11 +182,6 @@ legend {
     background-color: #ccc !important;
 }
 
-.k-block {
-    display: block;
-    width: 100%;
-}
-
 /* -- forms -------------------------------------------------------------- */
 .k-input {
     padding: 8px;
@@ -224,146 +198,13 @@ legend {
     top: 6px;
 }
 
-/* -- lists -------------------------------------------------------------- */
-.k-ul {
-    list-style-type: none;
-    padding: 0;
-    margin: 0;
-}
-
-.k-ul li {
-    padding: 8px 16px;
-    border-bottom: 1px solid #ddd;
-}
-
-.k-ul li:last-child {
-    border-bottom: none;
-}
-
-/* -- modal -------------------------------------------------------------- */
-.k-modal {
-    z-index: 3;
-    display: none;
-    padding-top: 100px;
-    position: fixed;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    overflow: auto;
-    background-color: rgba(0, 0, 0, 0.4);
-}
-
-.k-modal-content {
-    margin: auto;
-    background-color: #fff;
-    position: relative;
-    padding: 0;
-    outline: 0;
-    width: 600px;
-}
-
-/* Order matters and mirrors W3.CSS: at widths <= 600px BOTH blocks match, and
- * the later 768px block wins `padding-top`. Only `width` survives from the
- * 600px block, because it is !important. The dialog was laid out against that
- * result, so keep the blocks in this order. */
-@media (max-width: 600px) {
-    .k-modal {
-        padding-top: 30px;
-    }
-
-    .k-modal-content {
-        margin: 0 10px;
-        width: auto !important;
-    }
-}
-
-@media (max-width: 768px) {
-    .k-modal {
-        padding-top: 50px;
-    }
-
-    .k-modal-content {
-        width: 500px;
-    }
-}
-
-@media (min-width: 993px) {
-    .k-modal-content {
-        width: 900px;
-    }
-}
-
-/* -- positioning, borders, spacing -------------------------------------- */
-.k-display-topright {
-    position: absolute;
-    right: 0;
-    top: 0;
-}
-
+/* -- borders ------------------------------------------------------------ */
 .k-border {
     border: 1px solid #ccc !important;
 }
 
-.k-round {
-    border-radius: 4px;
-}
-
-.k-card-4 {
-    box-shadow: 0 4px 10px 0 rgba(0, 0, 0, 0.2), 0 4px 20px 0 rgba(0, 0, 0, 0.19);
-}
-
-.k-margin-top {
-    margin-top: 16px !important;
-}
-
-.k-margin-bottom {
-    margin-bottom: 16px !important;
-}
-
-.k-padding {
-    padding: 8px 16px !important;
-}
-
 /* -- colours ------------------------------------------------------------ */
-.k-black {
-    color: #fff !important;
-    background-color: #000 !important;
-}
-
 .k-blue {
     color: #fff !important;
     background-color: #2196f3 !important;
-}
-
-.k-green {
-    color: #fff !important;
-    background-color: #4caf50 !important;
-}
-
-.k-light-grey {
-    color: #000 !important;
-    background-color: #f1f1f1 !important;
-}
-
-.k-hover-green:hover {
-    color: #fff !important;
-    background-color: #4caf50 !important;
-}
-
-.k-hover-light-grey:hover {
-    color: #000 !important;
-    background-color: #f1f1f1 !important;
-}
-
-.k-text-blue {
-    color: #2196f3 !important;
-}
-
-.k-text-grey {
-    color: #757575 !important;
-}
-
-.k-text-red {
-    color: #f44336 !important;
 }

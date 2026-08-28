@@ -1,29 +1,35 @@
-header{
-    font-size: 30px;
-    padding: 6px 10px;
-}
-
-/* Scoped to the app's own header on purpose. The connect dialog also uses a
- * <header> (with an absolutely positioned close button), so turning the global
- * `header` rule into a flex container would relayout that dialog too. */
 .app-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
+    /* Bookends the page with the footer, which uses the same dark tone. */
+    background-color: #24292f;
+    color: #f0f6fc;
+    padding: 14px 20px;
 }
 
 .app-title {
-    /* Keeps the title from stretching and pushing the icon off-centre when it
-     * wraps on narrow screens. */
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    /* Keeps the title from stretching and pushing the meta group off-centre
+     * when it wraps on narrow screens. */
     min-width: 0;
+}
+
+.app-header-meta {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-shrink: 0;
 }
 
 .repo-link {
     display: inline-flex;
     align-items: center;
     /* The icon is drawn with `fill: currentColor`, so colour is set here. */
-    color: #24292f;
+    color: #c9d1d9;
     flex-shrink: 0;
     padding: 4px;
     border-radius: 4px;
@@ -32,5 +38,68 @@ header{
 
 .repo-link:hover,
 .repo-link:focus-visible {
-    color: #2196f3;
+    color: #64b5f6;
+}
+
+/* Body row: the left rail (Tabs.css) plus the section panel. Grows to fill
+ * the space between the header and the footer. */
+.app-body {
+    display: flex;
+    align-items: stretch;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.app-footer {
+    /* Same dark tone as the header's GitHub mark, so the two ends of the page
+     * share a colour. */
+    background-color: #24292f;
+    color: #c9d1d9;
+    padding: 18px 20px;
+    font-size: 14px;
+    /* Paired with the flex column on #root (index.css): keeps the footer at
+     * the bottom of the viewport when the tab content is short, without
+     * `position: fixed` overlapping anything on tall pages. */
+    flex-shrink: 0;
+}
+
+.app-footer-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px 20px;
+}
+
+.app-footer-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 20px;
+}
+
+.app-footer a {
+    color: #c9d1d9;
+    text-decoration: none;
+}
+
+.app-footer a:hover,
+.app-footer a:focus-visible {
+    /* Blue 300 rather than the app's Blue 500 (#2196f3): on this dark
+     * background the lighter tone keeps a comfortable contrast ratio. */
+    color: #64b5f6;
+    text-decoration: underline;
+}
+
+.site-link {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+}
+
+.app-footer-legal {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #3a4048;
+    color: #8b949e;
+    font-size: 13px;
 }

@@ -1,0 +1,32 @@
+/* Sits on the dark header bar, so the tones are the light-on-dark pair used
+ * by the header and footer links rather than the light-background greens. */
+
+.connection-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    /* 9.49:1 on the header's #24292f. */
+    color: #c9d1d9;
+    white-space: nowrap;
+}
+
+.connection-status-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background-color: #8b949e;
+    flex-shrink: 0;
+}
+
+.connection-status.is-connected {
+    /* 5.77:1 on #24292f. The light-background green (#1a7f37) would be
+     * unreadable here. */
+    color: #3fb950;
+    font-weight: 600;
+}
+
+.connection-status.is-connected .connection-status-dot {
+    background-color: #3fb950;
+    box-shadow: 0 0 0 3px rgba(63, 185, 80, 0.22);
+}
