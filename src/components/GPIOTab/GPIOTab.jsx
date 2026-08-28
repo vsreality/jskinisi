@@ -46,7 +46,7 @@ function GPIOTab() {
         <div id="tabGPIO" className="controllerTab k-panel">
             <h2>Status LED</h2>
             <div>
-                <button className='k-button' onClick={toggleStatusLED}>ToggleStatusLED</button>
+                <button className='k-button' onClick={toggleStatusLED}>Toggle Status LED</button>
             </div>
             <hr/>
             <h2>GPIO Pins</h2>
