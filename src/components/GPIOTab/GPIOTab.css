@@ -1,0 +1,41 @@
+.gpio-container
+{
+    max-width: 1020px;
+}
+
+.gpio-div {
+    margin-bottom: 5px;
+    margin-right: 5px;
+    padding: 8px 10px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    background-color: #fff;
+    width: 250px;
+    vertical-align: top;
+    display: inline-table;
+}
+
+.gpio-div h3 {
+    margin: 2px 0 6px 0;
+}
+
+.gpio-div label, .gpio-div samp {
+    margin-right: 10px;
+}
+
+.gpio-div label {
+    display: inline;
+}
+
+.gpio-div > div {
+    line-height: 1.15;
+}
+
+.gpioPanel {
+    margin-top: 10px;
+    display: block;
+}
+
+.hidden {
+    display: none;
+}

@@ -1,0 +1,44 @@
+.connection-modal {
+    display: block;
+    z-index: 100;
+}
+
+.connection-modal-content {
+    max-width: 480px;
+    margin: 10% auto;
+}
+
+.connection-host-row {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+    margin: 6px 0 12px 0;
+}
+
+.connection-host-row input {
+    flex: 1;
+}
+
+.connection-host-row button {
+    white-space: nowrap;
+}
+
+.connection-ports {
+    margin-top: 8px;
+}
+
+.connection-port-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+}
+
+.connection-port-device {
+    font-family: monospace;
+}
+
+.connection-port-desc {
+    font-size: 0.85em;
+    margin-left: 12px;
+}

@@ -1,0 +1,30 @@
+.disabled-div {
+    pointer-events: none; /* Prevents clicking on elements inside the div */
+    opacity: 0.4;         /* Makes the div look faded or disabled */
+}
+
+/* Grouped settings card used to organize controls into titled sections. */
+.settings-card {
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    padding: 10px 14px 14px;
+    margin: 0 0 14px 0;
+    background-color: #fff;
+    width: 280px;
+    box-sizing: border-box;
+}
+
+.settings-card > legend {
+    font-weight: bold;
+    font-size: 15px;
+    padding: 0 6px;
+    color: #333;
+}
+
+/* Lays out multiple settings cards in a responsive wrapping row. */
+.card-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: flex-start;
+}

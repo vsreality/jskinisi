@@ -1,0 +1,19 @@
+.motor-tab .k-button{
+    margin-top: 4px;
+    width: 200px;
+    display: block;
+}
+
+.motor-tab input[type=range]{
+    display: block;
+    width: 200px;
+}
+
+.motor-tab select{
+    display: block;
+    width: 200px;
+}
+
+.motor-tab .k-check{
+    display: inline;
+}

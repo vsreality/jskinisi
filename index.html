@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
+    <meta
+      name="description"
+      content="Web client for the Kinisi motor controller"
+    />
+    <link rel="apple-touch-icon" href="/logo192.png" />
+    <!--
+      manifest.json provides metadata used when the app is installed on a
+      user's mobile device or desktop.
+    -->
+    <link rel="manifest" href="/manifest.json" />
+    <!--
+      The Content-Security-Policy <meta> is injected at build time by the
+      injectCsp() plugin in vite.config.js, and is also sent as a real HTTP
+      header from public/_headers. It is intentionally absent in dev, where
+      Vite needs an inline script for the React Fast Refresh preamble.
+    -->
+    <title>Kinisi Motor Controller</title>
+  </head>
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+    <script type="module" src="/src/index.jsx"></script>
+  </body>
+</html>

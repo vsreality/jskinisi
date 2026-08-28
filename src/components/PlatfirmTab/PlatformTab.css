@@ -1,0 +1,58 @@
+.platform-tab .k-button{
+    margin-top: 4px;
+    width: 200px;
+    display: block;
+}
+
+.platform-tab h2{
+    margin: 6px 0;
+    font-size: 20px;
+}
+
+.platform-tab p{
+    margin: 6px 0;
+}
+
+.platform-tab input[type=range]{
+    display: block;
+    width: 200px;
+}
+
+.platform-tab select{
+    display: block;
+    width: 200px;
+}
+
+.span-check
+{
+    margin-right: 15px;
+}
+
+label{
+    display: block;
+}
+
+input[type=number] {
+    display: block;
+}
+
+input[type=checkbox]{
+    display: inline;
+}
+
+/* Label for the checkbox */
+.checkbox-label{
+    display: inline;
+    margin-left: 5px;
+}
+
+.keyboard-drive{
+    margin-top: 10px;
+}
+
+.keyboard-drive-hint{
+    font-size: 12px;
+    color: #555;
+    margin-top: 4px;
+    max-width: 220px;
+}

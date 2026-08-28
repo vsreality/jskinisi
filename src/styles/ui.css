@@ -1,0 +1,369 @@
+/*
+ * ui.css - the small set of layout/utility classes this app actually uses.
+ *
+ * These replace W3.CSS, which used to be hot-linked from w3schools.com. Only
+ * the ~29 classes the app references are implemented here; values match what
+ * W3.CSS 4.15 produced so the UI is unchanged. Prefix is `k-` (kinisi).
+ *
+ * Loaded first (see src/index.js) so component stylesheets can override it.
+ */
+
+/* -- base ----------------------------------------------------------------
+ * Every rule below assumes border-box sizing: percentage grid columns and
+ * `width:100%` inputs with padding both depend on it. Font size and line
+ * height are pinned to the values the UI was laid out against.
+ */
+html {
+    box-sizing: border-box;
+    /* W3.CSS suppressed horizontal scrolling; the layouts (notably the
+     * Platform tab) were built against that, so keep it. */
+    overflow-x: hidden;
+}
+
+*,
+*:before,
+*:after {
+    box-sizing: inherit;
+}
+
+html,
+body {
+    font-size: 15px;
+    line-height: 1.5;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-weight: 400;
+    margin: 10px 0;
+}
+
+/* Absolute sizes, not the browser's `em`-relative defaults. App.css sets a
+ * global `header{font-size:30px}`, so an em-based heading inside any <header>
+ * (e.g. the connection modal's title) would otherwise scale off that. */
+h1 { font-size: 36px; }
+h2 { font-size: 30px; }
+h3 { font-size: 24px; }
+h4 { font-size: 20px; }
+h5 { font-size: 18px; }
+h6 { font-size: 16px; }
+
+button,
+input,
+select,
+textarea,
+optgroup {
+    font: inherit;
+    margin: 0;
+}
+
+hr {
+    border: 0;
+    border-top: 1px solid #eee;
+    margin: 20px 0;
+}
+
+/* The tabs group controls into <fieldset>/<legend> cards (see Common.css).
+ * Normalise away the browser's chunky default groove border and the legend's
+ * inline padding so those cards render consistently across browsers. */
+fieldset {
+    border: 1px solid #c0c0c0;
+    margin: 0 2px;
+    padding: 0.35em 0.625em 0.75em;
+}
+
+legend {
+    color: inherit;
+    display: table;
+    max-width: 100%;
+    padding: 0;
+    white-space: normal;
+}
+
+/* -- layout ------------------------------------------------------------- */
+
+/* Clearfix: these containers all hold floated children (grid columns, bar
+ * items), so they need to establish their own height. */
+.k-container:before,
+.k-container:after,
+.k-panel:before,
+.k-panel:after,
+.k-row:before,
+.k-row:after,
+.k-bar:before,
+.k-bar:after {
+    content: '';
+    display: table;
+    clear: both;
+}
+
+.k-container,
+.k-panel {
+    padding: 0.01em 16px;
+}
+
+.k-panel {
+    margin-top: 16px;
+    margin-bottom: 16px;
+}
+
+.k-col {
+    float: left;
+    width: 100%;
+}
+
+/* Small: applies at every width. */
+.k-col.s1  { width: 8.33333%; }
+.k-col.s2  { width: 16.66666%; }
+.k-col.s3  { width: 24.99999%; }
+.k-col.s4  { width: 33.33333%; }
+.k-col.s5  { width: 41.66666%; }
+.k-col.s6  { width: 49.99999%; }
+.k-col.s7  { width: 58.33333%; }
+.k-col.s8  { width: 66.66666%; }
+.k-col.s9  { width: 74.99999%; }
+.k-col.s10 { width: 83.33333%; }
+.k-col.s11 { width: 91.66666%; }
+.k-col.s12 { width: 99.99999%; }
+
+@media (min-width: 601px) {
+    .k-col.m1  { width: 8.33333%; }
+    .k-col.m2  { width: 16.66666%; }
+    .k-col.m3  { width: 24.99999%; }
+    .k-col.m4  { width: 33.33333%; }
+    .k-col.m5  { width: 41.66666%; }
+    .k-col.m6  { width: 49.99999%; }
+    .k-col.m7  { width: 58.33333%; }
+    .k-col.m8  { width: 66.66666%; }
+    .k-col.m9  { width: 74.99999%; }
+    .k-col.m10 { width: 83.33333%; }
+    .k-col.m11 { width: 91.66666%; }
+    .k-col.m12 { width: 99.99999%; }
+}
+
+@media (min-width: 993px) {
+    .k-col.l1  { width: 8.33333%; }
+    .k-col.l2  { width: 16.66666%; }
+    .k-col.l3  { width: 24.99999%; }
+    .k-col.l4  { width: 33.33333%; }
+    .k-col.l5  { width: 41.66666%; }
+    .k-col.l6  { width: 49.99999%; }
+    .k-col.l7  { width: 58.33333%; }
+    .k-col.l8  { width: 66.66666%; }
+    .k-col.l9  { width: 74.99999%; }
+    .k-col.l10 { width: 83.33333%; }
+    .k-col.l11 { width: 91.66666%; }
+    .k-col.l12 { width: 99.99999%; }
+}
+
+/* -- tab bar ------------------------------------------------------------ */
+.k-bar {
+    width: 100%;
+    overflow: hidden;
+}
+
+.k-bar .k-bar-item {
+    padding: 8px 16px;
+    float: left;
+    width: auto;
+    border: none;
+    display: block;
+    outline: 0;
+}
+
+.k-bar .k-button {
+    white-space: normal;
+}
+
+/* -- buttons ------------------------------------------------------------ */
+.k-button {
+    border: none;
+    display: inline-block;
+    padding: 8px 16px;
+    vertical-align: middle;
+    overflow: hidden;
+    text-decoration: none;
+    color: inherit;
+    background-color: inherit;
+    text-align: center;
+    cursor: pointer;
+    white-space: nowrap;
+    user-select: none;
+}
+
+.k-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.3;
+}
+
+/* !important mirrors W3.CSS: the hover state must win over the colour
+ * helpers further down, which carry !important but lower specificity. */
+.k-button:hover {
+    color: #000 !important;
+    background-color: #ccc !important;
+}
+
+.k-block {
+    display: block;
+    width: 100%;
+}
+
+/* -- forms -------------------------------------------------------------- */
+.k-input {
+    padding: 8px;
+    display: block;
+    border: none;
+    border-bottom: 1px solid #ccc;
+    width: 100%;
+}
+
+.k-check {
+    width: 24px;
+    height: 24px;
+    position: relative;
+    top: 6px;
+}
+
+/* -- lists -------------------------------------------------------------- */
+.k-ul {
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+}
+
+.k-ul li {
+    padding: 8px 16px;
+    border-bottom: 1px solid #ddd;
+}
+
+.k-ul li:last-child {
+    border-bottom: none;
+}
+
+/* -- modal -------------------------------------------------------------- */
+.k-modal {
+    z-index: 3;
+    display: none;
+    padding-top: 100px;
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0, 0, 0, 0.4);
+}
+
+.k-modal-content {
+    margin: auto;
+    background-color: #fff;
+    position: relative;
+    padding: 0;
+    outline: 0;
+    width: 600px;
+}
+
+/* Order matters and mirrors W3.CSS: at widths <= 600px BOTH blocks match, and
+ * the later 768px block wins `padding-top`. Only `width` survives from the
+ * 600px block, because it is !important. The dialog was laid out against that
+ * result, so keep the blocks in this order. */
+@media (max-width: 600px) {
+    .k-modal {
+        padding-top: 30px;
+    }
+
+    .k-modal-content {
+        margin: 0 10px;
+        width: auto !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .k-modal {
+        padding-top: 50px;
+    }
+
+    .k-modal-content {
+        width: 500px;
+    }
+}
+
+@media (min-width: 993px) {
+    .k-modal-content {
+        width: 900px;
+    }
+}
+
+/* -- positioning, borders, spacing -------------------------------------- */
+.k-display-topright {
+    position: absolute;
+    right: 0;
+    top: 0;
+}
+
+.k-border {
+    border: 1px solid #ccc !important;
+}
+
+.k-round {
+    border-radius: 4px;
+}
+
+.k-card-4 {
+    box-shadow: 0 4px 10px 0 rgba(0, 0, 0, 0.2), 0 4px 20px 0 rgba(0, 0, 0, 0.19);
+}
+
+.k-margin-top {
+    margin-top: 16px !important;
+}
+
+.k-margin-bottom {
+    margin-bottom: 16px !important;
+}
+
+.k-padding {
+    padding: 8px 16px !important;
+}
+
+/* -- colours ------------------------------------------------------------ */
+.k-black {
+    color: #fff !important;
+    background-color: #000 !important;
+}
+
+.k-blue {
+    color: #fff !important;
+    background-color: #2196f3 !important;
+}
+
+.k-green {
+    color: #fff !important;
+    background-color: #4caf50 !important;
+}
+
+.k-light-grey {
+    color: #000 !important;
+    background-color: #f1f1f1 !important;
+}
+
+.k-hover-green:hover {
+    color: #fff !important;
+    background-color: #4caf50 !important;
+}
+
+.k-hover-light-grey:hover {
+    color: #000 !important;
+    background-color: #f1f1f1 !important;
+}
+
+.k-text-blue {
+    color: #2196f3 !important;
+}
+
+.k-text-grey {
+    color: #757575 !important;
+}
+
+.k-text-red {
+    color: #f44336 !important;
+}
