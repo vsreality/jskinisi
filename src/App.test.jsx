@@ -23,4 +23,14 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Connect' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Diconnect' })).toBeDisabled();
   });
+
+  it('links to the source repository', () => {
+    render(<App />);
+    const link = screen.getByRole('link', { name: /source code on github/i });
+    expect(link).toHaveAttribute('href', 'https://github.com/vsreality/jskinisi');
+    expect(link).toHaveAttribute('target', '_blank');
+    // Without noopener the opened tab gets a handle on this one via
+    // window.opener.
+    expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'));
+  });
 });

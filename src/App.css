@@ -2,3 +2,35 @@ header{
     font-size: 30px;
     padding: 6px 10px;
 }
+
+/* Scoped to the app's own header on purpose. The connect dialog also uses a
+ * <header> (with an absolutely positioned close button), so turning the global
+ * `header` rule into a flex container would relayout that dialog too. */
+.app-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.app-title {
+    /* Keeps the title from stretching and pushing the icon off-centre when it
+     * wraps on narrow screens. */
+    min-width: 0;
+}
+
+.repo-link {
+    display: inline-flex;
+    align-items: center;
+    /* The icon is drawn with `fill: currentColor`, so colour is set here. */
+    color: #24292f;
+    flex-shrink: 0;
+    padding: 4px;
+    border-radius: 4px;
+    text-decoration: none;
+}
+
+.repo-link:hover,
+.repo-link:focus-visible {
+    color: #2196f3;
+}
