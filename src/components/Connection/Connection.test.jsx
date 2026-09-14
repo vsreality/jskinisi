@@ -50,4 +50,15 @@ describe('Connection section', () => {
     expect(controller.stop_motor).toHaveBeenCalledTimes(4);
     expect(setIsConnected).toHaveBeenCalledWith(false);
   });
+  it('still disconnects when a motor command returns an ERROR', async () => {
+    const controller = fakeController();
+    controller.delete_motor_controller.mockRejectedValue(new Error('MOTOR_OWNED'));
+    const setIsConnected = vi.fn();
+    renderConnected(controller, setIsConnected);
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+    await waitFor(() => expect(controller.disconnect).toHaveBeenCalled());
+    expect(controller.stop_motor).toHaveBeenCalledTimes(4);
+    expect(setIsConnected).toHaveBeenCalledWith(false);
+  });
+
 });

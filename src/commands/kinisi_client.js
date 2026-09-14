@@ -1,10 +1,10 @@
 // ----------------------------------------------------------------------------
 // Filename: kinisi_client.js
 // Description: KinisiClient class is an implementation serial communication with the Kinisi controller.
-// It is implements the commands defined in kinisi_commands.js.
+// A persistent reader dispatches v2 responses and controller-initiated clock requests.
 // ----------------------------------------------------------------------------
 
-import { Commands } from './kinisi_commands';
+import { KinisiSession, ConnectionClosedError } from './kinisi_session.js';
 
 const MotorIndex = {
   Motor0: 0,
@@ -37,81 +37,72 @@ export function webSerialUnavailableReason() {
   return 'Web Serial is not supported in this browser. Try Chrome or Edge, or use the remote proxy option.';
 }
 
-class KinisiClient extends Commands {
-    // Constructor
-    constructor(onDisconnect) {
-      super();
-      this.port = null;
-      this.reader = null;
-      this.writer = null;
-      this.baudRate = 115200;
-      this.onDisconnect = onDisconnect;
-      // Reason the last connect() attempt failed, for the UI to display.
-      this.lastError = null;
-      // Guard: navigator.serial is undefined on insecure origins, and this
-      // constructor runs at app start-up, so an unguarded access here blanks
-      // the whole page rather than just disabling the local-serial option.
-      if (typeof navigator !== 'undefined' && 'serial' in navigator) {
-        navigator.serial.addEventListener("disconnect", (event) => {
-          console.log("Disconnected from serial port.");
-          if (this.onDisconnect) {
-            this.onDisconnect(event);
-          }
-        });
-      }
-    }
-
-    async connect() {
-        this.lastError = null;
-        try {
-            const unavailable = webSerialUnavailableReason();
-            if (unavailable) {
-              throw new Error(unavailable);
-            }
-            this.port = await navigator.serial.requestPort();
-            await this.port.open({ baudRate: this.baudRate });
-            console.log("Connected.");
-            return true;
-          }
-          catch (error) {
-            console.log(`Error connecting to serial port: ${error}`);
-            this.lastError = error.message;
-            return false;
-          }
-    }
-  
-    // Write data to the serial port
-    async write(buffer) {
-        var writer = this.port.writable.getWriter();
-        await writer.write(buffer);
-        await writer.releaseLock();
-    }
-
-    // Read data from the serial port
-    async read(numBytes) {
-        let reader = this.port.readable.getReader({ mode: "byob" });
-        let buffer = new ArrayBuffer(numBytes);
-        let offset = 0;
-        while (offset < buffer.byteLength) {
-            const { value, done } = await reader.read(new Uint8Array(buffer, offset));
-            if (done) {
-                break;
-            }
-            buffer = value.buffer;
-            offset += value.byteLength;
-        }
-        await reader.releaseLock();
-        return buffer;
-    }
-
-    async disconnect() {
-        if (this.port) {
-          await this.port.close();
-          this.port = null;
-          this.reader = null;
-        }
-        console.log("Disconnected.");
-      }
+class KinisiClient extends KinisiSession {
+  /** Configure a direct Web Serial client; options are shared with KinisiSession. */
+  constructor(onDisconnect, options = {}) {
+    super(options);
+    this.port = null; this.reader = null; this.writer = null;
+    this.baudRate = 115200; this.onDisconnect = onDisconnect;
+    this._closing = null;
+    this._deviceDisconnected = (event) => {
+      if (event.target === this.port || event.port === this.port) this._fatal(new ConnectionClosedError('USB device disconnected'));
+    };
   }
+
+  /** Select/open the port, take its stream locks, and wait for INIT plus READY. */
+  async connect() {
+    if (this.port) { this.lastError = 'Already connected'; return false; }
+    this.lastError = null;
+    try {
+      const unavailable = webSerialUnavailableReason();
+      if (unavailable) throw new Error(unavailable);
+      this.port = await navigator.serial.requestPort();
+      await this.port.open({ baudRate: this.baudRate });
+      this.writer = this.port.writable.getWriter();
+      this.reader = this.port.readable.getReader();
+      navigator.serial.addEventListener('disconnect', this._deviceDisconnected);
+      await this._startSession();
+      return true;
+    } catch (error) {
+      this.lastError = error.message;
+      await this.disconnect();
+      return false;
+    }
+  }
+
+  /** Write one complete frame under the session's serialization queue. */
+  async _writeBytes(buffer) {
+    if (!this.writer) throw new ConnectionClosedError();
+    await this.writer.write(buffer);
+  }
+
+  /** Keep one persistent reader; arbitrary serial fragmentation is handled by the session. */
+  async _readBytes(_needed) {
+    if (!this.reader) throw new ConnectionClosedError();
+    const { value, done } = await this.reader.read();
+    if (done) throw new ConnectionClosedError('Serial stream closed');
+    return value || new Uint8Array();
+  }
+
+  /** Cancel blocked I/O before releasing locks and closing the serial port. */
+  disconnect() {
+    if (this._closing) return this._closing;
+    this._endSession();
+    this._closing = this._closePort().finally(() => { this._closing = null; });
+    return this._closing;
+  }
+
+  /** Clean up the exact reader/writer pair owned by this connection. */
+  async _closePort() {
+    if (typeof navigator !== 'undefined') navigator.serial?.removeEventListener('disconnect', this._deviceDisconnected);
+    const reader = this.reader, writer = this.writer, port = this.port;
+    this.reader = null; this.writer = null; this.port = null;
+    await Promise.allSettled([reader?.cancel(), writer?.abort()]);
+    if (this._readerTask) await this._readerTask;
+    try { reader?.releaseLock(); } catch { /* A failed stream may already release its lock. */ }
+    try { writer?.releaseLock(); } catch { /* A failed stream may already release its lock. */ }
+    if (port) await port.close().catch(() => {});
+  }
+}
 
 export { KinisiClient, MotorIndex, EncoderIndex };

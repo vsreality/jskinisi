@@ -22,3 +22,103 @@
 .motor-tab .k-check{
     display: inline;
 }
+/* Encoder setup, controls and measurements use separate, compact sections. */
+.motor-tab .encoder-card {
+    width: 370px;
+    max-width: 100%;
+    min-width: 0;
+    padding: 12px 18px 18px;
+}
+.encoder-section + .encoder-section {
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid #e5e9ed;
+}
+.encoder-section h3 {
+    margin: 0 0 12px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #24292f;
+}
+.encoder-fields,
+.encoder-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 12px;
+}
+.encoder-field { min-width: 0; }
+.encoder-field label {
+    display: block;
+    margin-bottom: 5px;
+    font-size: 13px;
+}
+.encoder-field label span { color: #59636e; font-size: 11px; }
+.motor-tab .encoder-field input,
+.motor-tab .encoder-field select {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    padding: 7px 8px;
+    border: 1px solid #b8c2cc;
+    border-radius: 5px;
+    background: #fff;
+    color: #24292f;
+    font-size: 14px;
+}
+.encoder-reverse {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 12px 0;
+    font-size: 14px;
+    cursor: pointer;
+}
+.encoder-reverse input { width: 16px; height: 16px; margin: 0; }
+.motor-tab .encoder-card .k-button {
+    display: inline-flex;
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    min-height: 36px;
+    padding: 8px;
+    font-size: 13px;
+    white-space: normal;
+}
+.encoder-counter,
+.encoder-section-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+.motor-tab .encoder-counter .k-button { width: auto; padding-inline: 14px; }
+.encoder-counter output { font-size: 20px; font-variant-numeric: tabular-nums; }
+.encoder-reading-label { display: block; color: #59636e; font-size: 12px; }
+.encoder-unit { font-size: 13px; font-weight: 400; color: #59636e; }
+.encoder-section-heading { margin-bottom: 12px; }
+.encoder-section-heading h3 { margin: 0; }
+.encoder-status {
+    border-radius: 12px;
+    padding: 2px 9px;
+    color: #59636e;
+    background: #eef1f4;
+    font-size: 12px;
+    font-weight: 600;
+}
+.encoder-status.is-running { color: #176b35; background: #e6f4ea; }
+.encoder-sample {
+    margin-top: 14px;
+    padding: 12px;
+    border: 1px solid #e5e9ed;
+    border-radius: 6px;
+    background: #f6f8fa;
+}
+.encoder-angle { font-size: 26px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.encoder-angle output { font-variant-numeric: tabular-nums; }
+.encoder-sample .odometry-timestamp { margin-top: 10px; padding-top: 10px; border-top: 1px solid #e0e5ea; }
+.encoder-sample .odometry-timestamp output { display: block; }
+.motor-tab > .conn-error { flex-basis: 100%; }
+@media (max-width: 420px) {
+    .motor-tab .encoder-card { padding-inline: 12px; }
+    .encoder-fields { grid-template-columns: 1fr; }
+}

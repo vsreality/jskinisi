@@ -58,3 +58,84 @@ input[type=checkbox]{
     margin-top: 4px;
     max-width: 220px;
 }
+
+/* Match the encoder card's grouped setup, controls and sample display. */
+.platform-tab .platform-odometry-card {
+    width: 370px;
+    max-width: 100%;
+    min-width: 0;
+    padding: 12px 18px 18px;
+}
+.platform-odometry-section + .platform-odometry-section {
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid #e5e9ed;
+}
+.platform-odometry-section h3 {
+    margin: 0 0 12px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #24292f;
+}
+.platform-odometry-section label { margin-bottom: 5px; font-size: 13px; }
+.platform-odometry-section input {
+    width: 100%;
+    min-width: 0;
+    margin-bottom: 8px;
+    padding: 7px 8px;
+    border: 1px solid #b8c2cc;
+    border-radius: 5px;
+    background: #fff;
+    color: #24292f;
+    font-size: 14px;
+}
+.platform-odometry-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 12px;
+}
+.platform-tab .platform-odometry-card .k-button {
+    display: inline-flex;
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    min-height: 36px;
+    padding: 8px;
+    font-size: 13px;
+    white-space: normal;
+}
+.platform-odometry-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+.platform-odometry-heading h3 { margin: 0; }
+.platform-odometry-status {
+    border-radius: 12px;
+    padding: 2px 9px;
+    color: #59636e;
+    background: #eef1f4;
+    font-size: 12px;
+    font-weight: 600;
+}
+.platform-odometry-status.is-running { color: #176b35; background: #e6f4ea; }
+.platform-odometry-sample {
+    margin-top: 14px;
+    padding: 12px;
+    border: 1px solid #e5e9ed;
+    border-radius: 6px;
+    background: #f6f8fa;
+}
+.platform-odometry-pose { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.platform-odometry-label { display: block; color: #59636e; font-size: 12px; }
+.platform-odometry-value { font-size: 22px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.platform-odometry-value output { font-variant-numeric: tabular-nums; }
+.platform-odometry-unit { font-size: 13px; font-weight: 400; color: #59636e; }
+.platform-odometry-sample .odometry-timestamp { margin-top: 10px; padding-top: 10px; border-top: 1px solid #e0e5ea; }
+.platform-odometry-sample .odometry-timestamp output { display: block; }
+@media (max-width: 420px) {
+    .platform-tab .platform-odometry-card { padding-inline: 12px; }
+    .platform-odometry-pose { grid-template-columns: 1fr; }
+}

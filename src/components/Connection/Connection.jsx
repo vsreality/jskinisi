@@ -9,6 +9,7 @@ import './ConnectionPanel.css';
 function Connection() {
     const { controller, setController, isConnected, setIsConnected } = useContext(ControllerContext);
     const [transport, setTransport] = useState('');
+    const [disconnectError, setDisconnectError] = useState('');
 
     // Called by the panel once a controller (local or proxy) is connected.
     const onConnected = (connectedController, usedTransport) => {
@@ -17,30 +18,30 @@ function Connection() {
         setIsConnected(true);
     };
 
+    // Attempt each stop even if another command returns ERROR, and always release the link.
     const onDisconnect = async () => {
-        console.log('Disconnecting...');
-        await controller.stop_platform_controller();
-
-        for (let i = 0; i < 4; i++) {
-            await controller.delete_motor_controller(i);
-        }
-
-        for (let i = 0; i < 4; i++) {
-            await controller.stop_motor(i);
-        }
-
-        await controller.disconnect();
+        const failures = [];
+        const attempt = async (action) => {
+            try { await action(); } catch (error) { failures.push(error.message); }
+        };
+        await attempt(() => controller.stop_platform_controller());
+        for (let i = 0; i < 4; i++) await attempt(() => controller.delete_motor_controller(i));
+        for (let i = 0; i < 4; i++) await attempt(() => controller.stop_motor(i));
+        await attempt(() => controller.disconnect());
+        setDisconnectError(failures.length ? `Disconnected. Some stop commands failed: ${[...new Set(failures)].join('; ')}` : '');
         setIsConnected(false);
         setTransport('');
-        console.log('Disconnected');
     };
 
     if (!isConnected) {
         return (
+            <>
+            {disconnectError && <p className="conn-error" role="alert">{disconnectError}</p>}
             <ConnectionPanel
                 onConnect={onConnected}
                 onDisconnect={() => setIsConnected(false)}
             />
+            </>
         );
     }
 
@@ -51,6 +52,7 @@ function Connection() {
                     ? `Connected over ${transport}.`
                     : 'Connected to the controller.'}
             </p>
+            {controller.boardInfo && <p>Board version: {controller.boardInfo.board_major}.{controller.boardInfo.board_minor}.{controller.boardInfo.board_patch}</p>}
             <button
                 className="k-button k-button-danger"
                 id="buttonDisconectController"
