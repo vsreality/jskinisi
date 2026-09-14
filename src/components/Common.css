@@ -35,3 +35,13 @@
     gap: 16px;
     align-items: flex-start;
 }
+/* Keep full-precision sample timestamps readable inside the narrow encoder card. */
+.odometry-timestamp {
+    margin-top: 6px;
+    font-size: 13px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+.odometry-timestamp output {
+    font-variant-numeric: tabular-nums;
+}

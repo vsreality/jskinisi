@@ -4,8 +4,7 @@
 // that tunnels raw serial traffic to a Python proxy (see kinisi-serial-proxy)
 // over a WebSocket instead of talking to navigator.serial directly.
 //
-// It implements the same write(buffer) / read(numBytes) interface expected by
-// the Commands base class, so all command methods work unchanged. The proxy
+// It feeds a shared API-v2 session from one continuous READ loop. The proxy
 // forwards the bytes to the physical serial port on the Raspberry Pi.
 //
 // Wire protocol (must match kinisi-serial-proxy/proxy.py):
@@ -15,7 +14,7 @@
 //       READ  (0x02): [0x02, len_lo, len_hi]    (proxy replies with the bytes)
 // ----------------------------------------------------------------------------
 
-import { Commands } from './kinisi_commands';
+import { KinisiSession, ConnectionClosedError } from './kinisi_session.js';
 
 const OP_WRITE = 0x01;
 const OP_READ = 0x02;
@@ -44,9 +43,10 @@ function proxyUrls(host, defaultPort = 8765) {
   value = value.replace(/\/+$/, '');
   const hasPort = /:\d+$/.test(value);
   const authority = hasPort ? value : `${value}:${defaultPort}`;
+  const secure = /^wss:\/\//i.test(host.trim()) || /^https:\/\//i.test(host.trim());
   return {
-    ws: `ws://${authority}`,
-    http: `http://${authority}`,
+    ws: `${secure ? 'wss' : 'ws'}://${authority}`,
+    http: `${secure ? 'https' : 'http'}://${authority}`,
   };
 }
 
@@ -70,218 +70,166 @@ function describe(error) {
   return String(error && error.message ? error.message : error).replace(/\.\s*$/, '');
 }
 
-class KinisiWebSocketClient extends Commands {
-  // Fetch the list of serial ports available on the proxy host over HTTP.
-  // Returns an array of { device, description, hwid }.
+class KinisiWebSocketClient extends KinisiSession {
+  /** Discover serial ports without opening the controller connection. */
   static async listPorts(host, defaultPort = 8765) {
     const { http } = proxyUrls(host, defaultPort);
     let response;
-    try {
-      response = await fetch(`${http}/ports`);
-    } catch (error) {
-      throw new Error(`${describe(error)}.${insecureLocalHint()}`, {
-        cause: error,
-      });
-    }
-    if (!response.ok) {
-      throw new Error(`Proxy responded ${response.status} to /ports`);
-    }
-    const data = await response.json();
-    return data.ports || [];
+    try { response = await fetch(`${http}/ports`); }
+    catch (error) { throw new Error(`${describe(error)}.${insecureLocalHint()}`, { cause: error }); }
+    if (!response.ok) throw new Error(`Proxy responded ${response.status} to /ports`);
+    return (await response.json()).ports || [];
   }
 
-  // Parameters:
-  //   host:         Proxy host as entered by the user, e.g. "raspberrypi.local",
-  //                 "127.0.0.1:8765", or a full "ws://host:9000" URL.
-  //   onDisconnect: optional callback invoked when the socket closes.
-  //   defaultPort:  port to assume when host has none (default 8765).
-  constructor(host, onDisconnect, defaultPort = 8765) {
-    super();
-    this.host = host;
-    this.url = proxyUrls(host, defaultPort).ws;
-    this.onDisconnect = onDisconnect;
-    this.socket = null;
-    this.baudRate = 115200;
-    this.serialPort = null; // remote serial device, chosen via open()
-    // Reason the last connect() attempt failed, for the UI to display.
-    this.lastError = null;
-
-    // Read requests are answered by the next binary frame from the proxy.
-    // Because Commands always awaits a write before its matching read, and the
-    // WebSocket preserves order, a simple FIFO of pending read resolvers is
-    // enough to pair responses with requests.
-    this._pendingReads = [];
-    // Pending JSON control requests, keyed by op.
-    this._pendingControls = [];
+  /** Options configure the shared session; existing host/callback/port arguments are retained. */
+  constructor(host, onDisconnect, defaultPort = 8765, options = {}) {
+    super(options);
+    this.host = host; this.url = proxyUrls(host, defaultPort).ws;
+    this.onDisconnect = onDisconnect; this.socket = null;
+    this.baudRate = 115200; this.serialPort = null;
+    this._pendingReads = []; this._pendingControls = []; this._closing = null;
   }
 
-  // Open the WebSocket connection to the proxy.
+  /** Connect to the proxy. open() performs the board handshake after a port is selected. */
   async connect() {
-    try {
-      await this._openSocket();
-      this.lastError = null;
-      return true;
-    } catch (error) {
-      this.lastError = error.message;
-      console.log(`Error connecting to proxy: ${error}`);
-      return false;
-    }
+    if (this.socket) { this.lastError = 'Proxy already connected'; return false; }
+    try { await this._openSocket(); this.lastError = null; return true; }
+    catch (error) { this.lastError = error.message; await this.disconnect(); return false; }
   }
 
+  /** Install handlers once and bound opening an unreachable WebSocket. */
   _openSocket() {
     return new Promise((resolve, reject) => {
-      let socket;
-      try {
-        // Firefox and Safari throw SecurityError synchronously here when an
-        // HTTPS page opens a plain ws:// socket.
-        socket = new WebSocket(this.url);
-      } catch (error) {
-        reject(
-          new Error(
-            `Could not open ${this.url}: ${describe(error)}.${insecureLocalHint()}`,
-            { cause: error }
-          )
-        );
-        return;
-      }
+      const socket = new WebSocket(this.url); this.socket = socket;
       socket.binaryType = 'arraybuffer';
-
-      socket.onopen = () => {
-        console.log(`Connected to proxy at ${this.url}`);
-        resolve();
-      };
-
+      const timer = setTimeout(() => {
+        reject(new Error('Proxy connection timed out')); socket.close();
+      }, this.initTimeoutMs);
+      socket.onopen = () => { clearTimeout(timer); resolve(); };
       socket.onerror = () => {
-        reject(
-          new Error(
-            `WebSocket error connecting to ${this.url}.${insecureLocalHint()}`
-          )
-        );
+        clearTimeout(timer);
+        const error = new Error(`WebSocket error connecting to ${this.url}.${insecureLocalHint()}`);
+        reject(error);
+        if (this._session) this._fatal(error);
       };
-
-      socket.onclose = (event) => {
-        console.log('Proxy connection closed.');
-        // Fail any in-flight reads so awaiters don't hang forever.
-        this._pendingReads.forEach(({ reject: rej }) =>
-          rej(new Error('Proxy connection closed')));
-        this._pendingReads = [];
-        this._pendingControls.forEach(({ reject: rej }) =>
-          rej(new Error('Proxy connection closed')));
-        this._pendingControls = [];
+      socket.onclose = () => {
+        clearTimeout(timer);
+        const error = new ConnectionClosedError('Proxy connection closed');
+        reject(error);
+        if (this.socket !== socket) return;
         this.socket = null;
-        if (this.onDisconnect) {
-          this.onDisconnect(event);
-        }
+        this._rejectTransport(error);
+        if (this._session) this._fatal(error);
       };
-
-      socket.onmessage = (event) => this._onMessage(event);
-
-      this.socket = socket;
+      socket.onmessage = (event) => { if (this.socket === socket) this._onMessage(event); };
     });
   }
 
+  /** Pair proxy READ replies separately from JSON controls; protocol IDs are handled above. */
   _onMessage(event) {
     if (event.data instanceof ArrayBuffer) {
-      // Binary frame -> answer the oldest pending read request.
       const pending = this._pendingReads.shift();
-      if (pending) {
-        pending.resolve(event.data);
-      } else {
-        console.log('Received unexpected serial data with no pending read.');
-      }
-    } else {
-      // Text frame -> JSON control reply.
-      let reply;
-      try {
-        reply = JSON.parse(event.data);
-      } catch {
-        console.log(`Invalid control reply: ${event.data}`);
-        return;
-      }
-      const pending = this._pendingControls.shift();
-      if (pending) {
-        pending.resolve(reply);
-      }
+      if (pending) { clearTimeout(pending.timer); pending.resolve(event.data); }
+      return;
+    }
+    let reply;
+    try { reply = JSON.parse(event.data); }
+    catch { this._fatal(new Error('Invalid proxy JSON response')); return; }
+    if (['read', 'write'].includes(reply.op) && !reply.ok) {
+      this._fatal(new Error(reply.error || 'Proxy serial operation failed')); return;
+    }
+    const pending = this._pendingControls.shift();
+    if (pending) {
+      clearTimeout(pending.timer);
+      if (reply.op !== pending.op) pending.reject(new Error('Mismatched proxy control reply'));
+      else pending.resolve(reply);
     }
   }
 
-  // Send a JSON control message and await its reply.
+  /** Fail all proxy waiters when the socket closes; no timers survive teardown. */
+  _rejectTransport(error) {
+    for (const pending of [...this._pendingReads, ...this._pendingControls]) {
+      clearTimeout(pending.timer); pending.reject(error);
+    }
+    this._pendingReads = []; this._pendingControls = [];
+  }
+
+  /** Send an ordered JSON control request, closing on timeout to discard late replies. */
   _control(request) {
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return Promise.reject(new ConnectionClosedError('Proxy not connected'));
     return new Promise((resolve, reject) => {
-      if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-        reject(new Error('Proxy not connected'));
-        return;
-      }
-      this._pendingControls.push({ resolve, reject });
-      this.socket.send(JSON.stringify(request));
+      const pending = { resolve, reject, op: request.op };
+      pending.timer = setTimeout(() => {
+        const error = new Error(`Proxy ${request.op} timed out`);
+        this._rejectTransport(error); this.socket?.close();
+      }, this.initTimeoutMs);
+      this._pendingControls.push(pending);
+      try { this.socket.send(JSON.stringify(request)); }
+      catch (error) { this._rejectTransport(error); this.socket?.close(); }
     });
   }
 
-  // List serial ports available on the proxy host.
-  async listPorts() {
-    const reply = await this._control({ op: 'list' });
-    return reply.ports || [];
-  }
+  /** List ports over an already-open proxy socket. */
+  async listPorts() { return (await this._control({ op: 'list' })).ports || []; }
 
-  // Open a serial port on the proxy host. Returns the proxy's reply,
-  // e.g. { ok: true, port, baudRate } or { ok: false, error }.
+  /** Open the remote serial port and require the board's INIT/READY before returning ok. */
   async open(serialPort, baudRate = this.baudRate) {
-    const reply = await this._control({ op: 'open', port: serialPort, baudRate });
-    if (reply.ok) {
-      this.serialPort = serialPort;
-      this.baudRate = baudRate;
-    }
-    return reply;
-  }
-
-  // Query current proxy/serial status.
-  async status() {
-    return this._control({ op: 'status' });
-  }
-
-  // Write data to the serial port via the proxy (Commands interface).
-  async write(buffer) {
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      throw new Error('Proxy not connected');
-    }
-    const payload = new Uint8Array(buffer);
-    const frame = new Uint8Array(payload.length + 1);
-    frame[0] = OP_WRITE;
-    frame.set(payload, 1);
-    this.socket.send(frame);
-  }
-
-  // Read numBytes from the serial port via the proxy (Commands interface).
-  // Returns an ArrayBuffer, matching KinisiClient.read().
-  async read(numBytes) {
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      throw new Error('Proxy not connected');
-    }
-    const frame = new Uint8Array(3);
-    frame[0] = OP_READ;
-    frame[1] = numBytes & 0xff; // len_lo
-    frame[2] = (numBytes >> 8) & 0xff; // len_hi
-
-    const promise = new Promise((resolve, reject) => {
-      this._pendingReads.push({ resolve, reject });
-    });
-    this.socket.send(frame);
-    return promise;
-  }
-
-  async disconnect() {
     try {
-      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-        await this._control({ op: 'close' });
-      }
-    } catch {
-      // Ignore; we're tearing down anyway.
+      const reply = await this._control({ op: 'open', port: serialPort, baudRate });
+      if (!reply.ok) return reply;
+      this.serialPort = serialPort; this.baudRate = baudRate;
+      await this._startSession();
+      return reply;
+    } catch (error) {
+      this.lastError = error.message;
+      await this.disconnect();
+      return { op: 'open', ok: false, error: error.message };
     }
-    if (this.socket) {
-      this.socket.close();
-      this.socket = null;
-    }
-    console.log('Disconnected from proxy.');
+  }
+
+  /** Query the proxy's serial-port status. */
+  async status() { return this._control({ op: 'status' }); }
+
+  /** Prefix an entire v2 frame with the existing proxy WRITE opcode. */
+  async _writeBytes(buffer) {
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) throw new ConnectionClosedError('Proxy not connected');
+    const message = new Uint8Array(buffer.byteLength + 1);
+    message[0] = OP_WRITE; message.set(new Uint8Array(buffer), 1);
+    this.socket.send(message);
+  }
+
+  /** Read only the missing frame bytes; one outstanding READ avoids proxy FIFO ambiguity. */
+  _readBytes(needed) {
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return Promise.reject(new ConnectionClosedError('Proxy not connected'));
+    return new Promise((resolve, reject) => {
+      const pending = { resolve, reject };
+      pending.timer = setTimeout(() => {
+        const error = new Error('Proxy read timed out');
+        this._rejectTransport(error); this.socket?.close();
+      }, this.requestTimeoutMs);
+      this._pendingReads.push(pending);
+      try { this.socket.send(new Uint8Array([OP_READ, needed & 255, needed >> 8])); }
+      catch (error) { this._rejectTransport(error); this.socket?.close(); }
+    });
+  }
+
+  /** Stop session work, request port closure, then close the socket even on proxy errors. */
+  disconnect() {
+    if (this._closing) return this._closing;
+    this._endSession();
+    this._closing = this._closeSocket().finally(() => { this._closing = null; });
+    return this._closing;
+  }
+
+  /** Release pending transport requests and close exactly the socket owned by this client. */
+  async _closeSocket() {
+    const socket = this.socket;
+    try { if (socket?.readyState === WebSocket.OPEN) await this._control({ op: 'close' }); }
+    catch { /* The socket still must close when the proxy cannot acknowledge teardown. */ }
+    this._rejectTransport(new ConnectionClosedError());
+    if (this.socket === socket) this.socket = null;
+    this.serialPort = null; socket?.close();
+    if (this._readerTask) await this._readerTask;
   }
 }
 

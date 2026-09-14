@@ -1,3 +1,5 @@
+// API-v2 actions display controller errors and await command acknowledgements.
+import { useCommandAction } from '../../hooks/useCommandAction';
 import React, { useState, useContext } from 'react';
 import { ControllerContext } from '../../contexts/ControllerContext';
 import './GPIOTab.css';
@@ -5,31 +7,32 @@ import './GPIOTab.css';
 const GPIOModes = ['INPUT_PULLDOWN', 'INPUT_PULLUP', 'INPUT_NOPULL', 'OUTPUT'];
 
 function GPIOTab() {
+    const [commandError, runCommand] = useCommandAction();
     const { controller } = useContext(ControllerContext);
     const [gpioStates, setGpioStates] = useState(new Array(8).fill(0));
     const [gpioModes, setGpioModes] = useState(new Array(8).fill(0));
     const [gpioValues, setGpioValues] = useState(new Array(8).fill('unknown'));
 
     const handleModeChange = async (index, mode) => {
+        await controller.initialize_gpio_pin(parseInt(index), parseInt(mode));
         setGpioModes(modes => {
             const newModes = [...modes];
             newModes[index] = mode;
             return newModes;
         });
-        await controller.initialize_gpio_pin(parseInt(index), parseInt(mode));
     };
 
     const handleStateChange = async (index, state) => {
+        await controller.set_gpio_pin_state(parseInt(index), parseInt(state));
         setGpioStates(states => {
             const newStates = [...states];
             newStates[index] = state;
             return newStates;
         });
-        await controller.set_gpio_pin_state(parseInt(index), parseInt(state));
     };
 
-    const toggleStatusLED = () => {
-        controller.toggle_status_led_state(); // Replace with actual controller method
+    const toggleStatusLED = async () => {
+        await controller.toggle_status_led_state(); // Replace with actual controller method
     };
 
     const readGPIO = async (index) => {
@@ -44,9 +47,10 @@ function GPIOTab() {
 
     return (
         <div id="tabGPIO" className="controllerTab k-panel">
+            {commandError && <p className="conn-error" role="alert">{commandError}</p>}
             <h2>Status LED</h2>
             <div>
-                <button className='k-button' onClick={toggleStatusLED}>Toggle Status LED</button>
+                <button className='k-button' onClick={() => runCommand(toggleStatusLED)}>Toggle Status LED</button>
             </div>
             <hr/>
             <h2>GPIO Pins</h2>
@@ -64,7 +68,7 @@ function GPIOTab() {
                                     name={`GPIO${index}Mode`} 
                                     value={modeIndex} 
                                     checked={mode === modeIndex} 
-                                    onChange={() => handleModeChange(index, modeIndex)}
+                                    onChange={() => runCommand(() => handleModeChange(index, modeIndex))}
                                 />
                                 <label htmlFor={`GPIO${index}Mode${m}`}>{m}</label>
                             </div>
@@ -79,12 +83,12 @@ function GPIOTab() {
                             value={gpioStates[index]}
                             step="1" 
                             id={`GPIO${index}State`} 
-                            onChange={(e) => handleStateChange(index, parseInt(e.target.value))}
+                            onChange={(e) => runCommand(() => handleStateChange(index, parseInt(e.target.value)))}
                         /><br/>
                     </div>
                     <div className={`gpioPanel ${mode !== 3 ? '' : 'hidden'}`}>
                         <samp>Value: </samp><div id={`GPIO${index}Value`}>{gpioValues[index]}</div> 
-                        <button className='k-button' id={`buttonGPIO${index}Read`} onClick={() => readGPIO(index)}>Read</button>
+                        <button className='k-button' id={`buttonGPIO${index}Read`} onClick={() => runCommand(() => readGPIO(index))}>Read</button>
                     </div>
                 </div>
             ))}

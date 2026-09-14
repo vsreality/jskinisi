@@ -5,6 +5,9 @@ The library is located in the `./src/commands` directory and the web client is l
 The web client is a React application built with [Vite](https://vite.dev/); use the scripts below to run it.\
 Description of the commands can be found in [Kinisi Motion Controller framework documentation](https://raw.githubusercontent.com/szolotykh/kinisi-motor-controller-firmware/command-script/commands.md)
 
+API **2.0.0 is incompatible with API v1**. Connections now complete INIT, time
+sync, and READY before commands are available. See [protocol details](docs/protocol-v2.md).
+
 ## Run Controller client
 ```
 npm install
@@ -52,12 +55,10 @@ host over `http://localhost` and both transports work with no mixed content.
 ## Updating command file
 To update the command file, run the following command:
 ```
-cd ./tools
-pip install -r requirements.txt
-python update-commands.py --branch=main
+python tools/update-commands.py --schema ../kinisi-motor-controller-firmware/commands.json
 ```
-Where branch parameter is optional.\
-The script will generate a new file called `kinisi_commands.js` in the `./src/commands` directory.
+Use `--branch <firmware-branch>` instead to download an explicitly selected schema.
+The script updates the checked-in schema and `src/commands/kinisi_commands.js`.
 
 ## Links
 - [Kinisi Motion Controller firmware](https://github.com/szolotykh/kinisi-motor-controller-firmware)

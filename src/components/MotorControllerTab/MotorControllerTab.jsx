@@ -1,3 +1,5 @@
+// API-v2 actions display controller errors and await command acknowledgements.
+import { useCommandAction } from '../../hooks/useCommandAction';
 import { useState, useContext, useEffect, useRef } from 'react';
 import { ControllerContext } from '../../contexts/ControllerContext';
 import './MotorControllerTab.css';
@@ -5,6 +7,7 @@ import '../Common.css';
 import MotorControllerChart from './MotorControllerChart';
 
 function MotorControllerTab(){
+    const [commandError, runCommand] = useCommandAction();
     const updateInterval = 500;
     const motorControllerChartRef = useRef();
     const updateStateIntervalId = useRef(null);
@@ -184,7 +187,7 @@ function MotorControllerTab(){
         if (isUpdateStateIntervalRunning) {
           // Start the timer
           updateStateIntervalId.current = setInterval(
-            () => getControllerStateRef.current(), updateInterval);
+            () => runCommand(() => getControllerStateRef.current()), updateInterval);
         } else {
           // Stop the timer
           if (updateStateIntervalId.current) {
@@ -198,10 +201,11 @@ function MotorControllerTab(){
             clearInterval(updateStateIntervalId.current);
           }
         };
-      }, [isUpdateStateIntervalRunning, updateInterval]);
+      }, [isUpdateStateIntervalRunning, updateInterval, runCommand]);
 
     return (
         <div className='controllerTag k-container card-row motor-controller-options'>
+            {commandError && <p className="conn-error" role="alert">{commandError}</p>}
                 <fieldset className='settings-card'>
                 <legend>Motor &amp; Encoder</legend>
                 {/* Motor Controls */}
@@ -254,20 +258,20 @@ function MotorControllerTab(){
                 <div>
                     <label htmlFor='controllerFrequency'>Controller Frequency (Hz, 1-1000):</label><br/>
                     <input type='number' id='controllerFrequency' min='1' max='1000' value={controllerFrequency} onChange={handleControllerFrequencyChange}/><br/>
-                    <button className='k-button' onClick={setControllerFrequencyFunction}>Set Frequency</button>
-                    <button className='k-button' onClick={getControllerFrequencyFunction}>Get Frequency</button>
+                    <button className='k-button' onClick={() => runCommand(setControllerFrequencyFunction)}>Set Frequency</button>
+                    <button className='k-button' onClick={() => runCommand(getControllerFrequencyFunction)}>Get Frequency</button>
                 </div>
                 </fieldset>
                 <fieldset className='settings-card'>
                 <legend>Actions</legend>
                 <p>
-                    <button className='k-button k-button-primary' onClick={initializeMotorControllerFunction}>Initialize Motor Controller</button>
+                    <button className='k-button k-button-primary' onClick={() => runCommand(initializeMotorControllerFunction)}>Initialize Motor Controller</button>
                     <label htmlFor='motorSpeed'>Speed (radian/sec):</label>
                     <input className='' type='range' min='-8' max='8' step='0.5' value={motorSpeed} id='motorSpeed' onChange={handleMotorSpeedChange}/>
-                    <button className='k-button' onClick={setMotorSpeedFunction}>Set motor Speed</button>
-                    <button className='k-button' onClick={getControllerStateFunction}>Get Controller State</button>
-                    <button className='k-button' onClick={resetMotorControllerFunction}>Reset Controller</button>
-                    <button className='k-button k-button-danger' onClick={stopMotorControllerFunction}>Stop Controller</button>
+                    <button className='k-button' onClick={() => runCommand(setMotorSpeedFunction)}>Set motor Speed</button>
+                    <button className='k-button' onClick={() => runCommand(getControllerStateFunction)}>Get Controller State</button>
+                    <button className='k-button' onClick={() => runCommand(resetMotorControllerFunction)}>Reset Controller</button>
+                    <button className='k-button k-button-danger' onClick={() => runCommand(stopMotorControllerFunction)}>Stop Controller</button>
                 </p>
                 </fieldset>
             <div className='column'>
