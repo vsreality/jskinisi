@@ -16,8 +16,8 @@ class Board {
     this.writes.push(data.slice());
     const command = data[1], id = data[2] | data[3] << 8;
     if (command === INIT) {
-      this.initId = id; this.wall = Boolean(data[11]);
-      this.output(packet(INIT, id, new Uint8Array(new InitResponse(1, 0, 3, 0, 2, 0, 0, 0, 0).encode())));
+      this.initId = id; this.wall = Boolean(data[11] & 1);
+      this.output(packet(INIT, id, new Uint8Array(new InitResponse(1, 0, 3, 0, 2, 1, 0, 0, 0).encode())));
       this.output(packet(this.wall ? TIME_SYNC_REQUEST : READY, this.wall ? this.syncId : id, this.wall ? [] : [0]));
     } else if (command === TIME_SYNC_RESPONSE) {
       this.syncs++;

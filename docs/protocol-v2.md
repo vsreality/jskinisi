@@ -14,8 +14,8 @@ checked-in `tools/commands.json` snapshot.
 
 ## Clock synchronization
 
-JavaScript identifies itself as SDK type 2, version 2.0.0. By default it advertises
-wall-clock capability only. The controller initiates each timing exchange; the
+JavaScript identifies itself as SDK type 2, version 2.1.0. By default it advertises
+wall-clock and subscription capabilities. The controller initiates each timing exchange; the
 client answers `TIME_SYNC_REQUEST` with receive/send Unix microseconds. A single
 continuous reader services initial and periodic exchanges, including when the UI
 is idle. The firmware defaults to 30 seconds; `set_time_sync_interval(ms)` and
@@ -34,8 +34,8 @@ const usb = new KinisiClient(onDisconnect, { wallClock: false });
 const proxy = new KinisiWebSocketClient(host, onDisconnect, 8765, { wallClock: false });
 ```
 
-Uptime mode still requires INIT/READY and skips all time-sync exchanges. No
-subscriptions or heartbeat watchdog are introduced by this update.
+Uptime mode still requires INIT/READY and skips all time-sync exchanges.
+[Heartbeat and subscriptions](connection-monitoring.md) operate independently of time sync.
 
 ## Messages, errors and samples
 

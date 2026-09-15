@@ -1,6 +1,6 @@
 // Generated from tools/commands.json by tools/sdkgenerator.py. Do not edit.
-export const SDK_VERSION = Object.freeze([2, 0, 0]);
-export const PROTOCOL_VERSION = Object.freeze([2, 0, 0]);
+export const SDK_VERSION = Object.freeze([2, 1, 0]);
+export const PROTOCOL_VERSION = Object.freeze([2, 1, 0]);
 export const INITIALIZE_MOTOR = 0x01;
 export const SET_MOTOR_SPEED = 0x02;
 export const STOP_MOTOR = 0x03;
@@ -47,6 +47,14 @@ export const TIME_SYNC_RESPONSE = 0x72;
 export const READY = 0x73;
 export const SET_TIME_SYNC_INTERVAL = 0x74;
 export const GET_TIME_STATUS = 0x75;
+export const PING = 0x76;
+export const SET_HEARTBEAT_CONFIG = 0x77;
+export const GET_HEARTBEAT_CONFIG = 0x78;
+export const SUBSCRIBE_ODOMETRY = 0x79;
+export const UNSUBSCRIBE_ODOMETRY = 0x7a;
+export const ENCODER_ODOMETRY_EVENT = 0x7b;
+export const PLATFORM_ODOMETRY_EVENT = 0x7c;
+export const POLL_TELEMETRY = 0x7d;
 export const ErrorCode = Object.freeze({
   INCOMPATIBLE_PROTOCOL: 1,
   INVALID_ARGUMENT: 2,
@@ -352,12 +360,39 @@ export class PlatformOdometrySample {
   }
 }
 
+/** Per-connection watchdog settings. */
+export class HeartbeatConfig {
+  /** Store one decoded payload. */
+  constructor(enabled, timeout_ms) {
+    this.enabled = enabled;
+    this.timeout_ms = timeout_ms;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 5; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(HeartbeatConfig.getSize());
+    const view = new DataView(buffer);
+    view.setUint8(0, this.enabled);
+    view.setUint32(1, this.timeout_ms, true);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, HeartbeatConfig.getSize());
+    return new HeartbeatConfig(
+      Boolean(view.getUint8(0)),
+      view.getUint32(1, true),
+    );
+  }
+}
+
 /** Generated user commands; session framing belongs to KinisiSession. */
 export class Commands {
   /** Implemented by a transport session. */
   async _request(_command, _payload, _responseLength) { throw new Error("No protocol session"); }
 
-  /** This command initializes a motor and prepares it for use. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels), so platform wheels are not reconfigured out from under the platform. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED. */
+  /** This command initializes a motor and prepares it for use. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels), so platform wheels are not reconfigured out from under the platform. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, INIT_REQUIRED. */
   async initialize_motor(motor_index, is_reversed) {
     const payload = new ArrayBuffer(2);
     const requestView = new DataView(payload);
@@ -366,7 +401,7 @@ export class Commands {
     await this._request(INITIALIZE_MOTOR, payload, 0);
   }
 
-  /** This command sets the speed of the specified motor in PWM. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels); use the platform velocity commands to drive platform wheels. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, MOTOR_NOT_INITIALIZED. */
+  /** This command sets the speed of the specified motor in PWM. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels); use the platform velocity commands to drive platform wheels. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, MOTOR_NOT_INITIALIZED, INIT_REQUIRED. */
   async set_motor_speed(motor_index, pwm) {
     const payload = new ArrayBuffer(9);
     const requestView = new DataView(payload);
@@ -391,7 +426,7 @@ export class Commands {
     await this._request(BRAKE_MOTOR, payload, 0);
   }
 
-  /** This command sets the controller for the specified motor. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels), so it cannot create a competing controller on a platform wheel. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED. */
+  /** This command sets the controller for the specified motor. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels), so it cannot create a competing controller on a platform wheel. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, INIT_REQUIRED. */
   async initialize_motor_controller(motor_index, is_reversed, encoder_index, is_encoder_reversed, encoder_resolution, kp, ki, kd, integral_limit) {
     const payload = new ArrayBuffer(44);
     const requestView = new DataView(payload);
@@ -407,7 +442,7 @@ export class Commands {
     await this._request(INITIALIZE_MOTOR_CONTROLLER, payload, 0);
   }
 
-  /** This command sets the target speed for the specified motor in radians. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels); use SET_PLATFORM_TARGET_VELOCITY to drive platform wheels. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, CONTROLLER_NOT_INITIALIZED. */
+  /** This command sets the target speed for the specified motor in radians. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels); use SET_PLATFORM_TARGET_VELOCITY to drive platform wheels. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, CONTROLLER_NOT_INITIALIZED, INIT_REQUIRED. */
   async set_motor_target_speed(motor_index, speed) {
     const payload = new ArrayBuffer(9);
     const requestView = new DataView(payload);
@@ -416,7 +451,7 @@ export class Commands {
     await this._request(SET_MOTOR_TARGET_SPEED, payload, 0);
   }
 
-  /** This command resets the closed-loop controller for the specified motor: it clears the accumulated PID state (integrator windup, derivative history and internal output) and re-zeros the target speed, while keeping the controller running with its existing tuning (kp/ki/kd). Use it to recover from integrator windup or to bring a motor cleanly to a stop without deleting and re-initializing the controller. No effect if no controller is running for that motor, and ignored if the motor is currently owned by an active platform (one of its wheels). Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED. */
+  /** This command resets the closed-loop controller for the specified motor: it clears the accumulated PID state (integrator windup, derivative history and internal output) and re-zeros the target speed, while keeping the controller running with its existing tuning (kp/ki/kd). Use it to recover from integrator windup or to bring a motor cleanly to a stop without deleting and re-initializing the controller. No effect if no controller is running for that motor, and ignored if the motor is currently owned by an active platform (one of its wheels). Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, INIT_REQUIRED. */
   async reset_motor_controller(motor_index) {
     const payload = new ArrayBuffer(1);
     const requestView = new DataView(payload);
@@ -424,7 +459,7 @@ export class Commands {
     await this._request(RESET_MOTOR_CONTROLLER, payload, 0);
   }
 
-  /** This command gets the state of the controller for the specified motor. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR. */
+  /** This command gets the state of the controller for the specified motor. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
   async get_motor_controller_state(motor_index) {
     const payload = new ArrayBuffer(1);
     const requestView = new DataView(payload);
@@ -433,7 +468,7 @@ export class Commands {
     return MotorControllerState.decode(response);
   }
 
-  /** This command deletes the controller for the specified motor. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels); use STOP_PLATFORM_CONTROLLER to stop the platform controller instead. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED. */
+  /** This command deletes the controller for the specified motor. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels); use STOP_PLATFORM_CONTROLLER to stop the platform controller instead. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, INIT_REQUIRED. */
   async delete_motor_controller(motor_index) {
     const payload = new ArrayBuffer(1);
     const requestView = new DataView(payload);
@@ -441,7 +476,7 @@ export class Commands {
     await this._request(DELETE_MOTOR_CONTROLLER, payload, 0);
   }
 
-  /** This command sets the global update frequency (in Hz) of the closed-loop motor controller task. All motor controllers share a single control loop, so this frequency is global and affects every currently running controller as well as any created afterwards; the PID sampling time is updated to match. The requested value is clamped to the supported range of 1 to 1000 Hz (the 1000 Hz maximum is bounded by the 1 ms RTOS tick). The value is then quantized to the 1 ms RTOS tick (period_ms = 1000 / frequency), so effective frequencies are 1000/N Hz. A value of 0 is invalid and ignored. Defaults to 10 Hz (100 ms) at start-up. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR. */
+  /** This command sets the global update frequency (in Hz) of the closed-loop motor controller task. All motor controllers share a single control loop, so this frequency is global and affects every currently running controller as well as any created afterwards; the PID sampling time is updated to match. The requested value is clamped to the supported range of 1 to 1000 Hz (the 1000 Hz maximum is bounded by the 1 ms RTOS tick). The value is then quantized to the 1 ms RTOS tick (period_ms = 1000 / frequency), so effective frequencies are 1000/N Hz. A value of 0 is invalid and ignored. Defaults to 10 Hz (100 ms) at start-up. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
   async set_controller_frequency(frequency) {
     const payload = new ArrayBuffer(2);
     const requestView = new DataView(payload);
@@ -449,7 +484,7 @@ export class Commands {
     await this._request(SET_CONTROLLER_FREQUENCY, payload, 0);
   }
 
-  /** This command retrieves the current global update frequency (in Hz) of the closed-loop motor controller task. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR. */
+  /** This command retrieves the current global update frequency (in Hz) of the closed-loop motor controller task. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
   async get_controller_frequency() {
     const payload = new ArrayBuffer(0);
     const response = await this._request(GET_CONTROLLER_FREQUENCY, payload, 2);
@@ -457,7 +492,7 @@ export class Commands {
     return view.getUint16(0, true);
   }
 
-  /** This command initializes an encoder and prepares it for use. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR. */
+  /** This command initializes an encoder and prepares it for use. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
   async initialize_encoder(encoder_index, encoder_resolution, is_reversed) {
     const payload = new ArrayBuffer(10);
     const requestView = new DataView(payload);
@@ -467,7 +502,7 @@ export class Commands {
     await this._request(INITIALIZE_ENCODER, payload, 0);
   }
 
-  /** This command retrieves the current value of the encoder. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, ENCODER_NOT_INITIALIZED. */
+  /** This command retrieves the current value of the encoder. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, ENCODER_NOT_INITIALIZED, INIT_REQUIRED. */
   async get_encoder_value(encoder_index) {
     const payload = new ArrayBuffer(1);
     const requestView = new DataView(payload);
@@ -485,7 +520,7 @@ export class Commands {
     await this._request(START_ENCODER_ODOMETRY, payload, 0);
   }
 
-  /** This command resets the odometry calculation for the specified encoder. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR. */
+  /** This command resets the odometry calculation for the specified encoder. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
   async reset_encoder_odometry(encoder_index) {
     const payload = new ArrayBuffer(1);
     const requestView = new DataView(payload);
@@ -493,7 +528,7 @@ export class Commands {
     await this._request(RESET_ENCODER_ODOMETRY, payload, 0);
   }
 
-  /** This command stops the odometry calculation for the specified encoder. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR. */
+  /** This command stops the odometry calculation for the specified encoder. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
   async stop_encoder_odometry(encoder_index) {
     const payload = new ArrayBuffer(1);
     const requestView = new DataView(payload);
@@ -510,7 +545,7 @@ export class Commands {
     return EncoderOdometrySample.decode(response);
   }
 
-  /** This command sets the global update frequency (in Hz) of the odometry task. A single odometry task integrates all encoder and platform odometry, so this frequency is global. The requested value is clamped to the supported range of 1 to 1000 Hz (the 1000 Hz maximum is bounded by the 1 ms RTOS tick). The value is then quantized to the 1 ms RTOS tick (period_ms = 1000 / frequency), so effective frequencies are 1000/N Hz. A value of 0 is invalid and ignored. Defaults to 20 Hz (50 ms) at start-up. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR. */
+  /** This command sets the global update frequency (in Hz) of the odometry task. A single odometry task integrates all encoder and platform odometry, so this frequency is global. The requested value is clamped to the supported range of 1 to 1000 Hz (the 1000 Hz maximum is bounded by the 1 ms RTOS tick). The value is then quantized to the 1 ms RTOS tick (period_ms = 1000 / frequency), so effective frequencies are 1000/N Hz. A value of 0 is invalid and ignored. Defaults to 20 Hz (50 ms) at start-up. Rejected if the resulting calculation period exceeds half of any active subscription interval on either transport. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
   async set_odometry_frequency(frequency) {
     const payload = new ArrayBuffer(2);
     const requestView = new DataView(payload);
@@ -518,7 +553,7 @@ export class Commands {
     await this._request(SET_ODOMETRY_FREQUENCY, payload, 0);
   }
 
-  /** This command retrieves the current global update frequency (in Hz) of the odometry task. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR. */
+  /** This command retrieves the current global update frequency (in Hz) of the odometry task. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
   async get_odometry_frequency() {
     const payload = new ArrayBuffer(0);
     const response = await this._request(GET_ODOMETRY_FREQUENCY, payload, 2);
@@ -526,7 +561,7 @@ export class Commands {
     return view.getUint16(0, true);
   }
 
-  /** This command initializes a digital pin and prepares it for use. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR. */
+  /** This command initializes a digital pin and prepares it for use. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
   async initialize_gpio_pin(pin_number, mode) {
     const payload = new ArrayBuffer(2);
     const requestView = new DataView(payload);
@@ -535,7 +570,7 @@ export class Commands {
     await this._request(INITIALIZE_GPIO_PIN, payload, 0);
   }
 
-  /** This command sets the specified pin to a state. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR. */
+  /** This command sets the specified pin to a state. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
   async set_gpio_pin_state(pin_number, state) {
     const payload = new ArrayBuffer(2);
     const requestView = new DataView(payload);
@@ -544,7 +579,7 @@ export class Commands {
     await this._request(SET_GPIO_PIN_STATE, payload, 0);
   }
 
-  /** This command gets the state of the specified pin. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR. */
+  /** This command gets the state of the specified pin. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
   async get_gpio_pin_state(pin_number) {
     const payload = new ArrayBuffer(1);
     const requestView = new DataView(payload);
@@ -554,7 +589,7 @@ export class Commands {
     return view.getUint8(0);
   }
 
-  /** This command toggles the specified pin. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR. */
+  /** This command toggles the specified pin. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
   async toggle_gpio_pin_state(pin_number) {
     const payload = new ArrayBuffer(1);
     const requestView = new DataView(payload);
@@ -562,7 +597,7 @@ export class Commands {
     await this._request(TOGGLE_GPIO_PIN_STATE, payload, 0);
   }
 
-  /** This command sets the status LED to a state. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR. */
+  /** This command sets the status LED to a state. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
   async set_status_led_state(state) {
     const payload = new ArrayBuffer(1);
     const requestView = new DataView(payload);
@@ -570,13 +605,13 @@ export class Commands {
     await this._request(SET_STATUS_LED_STATE, payload, 0);
   }
 
-  /** This command toggles the status LED. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR. */
+  /** This command toggles the status LED. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
   async toggle_status_led_state() {
     const payload = new ArrayBuffer(0);
     await this._request(TOGGLE_STATUS_LED_STATE, payload, 0);
   }
 
-  /** This command initializes a mecanum (4-wheel) platform and prepares it for use. It uses motor and encoder indices 0, 1, 2 and 3 (one per wheel), which correspond to the is_reversed_0..3 and is_encoder_reversed_0..3 parameters. All four motor slots are occupied by this platform. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR. */
+  /** This command initializes a mecanum (4-wheel) platform and prepares it for use. It uses motor and encoder indices 0, 1, 2 and 3 (one per wheel), which correspond to the is_reversed_0..3 and is_encoder_reversed_0..3 parameters. All four motor slots are occupied by this platform. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
   async initialize_mecanum_platform(is_reversed_0, is_reversed_1, is_reversed_2, is_reversed_3, is_encoder_reversed_0, is_encoder_reversed_1, is_encoder_reversed_2, is_encoder_reversed_3, length, width, wheels_diameter, encoder_resolution) {
     const payload = new ArrayBuffer(40);
     const requestView = new DataView(payload);
@@ -595,7 +630,7 @@ export class Commands {
     await this._request(INITIALIZE_MECANUM_PLATFORM, payload, 0);
   }
 
-  /** This command initializes an omni (3-wheel) platform and prepares it for use. It uses motor and encoder indices 0, 1 and 2 (one per wheel), which correspond to the is_reversed_0..2 and is_encoder_reversed_0..2 parameters. Motor index 3 is not used by this platform and stays free for other purposes. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR. */
+  /** This command initializes an omni (3-wheel) platform and prepares it for use. It uses motor and encoder indices 0, 1 and 2 (one per wheel), which correspond to the is_reversed_0..2 and is_encoder_reversed_0..2 parameters. Motor index 3 is not used by this platform and stays free for other purposes. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
   async initialize_omni_platform(is_reversed_0, is_reversed_1, is_reversed_2, is_encoder_reversed_0, is_encoder_reversed_1, is_encoder_reversed_2, wheels_diameter, robot_radius, encoder_resolution) {
     const payload = new ArrayBuffer(30);
     const requestView = new DataView(payload);
@@ -611,7 +646,7 @@ export class Commands {
     await this._request(INITIALIZE_OMNI_PLATFORM, payload, 0);
   }
 
-  /** This command initializes a differential (2-wheel) platform and prepares it for use. It uses motor and encoder index 0 for the left wheel and index 1 for the right wheel, which correspond to the is_reversed_0/1 and is_encoder_reversed_0/1 parameters. Motor indices 2 and 3 are not used by this platform and stay free for other purposes. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR. */
+  /** This command initializes a differential (2-wheel) platform and prepares it for use. It uses motor and encoder index 0 for the left wheel and index 1 for the right wheel, which correspond to the is_reversed_0/1 and is_encoder_reversed_0/1 parameters. Motor indices 2 and 3 are not used by this platform and stay free for other purposes. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
   async initialize_differential_platform(is_reversed_0, is_reversed_1, is_encoder_reversed_0, is_encoder_reversed_1, wheel_diameter, wheel_base, encoder_resolution) {
     const payload = new ArrayBuffer(28);
     const requestView = new DataView(payload);
@@ -625,7 +660,7 @@ export class Commands {
     await this._request(INITIALIZE_DIFFERENTIAL_PLATFORM, payload, 0);
   }
 
-  /** This command sets the velocity for the platform in PWM. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, PLATFORM_NOT_INITIALIZED. */
+  /** This command sets the velocity for the platform in PWM. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, PLATFORM_NOT_INITIALIZED, INIT_REQUIRED. */
   async set_platform_velocity(x, y, t) {
     const payload = new ArrayBuffer(24);
     const requestView = new DataView(payload);
@@ -635,7 +670,7 @@ export class Commands {
     await this._request(SET_PLATFORM_VELOCITY, payload, 0);
   }
 
-  /** This command sets the controller for the platform. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, PLATFORM_NOT_INITIALIZED. */
+  /** This command sets the controller for the platform. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, PLATFORM_NOT_INITIALIZED, INIT_REQUIRED. */
   async start_platform_controller(kp, ki, kd, integral_limit) {
     const payload = new ArrayBuffer(32);
     const requestView = new DataView(payload);
@@ -646,7 +681,7 @@ export class Commands {
     await this._request(START_PLATFORM_CONTROLLER, payload, 0);
   }
 
-  /** This command set the target velocity for the platform in meters per second. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, PLATFORM_NOT_INITIALIZED, CONTROLLER_NOT_INITIALIZED. */
+  /** This command set the target velocity for the platform in meters per second. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, PLATFORM_NOT_INITIALIZED, CONTROLLER_NOT_INITIALIZED, INIT_REQUIRED. */
   async set_platform_target_velocity(x, y, t) {
     const payload = new ArrayBuffer(24);
     const requestView = new DataView(payload);
@@ -656,7 +691,7 @@ export class Commands {
     await this._request(SET_PLATFORM_TARGET_VELOCITY, payload, 0);
   }
 
-  /** This command gets the current velocity of the platform in meters per second. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR. */
+  /** This command gets the current velocity of the platform in meters per second. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
   async get_platform_current_velocity() {
     const payload = new ArrayBuffer(0);
     const response = await this._request(GET_PLATFORM_CURRENT_VELOCITY, payload, 24);
@@ -675,13 +710,13 @@ export class Commands {
     await this._request(START_PLATFORM_ODOMETRY, payload, 0);
   }
 
-  /** This command resets the odometry calculation for the platform. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR. */
+  /** This command resets the odometry calculation for the platform. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
   async reset_platform_odometry() {
     const payload = new ArrayBuffer(0);
     await this._request(RESET_PLATFORM_ODOMETRY, payload, 0);
   }
 
-  /** This command stops the odometry calculation for the platform. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR. */
+  /** This command stops the odometry calculation for the platform. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
   async stop_platform_odometry() {
     const payload = new ArrayBuffer(0);
     await this._request(STOP_PLATFORM_ODOMETRY, payload, 0);
@@ -714,10 +749,55 @@ export class Commands {
     await this._request(SET_TIME_SYNC_INTERVAL, payload, 0);
   }
 
-  /** Read this connection's clock mode, quality, interval and age. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR. */
+  /** Read this connection's clock mode, quality, interval and age. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
   async get_time_status() {
     const payload = new ArrayBuffer(0);
     const response = await this._request(GET_TIME_STATUS, payload, 14);
     return TimeStatus.decode(response);
+  }
+
+  /** Refresh connection activity and receive an empty ACK. Any structurally valid client command also refreshes activity; malformed frames do not. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
+  async ping() {
+    const payload = new ArrayBuffer(0);
+    await this._request(PING, payload, 0);
+  }
+
+  /** Configure this session watchdog after READY. Timeout coasts all motors, clears subscriptions and requires a new INIT before further operations. Disabling also removes this session subscriptions. INIT resets to disabled, 500 ms. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CLOCK_NOT_READY. */
+  async set_heartbeat_config(enabled, timeout_ms) {
+    const payload = new ArrayBuffer(5);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, enabled);
+    requestView.setUint32(1, timeout_ms, true);
+    await this._request(SET_HEARTBEAT_CONFIG, payload, 0);
+  }
+
+  /** Read this session watchdog configuration. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
+  async get_heartbeat_config() {
+    const payload = new ArrayBuffer(0);
+    const response = await this._request(GET_HEARTBEAT_CONFIG, payload, 5);
+    return HeartbeatConfig.decode(response);
+  }
+
+  /** Publish the latest completed sample using the requested scheduling interval without rounding it to calculation ticks. Delivery is subject to transport capacity and task scheduling. Requires READY, an enabled heartbeat and running odometry. Replaces an existing subscription for this source. Interval must be at least twice the calculation period. No renewal is needed. Stop/reset of calculation pauses samples until fresh measurements exist; unsubscribe, INIT, disconnect or watchdog timeout removes subscriptions. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CLOCK_NOT_READY, ODOMETRY_NOT_INITIALIZED. */
+  async subscribe_odometry(source, interval_ms) {
+    const payload = new ArrayBuffer(5);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, source);
+    requestView.setUint32(1, interval_ms, true);
+    await this._request(SUBSCRIBE_ODOMETRY, payload, 0);
+  }
+
+  /** Remove this source subscription; succeeds if already absent. Does not stop odometry calculation. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
+  async unsubscribe_odometry(source) {
+    const payload = new ArrayBuffer(1);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, source);
+    await this._request(UNSUBSCRIBE_ODOMETRY, payload, 0);
+  }
+
+  /** I2C master service request. Allows at most one due odometry event before its empty ACK, so the master can clock out telemetry without waiting indefinitely when no sample is available. USB clients receive events automatically and do not need this command. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CLOCK_NOT_READY. */
+  async poll_telemetry() {
+    const payload = new ArrayBuffer(0);
+    await this._request(POLL_TELEMETRY, payload, 0);
   }
 }
