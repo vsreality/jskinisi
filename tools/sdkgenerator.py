@@ -2,10 +2,14 @@
 """Generate deterministic JavaScript codecs and requests for Kinisi API v2."""
 import json
 from pathlib import Path
+import re
 
 TYPES = {'bool':(1,'Uint8'), 'uint8_t':(1,'Uint8'), 'int8_t':(1,'Int8'),
          'uint16_t':(2,'Uint16'), 'int16_t':(2,'Int16'), 'uint32_t':(4,'Uint32'),
          'int32_t':(4,'Int32'), 'uint64_t':(8,'BigUint64'), 'int64_t':(8,'BigInt64'), 'double':(8,'Float64')}
+# Additional user commands are generated freely; these support handwritten session behavior.
+SESSION_COMMANDS = {'PING', 'SET_HEARTBEAT_CONFIG', 'SUBSCRIBE_ODOMETRY',
+                    'UNSUBSCRIBE_ODOMETRY', 'ENCODER_ODOMETRY_EVENT', 'PLATFORM_ODOMETRY_EVENT'}
 
 
 def class_name(name):
@@ -15,8 +19,12 @@ def class_name(name):
 
 def generate_js_code(schema, js_version='ES6'):
     """Resolve response references and emit packed little-endian payload codecs."""
-    if schema['version'] != '2.0.0':
-        raise ValueError('This runtime supports protocol 2.0.0')
+    version = schema.get('version')
+    if not isinstance(version, str) or not re.fullmatch(r'2\.\d+\.\d+', version):
+        raise ValueError('This runtime requires a protocol 2.x.x schema')
+    missing = SESSION_COMMANDS - {c.get('command') for c in schema.get('commands', [])}
+    if missing:
+        raise ValueError('Schema is missing runtime commands: ' + ', '.join(sorted(missing)))
     objects = {o['name']: o for o in schema['objects']}
     def size(t):
         return TYPES[t][0] if t in TYPES else sum(size(p['type']) for p in objects[t]['properties'])
@@ -28,8 +36,8 @@ def generate_js_code(schema, js_version='ES6'):
             value = f'exactBigInt({value})'
         return f'view.set{TYPES[t][1]}({offset}, {value}'+(', true' if size(t)>1 else '')+');'
     lines = ['// Generated from tools/commands.json by tools/sdkgenerator.py. Do not edit.\n',
-             'export const SDK_VERSION = Object.freeze([2, 0, 0]);\n',
-             'export const PROTOCOL_VERSION = Object.freeze([2, 0, 0]);\n']
+             'export const SDK_VERSION = Object.freeze([2, 1, 0]);\n',
+             f"export const PROTOCOL_VERSION = Object.freeze({json.dumps([int(v) for v in schema['version'].split('.')])});\n"]
     for c in schema['commands']:
         if c.get('direction') not in ('client_to_controller','controller_to_client'):
             raise ValueError('Missing or invalid direction: '+c['command'])

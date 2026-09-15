@@ -1,7 +1,9 @@
 // File: kinisi_session.js
 // Shared API-v2 framing, readiness and clock exchange for serial and proxy transports.
 import { Commands, INIT, READY, ERROR, TIME_SYNC_REQUEST, TIME_SYNC_RESPONSE,
-  SDK_VERSION, PROTOCOL_VERSION, InitResponse, ErrorCode, ErrorDescriptions } from './kinisi_commands.js';
+  SDK_VERSION, PROTOCOL_VERSION, InitResponse, ErrorCode, ErrorDescriptions,
+  SET_HEARTBEAT_CONFIG, UNSUBSCRIBE_ODOMETRY, ENCODER_ODOMETRY_EVENT, PLATFORM_ODOMETRY_EVENT,
+  EncoderOdometrySample, PlatformOdometrySample } from './kinisi_commands.js';
 
 /** A controller ERROR retains the original request identity and error code. */
 export class ControllerError extends Error {
@@ -39,7 +41,7 @@ function frame(command, id, payload = new Uint8Array()) {
 export class KinisiSession extends Commands {
   /** Configure deadlines and optionally choose uptime mode or a Unix-us clock provider. */
   constructor({ wallClock = true, requestTimeoutMs = 2000, initTimeoutMs = 5000,
-    frameTimeoutMs = 2000, nowUnixUs = unixClock() } = {}) {
+    frameTimeoutMs = 2000, nowUnixUs = unixClock(), heartbeatTimeoutMs = 500 } = {}) {
     super();
     for (const value of [requestTimeoutMs, initTimeoutMs, frameTimeoutMs]) {
       if (!Number.isFinite(value) || value <= 0) throw new TypeError('Timeouts must be positive milliseconds');
@@ -47,6 +49,13 @@ export class KinisiSession extends Commands {
     this.wallClock = wallClock; this.requestTimeoutMs = requestTimeoutMs;
     this.initTimeoutMs = initTimeoutMs; this.frameTimeoutMs = frameTimeoutMs;
     this.nowUnixUs = nowUnixUs;
+    if (heartbeatTimeoutMs !== null && (!Number.isInteger(heartbeatTimeoutMs) || heartbeatTimeoutMs < 100 || heartbeatTimeoutMs > 60000)) {
+      throw new TypeError('heartbeatTimeoutMs must be 100..60000, or null to disable');
+    }
+    this.heartbeatTimeoutMs = heartbeatTimeoutMs;
+    this._heartbeatTimer = null; this._heartbeatIntervalMs = null; this._lastSentMs = 0;
+    this._heartbeatPending = false;
+    this._subscriptionSamples = new Map();
     this.ready = false; this.boardInfo = null; this.clockMode = null;
     this.lastError = null; this.lastSyncError = null;
     this._pending = new Map(); this._retired = new Set(); this._nextId = 1;
@@ -61,9 +70,10 @@ export class KinisiSession extends Commands {
     this.lastError = null; this.lastSyncError = null; this._buffer = new Uint8Array();
     this._retired.clear(); this._writeChain = Promise.resolve();
     const session = {}; this._session = session;
-    const init = this._sendRequest(INIT, new Uint8Array([2, ...SDK_VERSION, ...PROTOCOL_VERSION, this.wallClock ? 1 : 0]), InitResponse.getSize(), true);
+    const init = this._sendRequest(INIT, new Uint8Array([2, ...SDK_VERSION, ...PROTOCOL_VERSION, this.wallClock ? 3 : 2]), InitResponse.getSize(), true);
     this._readerTask = this._readLoop(session);
     await init;
+    if (this.heartbeatTimeoutMs !== null) await this.set_heartbeat_config(true, this.heartbeatTimeoutMs);
   }
 
   /** Allocate nonzero IDs, avoiding live requests and IDs retired after timeout. */
@@ -86,6 +96,7 @@ export class KinisiSession extends Commands {
           await Promise.race([this._writeBytes(data), new Promise((_, reject) => {
             timer = setTimeout(() => reject(new RequestTimeoutError('Transport write timed out')), this.requestTimeoutMs);
           })]);
+          this._lastSentMs = performance.now();
         } finally { clearTimeout(timer); }
       }
     });
@@ -96,7 +107,41 @@ export class KinisiSession extends Commands {
   /** Generated commands cannot bypass the INIT/READY gate. */
   async _request(command, payload, responseLength) {
     if (!this.ready) throw new ProtocolError('Controller is not ready; complete INIT first');
-    return this._sendRequest(command, payload, responseLength, false);
+    const session = this._session;
+    const response = await this._sendRequest(command, payload, responseLength, false);
+    if (this._session !== session) throw new ConnectionClosedError();
+    const data = bytes(payload);
+    if (command === SET_HEARTBEAT_CONFIG) {
+      const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+      this._heartbeatIntervalMs = data[0] ? view.getUint32(1, true) / 5 : null;
+      if (!data[0]) this._subscriptionSamples.clear();
+      this._scheduleHeartbeat(session);
+    } else if (command === UNSUBSCRIBE_ODOMETRY) this._subscriptionSamples.delete(data[0]);
+    return response;
+  }
+
+  /** Check actual outgoing activity before sending the next correlated idle PING. */
+  _scheduleHeartbeat(session) {
+    clearTimeout(this._heartbeatTimer);
+    if (session !== this._session || this._heartbeatIntervalMs === null) return;
+    const delay = Math.max(5, this._heartbeatIntervalMs - (performance.now() - this._lastSentMs));
+    this._heartbeatTimer = setTimeout(async () => {
+      if (session !== this._session || this._heartbeatIntervalMs === null) return;
+      try {
+        if (this.ready && !this._heartbeatPending && performance.now() - this._lastSentMs >= this._heartbeatIntervalMs) {
+          this._heartbeatPending = true;
+          try { await this.ping(); }
+          finally { if (session === this._session) this._heartbeatPending = false; }
+        }
+      } catch (error) { if (session === this._session) this._fatal(error); return; }
+      this._scheduleHeartbeat(session);
+    }, delay);
+  }
+
+  /** Return the latest streamed sample without a request or an unbounded event queue. */
+  getSubscriptionSample(source) {
+    if (!Number.isInteger(source) || source < 0 || source > 4) throw new TypeError('source must be 0..4');
+    return this._subscriptionSamples.get(source) ?? null;
   }
 
   /** Register the expected response before writing so immediate replies cannot be lost. */
@@ -153,6 +198,14 @@ export class KinisiSession extends Commands {
   /** Dispatch replies by command + ID; controller IDs occupy an independent namespace. */
   async _message(message, receivedUs) {
     const command = message[1], id = message[2] | message[3] << 8, payload = message.slice(4);
+    if ([ENCODER_ODOMETRY_EVENT, PLATFORM_ODOMETRY_EVENT].includes(command)) {
+      const encoder = command === ENCODER_ODOMETRY_EVENT;
+      if (id || payload.length !== (encoder ? 19 : 34) || (encoder && payload[0] > 3)) throw new ProtocolError('Malformed odometry event');
+      const sample = encoder ? EncoderOdometrySample.decode(payload.slice(1)) : PlatformOdometrySample.decode(payload);
+      if (![0, 1].includes(sample.clock_mode) || ![1, 2].includes(sample.clock_quality)) throw new ProtocolError('Invalid odometry clock metadata');
+      if (this.ready) this._subscriptionSamples.set(encoder ? payload[0] : 4, sample);
+      return;
+    }
     if (!id) throw new ProtocolError('Message ID zero is reserved');
     if (command === TIME_SYNC_REQUEST) {
       if (!this.wallClock || payload.length) throw new ProtocolError('Unexpected time-sync request');
@@ -171,7 +224,11 @@ export class KinisiSession extends Commands {
       const pending = this._pending.get(id);
       if (!pending) return; // Late reply after timeout.
       if (pending.command !== payload[0]) throw new ProtocolError('ERROR refers to the wrong command');
-      if ([ErrorCode.INIT_REQUIRED, ErrorCode.CLOCK_NOT_READY].includes(error.code)) this.ready = false;
+      if ([ErrorCode.INIT_REQUIRED, ErrorCode.CLOCK_NOT_READY].includes(error.code)) {
+        this.ready = false;
+        clearTimeout(this._heartbeatTimer); this._heartbeatIntervalMs = null;
+        this._subscriptionSamples.clear();
+      }
       this._finish(id, error); return;
     }
     const pending = this._pending.get(id);
@@ -201,6 +258,9 @@ export class KinisiSession extends Commands {
   /** End a session, rejecting every waiter and preventing queued writes after disconnect. */
   _endSession(error = new ConnectionClosedError()) {
     this._session = null; this.ready = false;
+    clearTimeout(this._heartbeatTimer); this._heartbeatTimer = null; this._heartbeatIntervalMs = null;
+    this._heartbeatPending = false;
+    this._subscriptionSamples.clear();
     clearTimeout(this._frameTimer); this._frameTimer = null;
     for (const id of this._pending.keys()) this._finish(id, error);
     this._buffer = new Uint8Array();

@@ -4,7 +4,8 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { KinisiSession, ControllerError, RequestTimeoutError } from './kinisi_session.js';
 import { INIT, READY, TIME_SYNC_REQUEST, TIME_SYNC_RESPONSE, ERROR,
   GET_ENCODER_VALUE, GET_ENCODER_ODOMETRY, GET_TIME_STATUS, InitResponse,
-  EncoderOdometrySample, TimeStatus, MotorControllerState } from './kinisi_commands.js';
+  EncoderOdometrySample, TimeStatus, MotorControllerState,
+  PING, SET_HEARTBEAT_CONFIG, ENCODER_ODOMETRY_EVENT } from './kinisi_commands.js';
 
 /** Build fixture messages independently of the SDK frame encoder. */
 function packet(command, id, payload = []) {
@@ -19,7 +20,7 @@ class FakeClient extends KinisiSession {
   /** Start an in-memory endpoint that can split, delay, and reorder board replies. */
   constructor(options = {}) {
     let now = 1700000000000000n;
-    super({ nowUnixUs: () => (now += 100n), ...options });
+    super({ heartbeatTimeoutMs: null, nowUnixUs: () => (now += 100n), ...options });
     this.chunks = []; this.writes = []; this.waiter = null;
     this.syncs = 0; this.syncId = 400; this.handler = null;
     clients.push(this);
@@ -41,7 +42,7 @@ class FakeClient extends KinisiSession {
     const command = data[1], id = data[2] | data[3] << 8;
     if (command === INIT) {
       this.initId = id;
-      const identity = new InitResponse(1, 0, 3, 1, 2, 0, 0, 0x12345678, 0x90abcdef).encode();
+      const identity = new InitResponse(1, 0, 3, 1, 2, 1, 0, 0x12345678, 0x90abcdef).encode();
       const response = packet(INIT, id, identity);
       // Fragment identity, then coalesce its end with the next message.
       this.push(response.slice(0, 2));
@@ -67,12 +68,57 @@ afterEach(async () => {
 });
 
 describe('API v2 session', () => {
+  it('sends idle pings, suppresses them during traffic, and stops after disable', async () => {
+    vi.useFakeTimers();
+    const c = new FakeClient({ heartbeatTimeoutMs: 500 });
+    await c.connect();
+    expect([...c.writes.at(-1).slice(4)]).toEqual([1, 244, 1, 0, 0]);
+    expect(c.writes.at(-1)[1]).toBe(SET_HEARTBEAT_CONFIG);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(c.writes.at(-1)[1]).toBe(PING);
+    const pings = c.writes.filter(d => d[1] === PING).length;
+    for (let i = 0; i < 5; i++) {
+      await c.get_encoder_value(0);
+      await vi.advanceTimersByTimeAsync(40);
+    }
+    expect(c.writes.filter(d => d[1] === PING)).toHaveLength(pings);
+    await c.set_heartbeat_config(false, 500);
+    const count = c.writes.length;
+    await vi.advanceTimersByTimeAsync(500);
+    expect(c.writes).toHaveLength(count);
+  });
+
+  it('stores the latest ID-zero sample without consuming a pending GET response', async () => {
+    const c = new FakeClient(); await c.connect();
+    c.handler = () => {};
+    const reply = c.get_encoder_value(0); await flush();
+    const id = c.writes.at(-1)[2];
+    for (const timestamp of [123n, 456n]) {
+      const sample = new Uint8Array(new EncoderOdometrySample(timestamp, 1, 1, 2.5).encode());
+      c.push(packet(ENCODER_ODOMETRY_EVENT, 0, [0, ...sample]));
+    }
+    c.push(packet(GET_ENCODER_VALUE, id, [42, 0]));
+    expect(await reply).toBe(42);
+    expect(c.getSubscriptionSample(0).timestamp_us).toBe(456n);
+    await c.disconnect();
+    expect(c.getSubscriptionSample(0)).toBeNull();
+  });
+
+  it('closes a session when the heartbeat ACK is lost', async () => {
+    vi.useFakeTimers();
+    const c = new FakeClient({ heartbeatTimeoutMs: 500, requestTimeoutMs: 200 });
+    await c.connect(); c.handler = () => {};
+    await vi.advanceTimersByTimeAsync(301);
+    expect(c.ready).toBe(false);
+    expect(c.lastError).toContain('Timed out');
+  });
+
   it('performs fragmented INIT, three clock replies and READY before commands', async () => {
     const c = new FakeClient();
     await expect(c.get_encoder_value(0)).rejects.toThrow('not ready');
     await c.connect();
     expect(c.ready).toBe(true); expect(c.boardInfo.board_patch).toBe(1);
-    expect([...c.writes[0]]).toEqual([11, 0x70, 1, 0, 2, 2, 0, 0, 2, 0, 0, 1]);
+    expect([...c.writes[0]]).toEqual([11, 0x70, 1, 0, 2, 2, 1, 0, 2, 1, 0, 3]);
     expect(c.syncs).toBe(3);
     for (const data of c.writes.filter((d) => d[1] === TIME_SYNC_RESPONSE)) {
       const view = new DataView(data.buffer);
@@ -85,7 +131,7 @@ describe('API v2 session', () => {
 
   it('supports uptime and never advertises wall-clock capability in that mode', async () => {
     const c = new FakeClient({ wallClock: false }); await c.connect();
-    expect(c.clockMode).toBe(0); expect(c.syncs).toBe(0); expect(c.writes[0][11]).toBe(0);
+    expect(c.clockMode).toBe(0); expect(c.syncs).toBe(0); expect(c.writes[0][11]).toBe(2);
   });
 
   it('responds to periodic sync while idle without another READY', async () => {
@@ -150,7 +196,7 @@ describe('API v2 session', () => {
   it('times out if identity is received without READY', async () => {
     vi.useFakeTimers();
     const c = new FakeClient({ wallClock: false, initTimeoutMs: 10 });
-    c.handler = (d) => c.push(packet(INIT, d[2], new InitResponse(1, 0, 3, 0, 2, 0, 0, 0, 0).encode()));
+    c.handler = (d) => c.push(packet(INIT, d[2], new InitResponse(1, 0, 3, 0, 2, 1, 0, 0, 0).encode()));
     const result = c.connect().catch((e) => e); await flush();
     expect(c.ready).toBe(false);
     await vi.advanceTimersByTimeAsync(11);
