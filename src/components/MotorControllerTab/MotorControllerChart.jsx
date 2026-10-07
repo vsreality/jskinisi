@@ -1,106 +1,57 @@
-// MotorControllerChart
 import { Component } from 'react';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend,
-} from 'chart.js';
+import { Chart as ChartJS, LinearScale, PointElement, LineElement, Tooltip, Legend } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend
-);
+ChartJS.register(LinearScale, PointElement, LineElement, Tooltip, Legend);
 
-const options = {
-  responsive: true,
-  maintainAspectRatio: false,
-  animation: {
-    duration: 0 // general animation time
-  }
-};
+const series = [
+  ['current_speed', 'Measured speed', '#2563eb', false, false],
+  ['target_speed', 'Target speed', '#2563eb', true, false],
+  ['error', 'Speed error', '#d97706', false, true],
+];
 
 class MotorControllerChart extends Component {
-    constructor(props) {
-        super(props);
-        this.initialState = {
-          data:{
-              labels:[],
-              datasets: [
-                {
-                  label: 'output',
-                  data: [],
-                  borderColor: 'rgb(0, 128, 0)',
-                  backgroundColor: 'rgba(0, 128, 0, 0.5)',
-                  pointRadius: 2,
-                },
-                {
-                  label: 'target_speed',
-                  data: [],
-                  borderColor: 'rgb(255, 0, 0)',
-                  backgroundColor: 'rgba(255, 0, 0, 0.5)',
-                  pointRadius: 2,
-                },
-                {
-                  label: 'error',
-                  data: [],
-                  borderColor: 'rgb(0, 255, 255)',
-                  backgroundColor: 'rgba(0, 255, 255, 0.5)',
-                  pointRadius: 2,
-                },
-                {
-                  label: 'current_speed',
-                  data: [],
-                  borderColor: 'rgb(0, 0, 255)',
-                  backgroundColor: 'rgba(0, 0, 255, 0.5)',
-                  pointRadius: 2,
-                }
-              ],
-            }
-      };
+  state = { samples: [] };
 
-      this.state = {...this.initialState};
+  resetChart = () => this.setState({ samples: [] });
+
+  componentDidUpdate(prevProps) {
+    const value = this.props.motorControllerState;
+    if (prevProps.motorControllerState !== value && series.every(([key]) => Number.isFinite(value?.[key]))) {
+      const time = Date.now();
+      this.setState(previous => ({ samples: [...previous.samples, { value: { ...value }, time }].slice(-120) }));
     }
+  }
 
-    resetChart = () => {
-        this.setState(this.initialState);
-    };
-
-    componentDidUpdate(prevProps) {
-        // max 100 data points
-        let maxDataPoints = 100;
-        if (prevProps.motorControllerState !== this.props.motorControllerState) {
-          this.setState(prevState => ({
-            ...prevState,
-            data: {
-              ...prevState.data,
-              labels: [...prevState.data.labels, new Date().toLocaleTimeString()].slice(-maxDataPoints),
-              datasets: prevState.data.datasets.map(dataset => ({
-                ...dataset,
-                data: [...dataset.data, this.props.motorControllerState[dataset.label]].slice(-maxDataPoints),
-              })),
-            },
-          }));
-        }
-      }
-
-    render() {
-        return (
-            <div style={{ width: '100%', maxWidth: '640px', height: '300px' }}>
-                <Line options={options} data={this.state.data} />
-            </div>
-        );
-    }
+  render() {
+    const { samples } = this.state;
+    const unit = this.props.speedUnit === 'deg' ? 'deg/s' : 'rad/s';
+    const scale = this.props.speedUnit === 'deg' ? 180 / Math.PI : 1;
+    const start = samples[0]?.time ?? 0;
+    const datasets = series.map(([key, label, color, dashed, hidden]) => ({
+      label, hidden, borderColor: color, borderDash: dashed ? [6, 4] : [],
+      pointRadius: 0, pointHoverRadius: 4, borderWidth: 2,
+      yAxisID: 'speed',
+      data: samples.map(sample => ({ x: (sample.time - start) / 1000,
+        y: sample.value[key] * scale })),
+    }));
+    return <>
+      {samples.length === 0 && <p className="controller-help">No velocity samples yet.</p>}
+      <div className="velocity-chart-canvas">
+        <Line aria-label="Velocity response graph" role="img" data={{ datasets }} options={{
+          responsive: true, maintainAspectRatio: false, animation: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: { tooltip: { callbacks: {
+            label: context => `${context.dataset.label}: ${context.parsed.y.toFixed(3)} ${unit}`,
+          } } },
+          scales: {
+            x: { type: 'linear', title: { display: true, text: 'Time (s)' } },
+            speed: { type: 'linear', position: 'left', title: { display: true, text: `Speed (${unit})` } },
+          },
+        }} />
+      </div>
+    </>;
+  }
 }
 
-export default MotorControllerChart
+export default MotorControllerChart;

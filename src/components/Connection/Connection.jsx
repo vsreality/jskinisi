@@ -10,6 +10,16 @@ function Connection() {
     const { controller, setController, isConnected, setIsConnected } = useContext(ControllerContext);
     const [transport, setTransport] = useState('');
     const [disconnectError, setDisconnectError] = useState('');
+    const boardInfo = controller?.boardInfo;
+    const version = prefix => {
+        const parts = ['major', 'minor', 'patch'].map(part => boardInfo?.[`${prefix}_${part}`]);
+        return parts.every(Number.isInteger) ? parts.join('.') : 'Unavailable';
+    };
+    const buildParts = [boardInfo?.firmware_build_high, boardInfo?.firmware_build_low];
+    const firmwareBuild = buildParts.every(value => Number.isInteger(value) && value >= 0 && value <= 0xffffffff)
+        && buildParts.some(value => value !== 0)
+        ? buildParts.map(value => value.toString(16).padStart(8, '0')).join('')
+        : 'Unavailable';
 
     // Called by the panel once a controller (local or proxy) is connected.
     const onConnected = (connectedController, usedTransport) => {
@@ -47,12 +57,17 @@ function Connection() {
 
     return (
         <div className="connection-summary">
+            <h2>Controller connected</h2>
             <p className="conn-summary-text">
                 {transport
                     ? `Connected over ${transport}.`
                     : 'Connected to the controller.'}
             </p>
-            {controller.boardInfo && <p>Board version: {controller.boardInfo.board_major}.{controller.boardInfo.board_minor}.{controller.boardInfo.board_patch}</p>}
+            <dl className="connection-versions">
+                <div><dt>Board version</dt><dd>{version('board')}</dd></div>
+                <div><dt>Protocol version</dt><dd>{version('protocol')}</dd></div>
+                <div><dt>Firmware build</dt><dd>{firmwareBuild}</dd></div>
+            </dl>
             <button
                 className="k-button k-button-danger"
                 id="buttonDisconectController"

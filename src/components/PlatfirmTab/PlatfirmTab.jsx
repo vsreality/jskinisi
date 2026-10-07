@@ -1,3 +1,7 @@
+import PositionControl from '../PositionControl/PositionControl';
+import { useSettings, scaleInput } from '../../contexts/SettingsContext';
+import VelocityTuningHelp from '../VelocityTuningHelp';
+import { velocityPidDefaults } from '../../commands/velocity_tuning';
 import OdometryTimestamp from '../OdometryTimestamp';
 // API-v2 actions display controller errors and await command acknowledgements.
 import { useCommandAction } from '../../hooks/useCommandAction';
@@ -6,9 +10,12 @@ import { ControllerContext } from '../../contexts/ControllerContext';
 import './PlatformTab.css';
 import '../Common.css'
 
-function PlatformTab() {
+function PlatformTab({ isActive = true }) {
+    const { angleUnit } = useSettings();
+    const angleScale = angleUnit === 'deg' ? 180 / Math.PI : 1;
     const [commandError, runCommand] = useCommandAction();
     const { controller, isConnected} = useContext(ControllerContext);
+    const pidDefaults = velocityPidDefaults(controller?.boardInfo);
 
     const [isPlatformInitialized, setIsPlatformInitialized] = useState(false);
 
@@ -60,12 +67,13 @@ function PlatformTab() {
 
     // Controller settings
     const [isControllerInitialized, setIsControllerInitialized] = useState(false);
+    const [positionGeneration, setPositionGeneration] = useState(0);
 
     const [encoderResolution, setEncoderResolution] = useState('1425.1');
-    const [kp, setKp] = useState('0.1');
-    const [ki, setKi] = useState('0');
-    const [kd, setKd] = useState('0');
-    const [integralLimit, setIntegralLimit] = useState('30');
+    const [kp, setKp] = useState(pidDefaults.kp);
+    const [ki, setKi] = useState(pidDefaults.ki);
+    const [kd, setKd] = useState(pidDefaults.kd);
+    const [integralLimit, setIntegralLimit] = useState(pidDefaults.integralLimit);
 
     const [velocityTarget, setVelocityTarget] = useState({ x: 0, y: 0, t: 0 });
 
@@ -145,7 +153,7 @@ function PlatformTab() {
     };
 
     const handleVelocityTargetChange = (axis) => (event) => {
-        setVelocityTarget({ ...velocityTarget, [axis]: event.target.value });
+        setVelocityTarget({ ...velocityTarget, [axis]: scaleInput(event.target.value, axis === 't' ? 1 / angleScale : 1) });
     };
 
     const handleIntegralLimitChange = (event) => {
@@ -154,26 +162,33 @@ function PlatformTab() {
 
     const initializePlatformController = async () => {
         await controller.start_platform_controller(kp, ki, kd, integralLimit);
+        setPositionGeneration(value => value + 1);
         setIsControllerInitialized(true);
     };
 
     const handlePlatforControllerStop = async () => {
         await controller.stop_platform_controller();
+        setPositionGeneration(value => value + 1);
         setIsControllerInitialized(false);
     };
 
     // Actively brake all platform wheels (short brake), stopping quickly and holding position.
     const handleBrakePlatform = async () => {
         await controller.brake_platform();
+        setIsControllerInitialized(false);
+        setPositionGeneration(value => value + 1);
     };
 
     // Coast all platform wheels to a stop (free-wheel, high impedance).
     const handleCoastPlatform = async () => {
         await controller.coast_platform();
+        setIsControllerInitialized(false);
+        setPositionGeneration(value => value + 1);
     };
 
     const handleOdometryStart = async () => {
         await controller.start_platform_odometry();
+        setPositionGeneration(value => value + 1);
         setOdometry(null);
         console.log('Odometry initialized');
         setIsOdometryInitialized(true);
@@ -181,6 +196,7 @@ function PlatformTab() {
 
     const handleOdometryStop = async () => {
         await controller.stop_platform_odometry();
+        setPositionGeneration(value => value + 1);
         setOdometry(null);
         console.log('Odometry stopped');
         setIsOdometryInitialized(false);
@@ -188,6 +204,7 @@ function PlatformTab() {
 
     const handleOdometryReset = async () => {
         await controller.reset_platform_odometry();
+        setPositionGeneration(value => value + 1);
         setOdometry(null);
         console.log('Odometry reset');
     };
@@ -269,17 +286,24 @@ function PlatformTab() {
         }
 
         setIsPlatformInitialized(true);
+        setIsControllerInitialized(false);
+        setIsOdometryInitialized(false);
+        setOdometry(null);
+        setPositionGeneration(value => value + 1);
     };
 
     // Handler for setting the platform velocity
     const setPlatformVelocity = async () => {
         console.log(`Setting platform velocity to X:${velocity.x}, Y:${velocity.y}, T:${velocity.t}`);
         await controller.set_platform_velocity(velocity.x, velocity.y, velocity.t);
+        setIsControllerInitialized(false);
+        setPositionGeneration(value => value + 1);
     };
 
     const setVelocityTargetHandler = async () => {
         console.log(`Setting platform velocity target to X:${velocityTarget.x}, Y:${velocityTarget.y}, T:${velocityTarget.t}`);
         await controller.set_platform_target_velocity(velocityTarget.x, velocityTarget.y, velocityTarget.t);
+        setPositionGeneration(value => value + 1);
     }
 
     // Compute the desired drive direction (per axis: -1, 0, or +1) from the
@@ -317,6 +341,7 @@ function PlatformTab() {
             setVelocityTarget(v);
             if (isConnected && controller) {
                 await controller.set_platform_target_velocity(v.x, v.y, v.t);
+                setPositionGeneration(value => value + 1);
             }
         } else {
             const pwm = Math.max(0, Math.min(100, parseFloat(keyboardPwmSpeed) || 0));
@@ -328,13 +353,14 @@ function PlatformTab() {
             setVelocity(v);
             if (isConnected && controller) {
                 await controller.set_platform_velocity(v.x, v.y, v.t);
+                setPositionGeneration(value => value + 1);
             }
         }
     }, [computeKeyDirections, controller, isConnected, isControllerInitialized, keyboardTargetSpeed, keyboardTargetAngularSpeed, keyboardPwmSpeed]);
 
     // Register global keyboard listeners for WASD driving.
     useEffect(() => {
-        if (!keyboardControlEnabled || !isPlatformInitialized) {
+        if (!isActive || !keyboardControlEnabled || !isPlatformInitialized) {
             return;
         }
 
@@ -402,13 +428,14 @@ function PlatformTab() {
                 }
             }
         };
-    }, [keyboardControlEnabled, isPlatformInitialized, applyKeyboardVelocity, controller, isConnected, isControllerInitialized, runCommand]);
+    }, [isActive, keyboardControlEnabled, isPlatformInitialized, applyKeyboardVelocity, controller, isConnected, isControllerInitialized, runCommand]);
 
     return (
-        <div id="tabPlatform" className="platform-tab controllerTab k-row">
+        <div id="tabPlatform" className="platform-tab page-layout">
             {commandError && <p className="conn-error" role="alert">{commandError}</p>}
-            <div className='k-col s12 m6 l4'>
-                <h2>Platform Settings</h2>
+            <div className="platform-setup-grid">
+                <section className="panel-card platform-hardware">
+                <h2>Platform setup</h2>
                 <label htmlFor="platformSelector">Platform:</label>
                 <select id="platformSelector" value={platformType} onChange={handlePlatformTypeChange}>
                     <option value="mecanum">Mecanum Platform</option>
@@ -461,7 +488,7 @@ function PlatformTab() {
                         <input type='number' id='mecanum_width' value={mecanumWidth} onChange={handleMecanumWidthChange}/>
                         <label htmlFor='encoderResolution'>Encoder Resolution (ticks/rev):</label>
                         <input type='number' id='encoderResolution' value={encoderResolution} onChange={handleEncoderResolutionChange}/>
-                        <button className='k-button k-button-primary' onClick={() => runCommand(() => initializePlatform('mecanum'))}>Initialize</button><br/>
+                        <button className='k-button k-button-primary' onClick={() => runCommand(() => initializePlatform('mecanum'))}>Initialize</button>
                     </div>
                 )}
 
@@ -508,7 +535,7 @@ function PlatformTab() {
                         <input type='number' id='omni_radius' value={omniRadius} onChange={handleOmniRadiusChange}/>
                         <label htmlFor='encoderResolution'>Encoder Resolution (ticks/rev):</label>
                         <input type='number' id='encoderResolution' value={encoderResolution} onChange={handleEncoderResolutionChange}/>
-                        <button className='k-button k-button-primary' onClick={() => runCommand(() => initializePlatform('omni'))}>Initialize</button><br/>
+                        <button className='k-button k-button-primary' onClick={() => runCommand(() => initializePlatform('omni'))}>Initialize</button>
                     </div>
                 )}
 
@@ -555,12 +582,16 @@ function PlatformTab() {
                         <input type='number' id='differential_wheel_base' value={differentialWheelBase} onChange={handleDifferentialWheelBaseChange}/>
                         <label htmlFor='encoderResolution'>Encoder Resolution (ticks/rev):</label>
                         <input type='number' id='encoderResolution' value={encoderResolution} onChange={handleEncoderResolutionChange}/>
-                        <button className='k-button k-button-primary' onClick={() => runCommand(() => initializePlatform('differential'))}>Initialize</button><br/>
+                        <button className='k-button k-button-primary' onClick={() => runCommand(() => initializePlatform('differential'))}>Initialize</button>
                     </div>
                 )}
 
+                </section>
+                <section className="panel-card platform-manual">
+                    <h2>Manual driving</h2>
+                    <p className="section-help">Set PWM output directly, or enable keyboard driving below.</p>
                 <div className={!isPlatformInitialized ? 'disabled-div' : ''}>
-                    <label htmlFor="platformVelocityX">X [-100.0 to 100.0]</label>
+                    <label htmlFor="platformVelocityX">X <output>{velocity.x}%</output></label>
                     <input 
                         type="range" 
                         min="-100" 
@@ -570,7 +601,7 @@ function PlatformTab() {
                         id="platformVelocityX" 
                         onChange={handleVelocityChange('x')}
                     />
-                    <label htmlFor="platformVelocityY">Y [-100.0 to 100.0]</label>
+                    <label htmlFor="platformVelocityY">Y <output>{velocity.y}%</output></label>
                     <input 
                         type="range" 
                         min="-100" 
@@ -580,7 +611,7 @@ function PlatformTab() {
                         id="platformVelocityY" 
                         onChange={handleVelocityChange('y')}
                     />
-                    <label htmlFor="platformVelocityT">T [-100.0 to 100.0]</label>
+                    <label htmlFor="platformVelocityT">Rotation <output>{velocity.t}%</output></label>
                     <input 
                         type="range" 
                         min="-100" 
@@ -649,7 +680,7 @@ function PlatformTab() {
                         {isControllerInitialized && (
                             <span className='span-check'>
                                 <label className="checkbox-label" htmlFor="keyboardTargetAngularSpeed">
-                                    Keyboard angular speed (T, rad/s)
+                                    Keyboard angular speed (T, {angleUnit}/s)
                                 </label>
                                 <input
                                     type="number"
@@ -657,47 +688,15 @@ function PlatformTab() {
                                     id="keyboardTargetAngularSpeed"
                                     step={0.1}
                                     min={0}
-                                    value={keyboardTargetAngularSpeed}
-                                    onChange={(event) => setKeyboardTargetAngularSpeed(event.target.value)}
+                                    value={scaleInput(keyboardTargetAngularSpeed, angleScale)}
+                                    onChange={(event) => setKeyboardTargetAngularSpeed(scaleInput(event.target.value, 1 / angleScale))}
                                 />
                             </span>
                         )}
                     </div>
                 </div>
-            </div>
-            <div className='k-col s12 m6 l4'>
-                <h2>Controller Settings</h2>
-                <div>
-                    <label htmlFor='controllerFrequency'>Controller Frequency (Hz, 1-1000):</label>
-                    <input type='number' id='controllerFrequency' min='1' max='1000' value={controllerFrequency} onChange={handleControllerFrequencyChange}/>
-                    <button className='k-button' onClick={() => runCommand(handleSetControllerFrequency)}>Set Frequency</button>
-                    <button className='k-button' onClick={() => runCommand(handleGetControllerFrequency)}>Get Frequency</button>
-                </div>
-                <div className={!isPlatformInitialized ? 'disabled-div' : ''}>
-                    <label htmlFor='kp'>Kp:</label>
-                    <input type='number' id='kp' value={kp} onChange={handleKpChange}/>
-                    <label htmlFor='ki'>Ki:</label>
-                    <input type='number' id='ki' value={ki} onChange={handleKiChange}/>
-                    <label htmlFor='kd'>Kd:</label>
-                    <input type='number' id='kd' value={kd} onChange={handleKdChange}/>
-                    <label htmlFor='integralLimit'>Integral Limit:</label>
-                    <input type='number' id='integralLimit' value={integralLimit} onChange={handleIntegralLimitChange}/>
-                    <button className='k-button k-button-primary' onClick={() => runCommand(initializePlatformController)}>Initialize Platform Controller</button>
-
-                    <div className={!isControllerInitialized ? 'disabled-div' : ''}>
-                    <button className='k-button k-button-danger' onClick={() => runCommand(handlePlatforControllerStop)} disabled={!isControllerInitialized}>Stop Platform Controller</button>
-                        <label htmlFor="platformVelocityTargetX">X (m/s)</label>
-                        <input type="number" id="platformVelocityTargetX" step={0.1} value={velocityTarget.x} onChange={handleVelocityTargetChange('x')}/>
-                        <label htmlFor="platformVelocityTargetY">Y (m/s)</label>
-                        <input type="number" id="platformVelocityTargetY" step={0.1} value={velocityTarget.y} onChange={handleVelocityTargetChange('y')}/>
-                        <label htmlFor="platformVelocityTargetT">T (radian/s)</label>
-                        <input type="number" id="platformVelocityTargetT" step={0.1} value={velocityTarget.t} onChange={handleVelocityTargetChange('t')}/>
-
-                        <button className='k-button' onClick={() => runCommand(setVelocityTargetHandler)}>Set Platform Velocity Target</button>
-                    </div>
-                </div>
-            </div>
-            <div className='k-col s12 m6 l4'>
+                </section>
+            <div className="platform-feedback">
                 {/* Keep configuration, controls and timestamped pose readings together. */}
                 <fieldset className="settings-card platform-odometry-card">
                     <legend>Odometry</legend>
@@ -729,17 +728,65 @@ function PlatformTab() {
                             {[
                                 ['x', 'X', 'm'],
                                 ['y', 'Y', 'm'],
-                                ['t', 'Heading', 'rad'],
+                                ['t', 'Heading', angleUnit],
                             ].map(([key, label, unit]) => (
                                 <div key={key}>
                                     <span className="platform-odometry-label">{label}</span>
-                                    <div className="platform-odometry-value"><output>{odometry ? odometry[key].toFixed(2) : '—'}</output> <span className="platform-odometry-unit">{unit}</span></div>
+                                    <div className="platform-odometry-value"><output>{odometry ? (odometry[key] * (key === 't' ? angleScale : 1)).toFixed(2) : '—'}</output> <span className="platform-odometry-unit">{unit}</span></div>
                                 </div>
                             ))}
                         </div>
                         <OdometryTimestamp sample={odometry} />
                     </div>
                 </fieldset>
+            </div>
+            </div>
+            <div className="platform-control-grid">
+            <fieldset className="settings-card platform-velocity">
+                <legend>1. Velocity control</legend>
+                <p className="section-help">Tune wheel speed tracking first. Position control uses these settings for every wheel.</p>
+                <section className="control-section">
+                    <h3>Loop frequency</h3>
+                    <label htmlFor="controllerFrequency">Frequency (Hz, 1–1000)</label>
+                    <input type="number" id="controllerFrequency" min="1" max="1000" value={controllerFrequency} onChange={handleControllerFrequencyChange}/>
+                    <div className="action-row">
+                        <button className="k-button" onClick={() => runCommand(handleSetControllerFrequency)}>Set Frequency</button>
+                        <button className="k-button" onClick={() => runCommand(handleGetControllerFrequency)}>Get Frequency</button>
+                    </div>
+                </section>
+                <section className="control-section">
+                    <h3>PID tuning</h3>
+                    <VelocityTuningHelp boardInfo={controller?.boardInfo} ki={ki} integralLimit={integralLimit} />
+                    <fieldset className="platform-fields" disabled={!isPlatformInitialized}>
+                        <div className="form-grid">
+                            <label htmlFor="kp">Velocity Kp<input type="number" id="kp" step="any" value={kp} onChange={handleKpChange}/></label>
+                            <label htmlFor="ki">Velocity Ki<input type="number" id="ki" step="any" value={ki} onChange={handleKiChange}/></label>
+                            <label htmlFor="kd">Velocity Kd<input type="number" id="kd" step="any" value={kd} onChange={handleKdChange}/></label>
+                            <label htmlFor="integralLimit">Integral contribution limit (% PWM)<input type="number" min="0" max="100" id="integralLimit" value={integralLimit} onChange={handleIntegralLimitChange}/></label>
+                        </div>
+                        <button className="k-button k-button-primary platform-initialize" onClick={() => runCommand(initializePlatformController)}>Initialize velocity controller</button>
+                    </fieldset>
+                </section>
+                <section className="control-section">
+                    <h3>Velocity target</h3>
+                    <fieldset className="platform-fields" disabled={!isPlatformInitialized || !isControllerInitialized}>
+                        <div className="form-grid">
+                            <label htmlFor="platformVelocityTargetX">X (m/s)<input type="number" id="platformVelocityTargetX" step={0.1} value={velocityTarget.x} onChange={handleVelocityTargetChange('x')}/></label>
+                            <label htmlFor="platformVelocityTargetY">Y (m/s)<input type="number" id="platformVelocityTargetY" step={0.1} value={velocityTarget.y} onChange={handleVelocityTargetChange('y')}/></label>
+                            <label htmlFor="platformVelocityTargetT">Heading ({angleUnit}/s)<input type="number" id="platformVelocityTargetT" step={0.1} value={scaleInput(velocityTarget.t, angleScale)} onChange={handleVelocityTargetChange('t')}/></label>
+                        </div>
+                        <div className="action-row">
+                            <button className="k-button" onClick={() => runCommand(setVelocityTargetHandler)}>Set Platform Velocity Target</button>
+                            <button className="k-button k-button-danger" onClick={() => runCommand(handlePlatforControllerStop)} disabled={!isControllerInitialized}>Stop Platform Controller</button>
+                        </div>
+                    </fieldset>
+                </section>
+            </fieldset>
+            <div className="platform-position">
+                <PositionControl platform key={`${positionGeneration}-${isConnected}-${keyboardControlEnabled}`}
+                    velocityReady={isControllerInitialized} keyboardEnabled={keyboardControlEnabled}
+                    onOdometryChange={sample => { setIsOdometryInitialized(true); setOdometry(sample); }} />
+            </div>
             </div>
         </div>
     );

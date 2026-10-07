@@ -1,11 +1,11 @@
 .disabled-div {
     pointer-events: none; /* Prevents clicking on elements inside the div */
-    opacity: 0.4;         /* Makes the div look faded or disabled */
+    opacity: 0.65;
 }
 
 /* These gates nest (odometry inside encoder, targets inside controller), and
- * opacity multiplies: 0.4 x 0.4 leaves the inner controls at 0.16, which is
- * all but invisible. The outer gate already says "not available yet". */
+ * opacity multiplies and makes inner controls difficult to read.
+ * The outer gate already says "not available yet". */
 .disabled-div .disabled-div {
     opacity: 1;
 }
@@ -13,27 +13,60 @@
 /* Grouped settings card used to organize controls into titled sections. */
 .settings-card {
     border: 1px solid #d0d7de;
-    border-radius: 6px;
-    padding: 10px 14px 14px;
-    margin: 0 0 14px 0;
+    border-radius: 10px;
+    padding: 18px;
+    margin: 0;
     background-color: #fff;
-    width: 280px;
+    width: 100%;
+    min-width: 0;
     box-sizing: border-box;
 }
 
 .settings-card > legend {
-    font-weight: bold;
+    font-weight: 600;
     font-size: 15px;
     padding: 0 6px;
     color: #24292f;
 }
 
-/* Lays out multiple settings cards in a responsive wrapping row. */
+/* Cards share available space and stack when their minimum width won't fit. */
 .card-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+    gap: 24px;
     align-items: flex-start;
+}
+
+.page-layout { display: grid; gap: 24px; min-width: 0; }
+.panel-card { padding: 20px; background: #fff; border: 1px solid #d0d7de; border-radius: 10px; min-width: 0; }
+.panel-card h2 { margin: 0 0 12px; font-size: 16px; font-weight: 600; }
+.section-help { margin: 0 0 16px; color: #57606a; font-size: 13px; }
+.velocity-tuning-notice { padding: 10px 12px; border-left: 3px solid #b78103; background: #fff8e6; border-radius: 4px; color: #654b0e; }
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.form-grid > * { min-width: 0; }
+.form-grid > label, .controller-field-grid > label, .position-setting-grid > label {
+    display: flex; flex-direction: column; justify-content: space-between;
+}
+.action-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.action-row .k-button { flex: 1 1 120px; }
+.control-section + .control-section { margin-top: 20px; padding-top: 20px; border-top: 1px solid #e5e9ed; }
+.control-section h3 { margin: 0 0 12px; font-size: 14px; font-weight: 600; }
+.check-label { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.app-main label { font-size: 13px; }
+.app-main input:not([type=checkbox]):not([type=radio]):not([type=range]),
+.app-main select {
+    display: block; width: 100%; min-width: 0; min-height: 38px;
+    padding: 7px 10px; margin-top: 5px; border: 1px solid #b8c2cc;
+    border-radius: 6px; background: #fff; color: #24292f; font-size: 14px;
+}
+.app-main input[type=range] { display: block; width: 100%; margin: 12px 0; accent-color: #0969da; }
+.app-main input[type=checkbox], .app-main input[type=radio] { accent-color: #0969da; }
+.app-main :is(input, select):focus-visible { outline: 2px solid #0969da; outline-offset: 2px; }
+.app-main .k-button { min-height: 38px; white-space: normal; }
+.app-main .conn-error { padding: 10px 12px; border-radius: 6px; background: #fff1f0; overflow-wrap: anywhere; }
+@media (max-width: 480px) {
+    .form-grid { grid-template-columns: 1fr; }
+    .settings-card, .panel-card { padding: 14px; }
 }
 /* Keep full-precision sample timestamps readable inside the narrow encoder card. */
 .odometry-timestamp {

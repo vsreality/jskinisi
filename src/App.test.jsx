@@ -20,6 +20,7 @@ describe('App', () => {
       'Platform',
       'GPIO',
       'Motor Controller',
+      'Settings',
     ]) {
       expect(
         within(nav).getByRole('button', { name: section })
@@ -36,6 +37,7 @@ describe('App', () => {
     const nav = screen.getByRole('navigation', { name: 'Sections' });
     // Connection must stay reachable, or there would be no way to connect.
     expect(within(nav).getByRole('button', { name: 'Connection' })).toBeEnabled();
+    expect(within(nav).getByRole('button', { name: 'Settings' })).toBeEnabled();
     for (const section of ['Motor', 'Platform', 'GPIO', 'Motor Controller']) {
       expect(within(nav).getByRole('button', { name: section })).toBeDisabled();
     }

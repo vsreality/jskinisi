@@ -1,67 +1,46 @@
-.platform-tab .k-button{
-    margin-top: 6px;
-    min-width: 200px;
-    width: fit-content;
-    max-width: 100%;
-    display: block;
+.platform-tab { gap: 24px; }
+.platform-setup-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: start; }
+.platform-control-grid { display: grid; grid-template-columns: minmax(300px, 0.85fr) minmax(0, 1.4fr); gap: 24px; align-items: start; }
+.platform-position, .platform-position .position-workspace { display: contents; }
+.platform-position .position-chart { grid-column: 1 / -1; margin: 0; }
+.platform-position .position-setting-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; }
+.platform-position .position-gain-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.platform-position .position-target-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.platform-tab .k-button { min-width: 0; max-width: 100%; }
+.platform-tab .platform-initialize { width: 100%; margin-top: 16px; }
+.platform-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+.platform-fields:disabled { opacity: 0.6; }
+.platform-hardware h2:not(:first-child) { font-size: 14px; margin: 20px 0 12px; }
+.platform-hardware input[type=number] { margin-bottom: 12px; }
+.platform-hardware .k-button { width: 100%; margin-top: 6px; }
+.platform-hardware label:not(.checkbox-label) { display: block; margin-top: 12px; }
+.platform-hardware .span-check { display: inline-flex; align-items: center; gap: 6px; margin: 8px 12px 8px 0; }
+.platform-tab .k-check { width: 16px; height: 16px; top: 0; }
+.platform-manual label[for^=platformVelocity] { display: flex; justify-content: space-between; gap: 12px; }
+.platform-manual output { font-weight: 600; font-variant-numeric: tabular-nums; }
+.platform-manual > div > .k-button { margin: 4px 6px 4px 0; }
+.keyboard-drive { margin-top: 20px; padding-top: 16px; border-top: 1px solid #e5e9ed; }
+.keyboard-drive > .span-check { display: block; margin-top: 12px; }
+.keyboard-drive > .span-check:first-child { display: flex; flex-direction: row-reverse; justify-content: flex-end; align-items: center; gap: 8px; }
+.keyboard-drive-hint { font-size: 12px; color: #57606a; margin: 8px 0; }
+@media (max-width: 1250px) {
+    .platform-setup-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .platform-feedback { grid-column: 1 / -1; }
+    .platform-position .position-setting-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-
-.platform-tab h2{
-    margin: 6px 0;
-    font-size: 20px;
+@media (max-width: 1050px) {
+    .platform-control-grid { grid-template-columns: minmax(0, 1fr); }
 }
-
-.platform-tab p{
-    margin: 6px 0;
+@media (max-width: 800px) {
+    .platform-setup-grid { grid-template-columns: minmax(0, 1fr); }
 }
-
-.platform-tab input[type=range]{
-    display: block;
-    width: 200px;
-}
-
-.platform-tab select{
-    display: block;
-    width: 200px;
-}
-
-.span-check
-{
-    margin-right: 15px;
-}
-
-label{
-    display: block;
-}
-
-input[type=number] {
-    display: block;
-}
-
-input[type=checkbox]{
-    display: inline;
-}
-
-/* Label for the checkbox */
-.checkbox-label{
-    display: inline;
-    margin-left: 5px;
-}
-
-.keyboard-drive{
-    margin-top: 10px;
-}
-
-.keyboard-drive-hint{
-    font-size: 12px;
-    color: #555;
-    margin-top: 4px;
-    max-width: 220px;
+@media (max-width: 480px) {
+    .platform-position .position-setting-grid, .platform-position .position-target-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* Match the encoder card's grouped setup, controls and sample display. */
 .platform-tab .platform-odometry-card {
-    width: 370px;
+    width: 100%;
     max-width: 100%;
     min-width: 0;
     padding: 12px 18px 18px;

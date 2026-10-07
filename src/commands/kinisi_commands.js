@@ -1,6 +1,6 @@
 // Generated from tools/commands.json by tools/sdkgenerator.py. Do not edit.
-export const SDK_VERSION = Object.freeze([2, 1, 0]);
-export const PROTOCOL_VERSION = Object.freeze([2, 1, 0]);
+export const SDK_VERSION = Object.freeze([2, 3, 1]);
+export const PROTOCOL_VERSION = Object.freeze([2, 3, 1]);
 export const INITIALIZE_MOTOR = 0x01;
 export const SET_MOTOR_SPEED = 0x02;
 export const STOP_MOTOR = 0x03;
@@ -55,6 +55,15 @@ export const UNSUBSCRIBE_ODOMETRY = 0x7a;
 export const ENCODER_ODOMETRY_EVENT = 0x7b;
 export const PLATFORM_ODOMETRY_EVENT = 0x7c;
 export const POLL_TELEMETRY = 0x7d;
+export const INITIALIZE_MOTOR_POSITION_CONTROLLER = 0x0C;
+export const RESET_MOTOR_POSITION = 0x0D;
+export const SET_MOTOR_POSITION = 0x0E;
+export const GET_MOTOR_POSITION = 0x0F;
+export const INITIALIZE_PLATFORM_POSITION_CONTROLLER = 0x4B;
+export const RESET_PLATFORM_POSITION = 0x4C;
+export const SET_PLATFORM_POSITION = 0x4D;
+export const INITIALIZE_MOTOR_POSITION_PID_CONTROLLER = 0x10;
+export const INITIALIZE_PLATFORM_POSITION_PID_CONTROLLER = 0x4E;
 export const ErrorCode = Object.freeze({
   INCOMPATIBLE_PROTOCOL: 1,
   INVALID_ARGUMENT: 2,
@@ -392,7 +401,7 @@ export class Commands {
   /** Implemented by a transport session. */
   async _request(_command, _payload, _responseLength) { throw new Error("No protocol session"); }
 
-  /** This command initializes a motor and prepares it for use. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels), so platform wheels are not reconfigured out from under the platform. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, INIT_REQUIRED. */
+  /** This command initializes a motor and prepares it for use. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels), so platform wheels are not reconfigured out from under the platform. Stops the motor velocity and position controllers before applying the command. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, INIT_REQUIRED. */
   async initialize_motor(motor_index, is_reversed) {
     const payload = new ArrayBuffer(2);
     const requestView = new DataView(payload);
@@ -401,7 +410,7 @@ export class Commands {
     await this._request(INITIALIZE_MOTOR, payload, 0);
   }
 
-  /** This command sets the speed of the specified motor in PWM. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels); use the platform velocity commands to drive platform wheels. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, MOTOR_NOT_INITIALIZED, INIT_REQUIRED. */
+  /** This command sets the speed of the specified motor in PWM. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels); use the platform velocity commands to drive platform wheels. Stops the motor velocity and position controllers before applying the command. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, MOTOR_NOT_INITIALIZED, INIT_REQUIRED. */
   async set_motor_speed(motor_index, pwm) {
     const payload = new ArrayBuffer(9);
     const requestView = new DataView(payload);
@@ -426,8 +435,13 @@ export class Commands {
     await this._request(BRAKE_MOTOR, payload, 0);
   }
 
-  /** This command sets the controller for the specified motor. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels), so it cannot create a competing controller on a platform wheel. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, INIT_REQUIRED. */
+  /** This command sets the controller for the specified motor. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels), so it cannot create a competing controller on a platform wheel. Firmware 2.3.1 uses direct P+I+D PWM output with saturation anti-windup; retune gains from earlier builds. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, INIT_REQUIRED. */
   async initialize_motor_controller(motor_index, is_reversed, encoder_index, is_encoder_reversed, encoder_resolution, kp, ki, kd, integral_limit) {
+    if (!['number', 'string'].includes(typeof kp) || String(kp).trim() === '' || !Number.isFinite(Number(kp)) || Number(kp) < 0) throw new RangeError('kp must be finite and nonnegative');
+    if (!['number', 'string'].includes(typeof ki) || String(ki).trim() === '' || !Number.isFinite(Number(ki)) || Number(ki) < 0) throw new RangeError('ki must be finite and nonnegative');
+    if (!['number', 'string'].includes(typeof kd) || String(kd).trim() === '' || !Number.isFinite(Number(kd)) || Number(kd) < 0) throw new RangeError('kd must be finite and nonnegative');
+    if (!['number', 'string'].includes(typeof integral_limit) || String(integral_limit).trim() === '' || !Number.isFinite(Number(integral_limit)) || Number(integral_limit) < 0) throw new RangeError('integral_limit must be finite and nonnegative');
+    if (Number(integral_limit) > 100) throw new RangeError('integral_limit must be 0..100 PWM percentage points');
     const payload = new ArrayBuffer(44);
     const requestView = new DataView(payload);
     requestView.setUint8(0, motor_index);
@@ -442,7 +456,7 @@ export class Commands {
     await this._request(INITIALIZE_MOTOR_CONTROLLER, payload, 0);
   }
 
-  /** This command sets the target speed for the specified motor in radians. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels); use SET_PLATFORM_TARGET_VELOCITY to drive platform wheels. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, CONTROLLER_NOT_INITIALIZED, INIT_REQUIRED. */
+  /** This command sets the target speed for the specified motor in radians. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels); use SET_PLATFORM_TARGET_VELOCITY to drive platform wheels. Suspends position mode; a new SET_MOTOR_POSITION reactivates it. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, CONTROLLER_NOT_INITIALIZED, INIT_REQUIRED. */
   async set_motor_target_speed(motor_index, speed) {
     const payload = new ArrayBuffer(9);
     const requestView = new DataView(payload);
@@ -492,7 +506,7 @@ export class Commands {
     return view.getUint16(0, true);
   }
 
-  /** This command initializes an encoder and prepares it for use. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
+  /** This command initializes an encoder and prepares it for use. Stops controllers using this encoder before changing its configuration. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
   async initialize_encoder(encoder_index, encoder_resolution, is_reversed) {
     const payload = new ArrayBuffer(10);
     const requestView = new DataView(payload);
@@ -660,7 +674,7 @@ export class Commands {
     await this._request(INITIALIZE_DIFFERENTIAL_PLATFORM, payload, 0);
   }
 
-  /** This command sets the velocity for the platform in PWM. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, PLATFORM_NOT_INITIALIZED, INIT_REQUIRED. */
+  /** This command sets the velocity for the platform in PWM. Stops platform velocity and position control before applying PWM. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, PLATFORM_NOT_INITIALIZED, INIT_REQUIRED. */
   async set_platform_velocity(x, y, t) {
     const payload = new ArrayBuffer(24);
     const requestView = new DataView(payload);
@@ -670,8 +684,13 @@ export class Commands {
     await this._request(SET_PLATFORM_VELOCITY, payload, 0);
   }
 
-  /** This command sets the controller for the platform. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, PLATFORM_NOT_INITIALIZED, INIT_REQUIRED. */
+  /** This command sets the controller for the platform. Firmware 2.3.1 uses direct P+I+D PWM output with saturation anti-windup; retune gains from earlier builds. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, PLATFORM_NOT_INITIALIZED, INIT_REQUIRED. */
   async start_platform_controller(kp, ki, kd, integral_limit) {
+    if (!['number', 'string'].includes(typeof kp) || String(kp).trim() === '' || !Number.isFinite(Number(kp)) || Number(kp) < 0) throw new RangeError('kp must be finite and nonnegative');
+    if (!['number', 'string'].includes(typeof ki) || String(ki).trim() === '' || !Number.isFinite(Number(ki)) || Number(ki) < 0) throw new RangeError('ki must be finite and nonnegative');
+    if (!['number', 'string'].includes(typeof kd) || String(kd).trim() === '' || !Number.isFinite(Number(kd)) || Number(kd) < 0) throw new RangeError('kd must be finite and nonnegative');
+    if (!['number', 'string'].includes(typeof integral_limit) || String(integral_limit).trim() === '' || !Number.isFinite(Number(integral_limit)) || Number(integral_limit) < 0) throw new RangeError('integral_limit must be finite and nonnegative');
+    if (Number(integral_limit) > 100) throw new RangeError('integral_limit must be 0..100 PWM percentage points');
     const payload = new ArrayBuffer(32);
     const requestView = new DataView(payload);
     requestView.setFloat64(0, kp, true);
@@ -681,7 +700,7 @@ export class Commands {
     await this._request(START_PLATFORM_CONTROLLER, payload, 0);
   }
 
-  /** This command set the target velocity for the platform in meters per second. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, PLATFORM_NOT_INITIALIZED, CONTROLLER_NOT_INITIALIZED, INIT_REQUIRED. */
+  /** This command set the target velocity for the platform in meters per second. Cancels platform position control; initialize it again before another pose target. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, PLATFORM_NOT_INITIALIZED, CONTROLLER_NOT_INITIALIZED, INIT_REQUIRED. */
   async set_platform_target_velocity(x, y, t) {
     const payload = new ArrayBuffer(24);
     const requestView = new DataView(payload);
@@ -799,5 +818,173 @@ export class Commands {
   async poll_telemetry() {
     const payload = new ArrayBuffer(0);
     await this._request(POLL_TELEMETRY, payload, 0);
+  }
+
+  /** Initialize a bounded proportional position loop over an already running motor velocity controller. Zero is the current encoder position; initially holds zero. Stop/delete/reinitialize of velocity control discards position tuning. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, MOTOR_OWNED. */
+  async initialize_motor_position_controller(motor_index, kp, max_speed, tolerance) {
+    if (typeof motor_index !== 'number' || !Number.isFinite(motor_index)) throw new TypeError('motor_index must be a finite number');
+    if (!Number.isInteger(motor_index) || motor_index < 0 || motor_index > 3) throw new RangeError('motor_index must be 0..3');
+    if (typeof kp !== 'number' || !Number.isFinite(kp)) throw new TypeError('kp must be a finite number');
+    if (kp <= 0) throw new RangeError('kp must be positive');
+    if (typeof max_speed !== 'number' || !Number.isFinite(max_speed)) throw new TypeError('max_speed must be a finite number');
+    if (max_speed <= 0) throw new RangeError('max_speed must be positive');
+    if (typeof tolerance !== 'number' || !Number.isFinite(tolerance)) throw new TypeError('tolerance must be a finite number');
+    if (tolerance < 0) throw new RangeError('tolerance must be nonnegative');
+    const payload = new ArrayBuffer(25);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, motor_index);
+    requestView.setFloat64(1, kp, true);
+    requestView.setFloat64(9, max_speed, true);
+    requestView.setFloat64(17, tolerance, true);
+    await this._request(INITIALIZE_MOTOR_POSITION_CONTROLLER, payload, 0);
+  }
+
+  /** Zero the motor position and target at the current encoder count, clear velocity PID history and output, and hold zero. Requires initialized position control. Does not reset independent encoder odometry. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, MOTOR_OWNED. */
+  async reset_motor_position(motor_index) {
+    if (typeof motor_index !== 'number' || !Number.isFinite(motor_index)) throw new TypeError('motor_index must be a finite number');
+    if (!Number.isInteger(motor_index) || motor_index < 0 || motor_index > 3) throw new RangeError('motor_index must be 0..3');
+    const payload = new ArrayBuffer(1);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, motor_index);
+    await this._request(RESET_MOTOR_POSITION, payload, 0);
+  }
+
+  /** Set an absolute multi-turn angle in radians relative to the last position initialization/reset. Requires initialized position and velocity controllers. Reactivates position mode after a velocity override. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, MOTOR_OWNED. */
+  async set_motor_position(motor_index, position) {
+    if (typeof motor_index !== 'number' || !Number.isFinite(motor_index)) throw new TypeError('motor_index must be a finite number');
+    if (!Number.isInteger(motor_index) || motor_index < 0 || motor_index > 3) throw new RangeError('motor_index must be 0..3');
+    if (typeof position !== 'number' || !Number.isFinite(position)) throw new TypeError('position must be a finite number');
+    const payload = new ArrayBuffer(9);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, motor_index);
+    requestView.setFloat64(1, position, true);
+    await this._request(SET_MOTOR_POSITION, payload, 0);
+  }
+
+  /** Read the latest motor position in radians in the position-controller frame. Requires initialized position control. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, MOTOR_OWNED. */
+  async get_motor_position(motor_index) {
+    if (typeof motor_index !== 'number' || !Number.isFinite(motor_index)) throw new TypeError('motor_index must be a finite number');
+    if (!Number.isInteger(motor_index) || motor_index < 0 || motor_index > 3) throw new RangeError('motor_index must be 0..3');
+    const payload = new ArrayBuffer(1);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, motor_index);
+    const response = await this._request(GET_MOTOR_POSITION, payload, 8);
+    const view = payloadView(response, 8);
+    return view.getFloat64(0, true);
+  }
+
+  /** Initialize bounded pose control after START_PLATFORM_CONTROLLER. Starts odometry if needed, preserves its world frame and zeros velocity targets. No motion until SET_PLATFORM_POSITION. Supports omni, mecanum and differential bases. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, PLATFORM_NOT_INITIALIZED, ENCODER_NOT_INITIALIZED. */
+  async initialize_platform_position_controller(linear_kp, angular_kp, max_linear_speed, max_angular_speed, position_tolerance, heading_tolerance) {
+    if (typeof linear_kp !== 'number' || !Number.isFinite(linear_kp)) throw new TypeError('linear_kp must be a finite number');
+    if (linear_kp <= 0) throw new RangeError('linear_kp must be positive');
+    if (typeof angular_kp !== 'number' || !Number.isFinite(angular_kp)) throw new TypeError('angular_kp must be a finite number');
+    if (angular_kp <= 0) throw new RangeError('angular_kp must be positive');
+    if (typeof max_linear_speed !== 'number' || !Number.isFinite(max_linear_speed)) throw new TypeError('max_linear_speed must be a finite number');
+    if (max_linear_speed <= 0) throw new RangeError('max_linear_speed must be positive');
+    if (typeof max_angular_speed !== 'number' || !Number.isFinite(max_angular_speed)) throw new TypeError('max_angular_speed must be a finite number');
+    if (max_angular_speed <= 0) throw new RangeError('max_angular_speed must be positive');
+    if (typeof position_tolerance !== 'number' || !Number.isFinite(position_tolerance)) throw new TypeError('position_tolerance must be a finite number');
+    if (position_tolerance < 0) throw new RangeError('position_tolerance must be nonnegative');
+    if (typeof heading_tolerance !== 'number' || !Number.isFinite(heading_tolerance)) throw new TypeError('heading_tolerance must be a finite number');
+    if (heading_tolerance < 0) throw new RangeError('heading_tolerance must be nonnegative');
+    const payload = new ArrayBuffer(48);
+    const requestView = new DataView(payload);
+    requestView.setFloat64(0, linear_kp, true);
+    requestView.setFloat64(8, angular_kp, true);
+    requestView.setFloat64(16, max_linear_speed, true);
+    requestView.setFloat64(24, max_angular_speed, true);
+    requestView.setFloat64(32, position_tolerance, true);
+    requestView.setFloat64(40, heading_tolerance, true);
+    await this._request(INITIALIZE_PLATFORM_POSITION_CONTROLLER, payload, 0);
+  }
+
+  /** Cancel the pose target, zero velocity targets, and reset platform odometry to (0,0,0). Keeps position tuning. Wait for a fresh odometry sample before setting another target. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, PLATFORM_NOT_INITIALIZED. */
+  async reset_platform_position() {
+    const payload = new ArrayBuffer(0);
+    await this._request(RESET_PLATFORM_POSITION, payload, 0);
+  }
+
+  /** Set absolute (x,y,t) in the current odometry world frame: meters, meters, radians. Heading uses the shortest angular path. Requires initialized position control and fresh odometry. Differential bases approach the point before aligning final heading. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, PLATFORM_NOT_INITIALIZED, ODOMETRY_NOT_INITIALIZED, SAMPLE_NOT_AVAILABLE. */
+  async set_platform_position(x, y, t) {
+    if (typeof x !== 'number' || !Number.isFinite(x)) throw new TypeError('x must be a finite number');
+    if (typeof y !== 'number' || !Number.isFinite(y)) throw new TypeError('y must be a finite number');
+    if (typeof t !== 'number' || !Number.isFinite(t)) throw new TypeError('t must be a finite number');
+    const payload = new ArrayBuffer(24);
+    const requestView = new DataView(payload);
+    requestView.setFloat64(0, x, true);
+    requestView.setFloat64(8, y, true);
+    requestView.setFloat64(16, t, true);
+    await this._request(SET_PLATFORM_POSITION, payload, 0);
+  }
+
+  /** Protocol 2.3: initialize a position PID over the existing velocity controller. Initialize a bounded position PID loop over an already running motor velocity controller. Zero is the current encoder position; initially holds zero. Stop/delete/reinitialize of velocity control discards position tuning. Clears position PID history. Ki and Kd may be zero to disable I and D. Integral limits bound the integral velocity contribution. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, MOTOR_OWNED. */
+  async initialize_motor_position_pid_controller(motor_index, kp, max_speed, tolerance, ki, kd, integral_limit) {
+    if (typeof motor_index !== 'number' || !Number.isFinite(motor_index)) throw new TypeError('motor_index must be a finite number');
+    if (!Number.isInteger(motor_index) || motor_index < 0 || motor_index > 3) throw new RangeError('motor_index must be 0..3');
+    if (typeof kp !== 'number' || !Number.isFinite(kp)) throw new TypeError('kp must be a finite number');
+    if (kp <= 0) throw new RangeError('kp must be positive');
+    if (typeof max_speed !== 'number' || !Number.isFinite(max_speed)) throw new TypeError('max_speed must be a finite number');
+    if (max_speed <= 0) throw new RangeError('max_speed must be positive');
+    if (typeof tolerance !== 'number' || !Number.isFinite(tolerance)) throw new TypeError('tolerance must be a finite number');
+    if (tolerance < 0) throw new RangeError('tolerance must be nonnegative');
+    if (typeof ki !== 'number' || !Number.isFinite(ki)) throw new TypeError('ki must be a finite number');
+    if (ki < 0) throw new RangeError('ki must be nonnegative');
+    if (typeof kd !== 'number' || !Number.isFinite(kd)) throw new TypeError('kd must be a finite number');
+    if (kd < 0) throw new RangeError('kd must be nonnegative');
+    if (typeof integral_limit !== 'number' || !Number.isFinite(integral_limit)) throw new TypeError('integral_limit must be a finite number');
+    if (integral_limit < 0) throw new RangeError('integral_limit must be nonnegative');
+    const payload = new ArrayBuffer(49);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, motor_index);
+    requestView.setFloat64(1, kp, true);
+    requestView.setFloat64(9, max_speed, true);
+    requestView.setFloat64(17, tolerance, true);
+    requestView.setFloat64(25, ki, true);
+    requestView.setFloat64(33, kd, true);
+    requestView.setFloat64(41, integral_limit, true);
+    await this._request(INITIALIZE_MOTOR_POSITION_PID_CONTROLLER, payload, 0);
+  }
+
+  /** Protocol 2.3: initialize a position PID over the existing velocity controller. Initialize bounded pose control after START_PLATFORM_CONTROLLER. Starts odometry if needed, preserves its world frame and zeros velocity targets. No motion until SET_PLATFORM_POSITION. Supports omni, mecanum and differential bases. Clears position PID history. Ki and Kd may be zero to disable I and D. Integral limits bound the integral velocity contribution. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, PLATFORM_NOT_INITIALIZED, ENCODER_NOT_INITIALIZED. */
+  async initialize_platform_position_pid_controller(linear_kp, angular_kp, max_linear_speed, max_angular_speed, position_tolerance, heading_tolerance, linear_ki, linear_kd, linear_integral_limit, angular_ki, angular_kd, angular_integral_limit) {
+    if (typeof linear_kp !== 'number' || !Number.isFinite(linear_kp)) throw new TypeError('linear_kp must be a finite number');
+    if (linear_kp <= 0) throw new RangeError('linear_kp must be positive');
+    if (typeof angular_kp !== 'number' || !Number.isFinite(angular_kp)) throw new TypeError('angular_kp must be a finite number');
+    if (angular_kp <= 0) throw new RangeError('angular_kp must be positive');
+    if (typeof max_linear_speed !== 'number' || !Number.isFinite(max_linear_speed)) throw new TypeError('max_linear_speed must be a finite number');
+    if (max_linear_speed <= 0) throw new RangeError('max_linear_speed must be positive');
+    if (typeof max_angular_speed !== 'number' || !Number.isFinite(max_angular_speed)) throw new TypeError('max_angular_speed must be a finite number');
+    if (max_angular_speed <= 0) throw new RangeError('max_angular_speed must be positive');
+    if (typeof position_tolerance !== 'number' || !Number.isFinite(position_tolerance)) throw new TypeError('position_tolerance must be a finite number');
+    if (position_tolerance < 0) throw new RangeError('position_tolerance must be nonnegative');
+    if (typeof heading_tolerance !== 'number' || !Number.isFinite(heading_tolerance)) throw new TypeError('heading_tolerance must be a finite number');
+    if (heading_tolerance < 0) throw new RangeError('heading_tolerance must be nonnegative');
+    if (typeof linear_ki !== 'number' || !Number.isFinite(linear_ki)) throw new TypeError('linear_ki must be a finite number');
+    if (linear_ki < 0) throw new RangeError('linear_ki must be nonnegative');
+    if (typeof linear_kd !== 'number' || !Number.isFinite(linear_kd)) throw new TypeError('linear_kd must be a finite number');
+    if (linear_kd < 0) throw new RangeError('linear_kd must be nonnegative');
+    if (typeof linear_integral_limit !== 'number' || !Number.isFinite(linear_integral_limit)) throw new TypeError('linear_integral_limit must be a finite number');
+    if (linear_integral_limit < 0) throw new RangeError('linear_integral_limit must be nonnegative');
+    if (typeof angular_ki !== 'number' || !Number.isFinite(angular_ki)) throw new TypeError('angular_ki must be a finite number');
+    if (angular_ki < 0) throw new RangeError('angular_ki must be nonnegative');
+    if (typeof angular_kd !== 'number' || !Number.isFinite(angular_kd)) throw new TypeError('angular_kd must be a finite number');
+    if (angular_kd < 0) throw new RangeError('angular_kd must be nonnegative');
+    if (typeof angular_integral_limit !== 'number' || !Number.isFinite(angular_integral_limit)) throw new TypeError('angular_integral_limit must be a finite number');
+    if (angular_integral_limit < 0) throw new RangeError('angular_integral_limit must be nonnegative');
+    const payload = new ArrayBuffer(96);
+    const requestView = new DataView(payload);
+    requestView.setFloat64(0, linear_kp, true);
+    requestView.setFloat64(8, angular_kp, true);
+    requestView.setFloat64(16, max_linear_speed, true);
+    requestView.setFloat64(24, max_angular_speed, true);
+    requestView.setFloat64(32, position_tolerance, true);
+    requestView.setFloat64(40, heading_tolerance, true);
+    requestView.setFloat64(48, linear_ki, true);
+    requestView.setFloat64(56, linear_kd, true);
+    requestView.setFloat64(64, linear_integral_limit, true);
+    requestView.setFloat64(72, angular_ki, true);
+    requestView.setFloat64(80, angular_kd, true);
+    requestView.setFloat64(88, angular_integral_limit, true);
+    await this._request(INITIALIZE_PLATFORM_POSITION_PID_CONTROLLER, payload, 0);
   }
 }

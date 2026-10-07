@@ -1,41 +1,16 @@
-.gpio-container
-{
-    max-width: 1020px;
-}
-
-.gpio-div {
-    margin-bottom: 5px;
-    margin-right: 5px;
-    padding: 8px 10px;
-    border: 1px solid #d0d7de;
-    border-radius: 6px;
-    background-color: #fff;
-    width: 250px;
-    vertical-align: top;
-    display: inline-table;
-}
-
-.gpio-div h3 {
-    margin: 2px 0 6px 0;
-}
-
-.gpio-div label, .gpio-div samp {
-    margin-right: 10px;
-}
-
-.gpio-div label {
-    display: inline;
-}
-
-.gpio-div > div {
-    line-height: 1.15;
-}
-
-.gpioPanel {
-    margin-top: 10px;
-    display: block;
-}
-
-.hidden {
-    display: none;
-}
+.gpio-led { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+.gpio-led h2 { margin-bottom: 4px; }
+.gpio-led p { margin: 0; }
+.gpio-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 20px; }
+.gpio-div { padding: 18px; border: 1px solid #d0d7de; border-radius: 10px; background: #fff; min-width: 0; }
+.gpio-div h3 { margin: 0 0 16px; font-size: 16px; font-weight: 600; }
+.gpio-modes { border: 0; margin: 0; padding: 0; }
+.gpio-modes legend { font-size: 12px; color: #57606a; margin-bottom: 8px; }
+.gpio-modes > div { display: flex; align-items: center; gap: 8px; min-height: 34px; }
+.gpio-modes label { cursor: pointer; }
+.gpioPanel { margin-top: 16px; padding-top: 14px; border-top: 1px solid #e5e9ed; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.gpio-value-label { display: block; font-size: 12px; color: #57606a; }
+.gpioPanel output { font-size: 15px; font-weight: 600; }
+.gpioPanel label { width: 100%; display: flex; justify-content: space-between; gap: 8px; }
+.gpioPanel br { display: none; }
+.gpioPanel.hidden { display: none; }
