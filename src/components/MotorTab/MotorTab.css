@@ -3,20 +3,20 @@
  * long ("Initialize Motor Controller"). */
 .motor-tab .k-button{
     margin-top: 6px;
-    min-width: 200px;
-    width: fit-content;
+    min-width: 0;
+    width: 100%;
     max-width: 100%;
     display: block;
 }
 
 .motor-tab input[type=range]{
     display: block;
-    width: 200px;
+    width: 100%;
 }
 
 .motor-tab select{
     display: block;
-    width: 200px;
+    width: 100%;
 }
 
 .motor-tab .k-check{
@@ -24,7 +24,7 @@
 }
 /* Encoder setup, controls and measurements use separate, compact sections. */
 .motor-tab .encoder-card {
-    width: 370px;
+    width: 100%;
     max-width: 100%;
     min-width: 0;
     padding: 12px 18px 18px;
@@ -117,7 +117,13 @@
 .encoder-angle output { font-variant-numeric: tabular-nums; }
 .encoder-sample .odometry-timestamp { margin-top: 10px; padding-top: 10px; border-top: 1px solid #e0e5ea; }
 .encoder-sample .odometry-timestamp output { display: block; }
-.motor-tab > .conn-error { flex-basis: 100%; }
+.motor-tab > .conn-error { grid-column: 1 / -1; }
+.motor-tab { max-width: 1100px; margin-left: 0; }
+.motor-output-card p { margin: 0 0 14px; }
+.motor-output-card .section-help { margin-top: 10px; }
+.motor-output-label { display: flex; justify-content: space-between; gap: 10px; }
+.motor-output-label output { font-weight: 600; font-variant-numeric: tabular-nums; }
+.motor-output-card .action-row .k-button { width: auto; margin: 0; }
 @media (max-width: 420px) {
     .motor-tab .encoder-card { padding-inline: 12px; }
     .encoder-fields { grid-template-columns: 1fr; }

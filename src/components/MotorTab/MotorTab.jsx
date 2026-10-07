@@ -1,4 +1,5 @@
 import OdometryTimestamp from '../OdometryTimestamp';
+import { useSettings } from '../../contexts/SettingsContext';
 // API-v2 actions display controller errors and await command acknowledgements.
 import { useCommandAction } from '../../hooks/useCommandAction';
 import { useState, useContext } from 'react';
@@ -7,6 +8,8 @@ import './MotorTab.css';
 import '../Common.css';
 
 function MotorTab(){
+    const { angleUnit } = useSettings();
+    const angleScale = angleUnit === 'deg' ? 180 / Math.PI : 1;
     const [commandError, runCommand] = useCommandAction();
     const { controller } = useContext(ControllerContext);
     
@@ -115,14 +118,15 @@ function MotorTab(){
     }
 
     return (
-        <div className='motor-tab controllerTag k-container card-row'>
+        <div className='motor-tab card-row'>
             {commandError && <p className="conn-error" role="alert">{commandError}</p>}
-            <fieldset className='settings-card'>
-            <legend>Motor</legend>
+            <fieldset className='settings-card motor-output-card'>
+            <legend>Motor setup &amp; output</legend>
+            <section className="control-section">
             {/* Motor Controls */}
             <p>
-                <label>Motor Index </label>
-                <select value={motorIndex} onChange={handleMotorIndexChange}>
+                <label htmlFor="rawMotorIndex">Motor</label>
+                <select id="rawMotorIndex" value={motorIndex} onChange={handleMotorIndexChange}>
                     <option value='0'>Motor 0</option>
                     <option value='1'>Motor 1</option>
                     <option value='2'>Motor 2</option>
@@ -130,17 +134,21 @@ function MotorTab(){
                 </select>
             </p>
             <p>
-                <label className='label-for-check'>Is Reverse </label>
-                <input type='checkbox' className='k-check' checked={isMotorReversed[motorIndex]} onChange={handleMotorReversedChange}/>
-                <button className='k-button k-button-primary' onClick={() => runCommand(initializeMotorFunction)}>Initialize Motor</button>
+                <label className="check-label"><input type='checkbox' checked={isMotorReversed[motorIndex]} onChange={handleMotorReversedChange}/> Reverse direction</label>
             </p>
-            <p>
-                <label htmlFor='motorSpeed'>Speed (PWM):</label>
+            <button className='k-button k-button-primary' onClick={() => runCommand(initializeMotorFunction)}>Initialize Motor</button>
+            <p className="section-help">{isMotorInitialized[motorIndex] ? 'Motor initialized' : 'Select a motor and its direction before applying output.'}</p>
+            </section>
+            <section className="control-section">
+                <h3>Manual output</h3>
+                <label className="motor-output-label" htmlFor='motorSpeed'>PWM output <output>{motorSpeed}%</output></label>
                 <input className='' type='range' min='-100' max='100' value={motorSpeed} id='motorSpeed' onChange={handleMotorSpeedChange}/>
                 <button className='k-button' onClick={() => runCommand(setMotorSpeedFunction)}>Set motor Speed</button>
+                <div className="action-row">
                 <button className='k-button k-button-danger' onClick={() => runCommand(stopMotorFunction)}>Stop motor</button>
                 <button className='k-button k-button-danger' onClick={() => runCommand(brakeMotorFunction)}>Brake motor</button>
-            </p>
+                </div>
+            </section>
 
             {/* Encoder Controls */}
             </fieldset>
@@ -190,7 +198,7 @@ function MotorTab(){
                     </div>
                     <div className="encoder-sample" aria-label="Latest odometry sample">
                         <span className="encoder-reading-label">Angle</span>
-                        <div className="encoder-angle"><output>{encoderOdometry[encoderIndex]?.angle ?? '—'}</output> <span className="encoder-unit">rad</span></div>
+                        <div className="encoder-angle"><output>{encoderOdometry[encoderIndex] ? encoderOdometry[encoderIndex].angle * angleScale : '—'}</output> <span className="encoder-unit">{angleUnit}</span></div>
                         <OdometryTimestamp sample={encoderOdometry[encoderIndex]} />
                     </div>
                 </section>

@@ -1,9 +1,13 @@
 // File: kinisi_session.js
 // Shared API-v2 framing, readiness and clock exchange for serial and proxy transports.
 import { Commands, INIT, READY, ERROR, TIME_SYNC_REQUEST, TIME_SYNC_RESPONSE,
-  SDK_VERSION, PROTOCOL_VERSION, InitResponse, ErrorCode, ErrorDescriptions,
+  SDK_VERSION, InitResponse, ErrorCode, ErrorDescriptions,
   SET_HEARTBEAT_CONFIG, UNSUBSCRIBE_ODOMETRY, ENCODER_ODOMETRY_EVENT, PLATFORM_ODOMETRY_EVENT,
   EncoderOdometrySample, PlatformOdometrySample } from './kinisi_commands.js';
+import { POSITION_COMMANDS, supportsPositionControl, POSITION_PID_COMMANDS, supportsPositionPidControl } from './position_control.js';
+
+// Existing controls need 2.1; additive position commands are gated separately.
+const MIN_PROTOCOL_VERSION = [2, 1, 0];
 
 /** A controller ERROR retains the original request identity and error code. */
 export class ControllerError extends Error {
@@ -70,7 +74,7 @@ export class KinisiSession extends Commands {
     this.lastError = null; this.lastSyncError = null; this._buffer = new Uint8Array();
     this._retired.clear(); this._writeChain = Promise.resolve();
     const session = {}; this._session = session;
-    const init = this._sendRequest(INIT, new Uint8Array([2, ...SDK_VERSION, ...PROTOCOL_VERSION, this.wallClock ? 3 : 2]), InitResponse.getSize(), true);
+    const init = this._sendRequest(INIT, new Uint8Array([2, ...SDK_VERSION, ...MIN_PROTOCOL_VERSION, this.wallClock ? 3 : 2]), InitResponse.getSize(), true);
     this._readerTask = this._readLoop(session);
     await init;
     if (this.heartbeatTimeoutMs !== null) await this.set_heartbeat_config(true, this.heartbeatTimeoutMs);
@@ -107,6 +111,10 @@ export class KinisiSession extends Commands {
   /** Generated commands cannot bypass the INIT/READY gate. */
   async _request(command, payload, responseLength) {
     if (!this.ready) throw new ProtocolError('Controller is not ready; complete INIT first');
+    if (POSITION_PID_COMMANDS.has(command) && !supportsPositionPidControl(this.boardInfo))
+      throw new ProtocolError('Position PID requires firmware protocol 2.3 or newer');
+    if (POSITION_COMMANDS.has(command) && !supportsPositionControl(this.boardInfo))
+      throw new ProtocolError('Position control requires firmware protocol 2.2 or newer');
     const session = this._session;
     const response = await this._sendRequest(command, payload, responseLength, false);
     if (this._session !== session) throw new ConnectionClosedError();
@@ -242,7 +250,7 @@ export class KinisiSession extends Commands {
     if (pending.init) {
       if (pending.identity) throw new ProtocolError('Duplicate INIT response');
       const identity = InitResponse.decode(payload);
-      if (identity.protocol_major !== PROTOCOL_VERSION[0] || identity.protocol_minor < PROTOCOL_VERSION[1]) throw new ProtocolError('Incompatible controller protocol version');
+      if (identity.protocol_major !== MIN_PROTOCOL_VERSION[0] || identity.protocol_minor < MIN_PROTOCOL_VERSION[1]) throw new ProtocolError('Incompatible controller protocol version');
       pending.identity = identity; this.boardInfo = identity;
     } else this._finish(id, null, payload);
   }

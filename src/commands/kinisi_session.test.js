@@ -23,6 +23,7 @@ class FakeClient extends KinisiSession {
     super({ heartbeatTimeoutMs: null, nowUnixUs: () => (now += 100n), ...options });
     this.chunks = []; this.writes = []; this.waiter = null;
     this.syncs = 0; this.syncId = 400; this.handler = null;
+    this.protocolMinor = options.protocolMinor ?? 1;
     clients.push(this);
   }
   /** Feed raw bytes into the production stream parser. */
@@ -42,7 +43,7 @@ class FakeClient extends KinisiSession {
     const command = data[1], id = data[2] | data[3] << 8;
     if (command === INIT) {
       this.initId = id;
-      const identity = new InitResponse(1, 0, 3, 1, 2, 1, 0, 0x12345678, 0x90abcdef).encode();
+      const identity = new InitResponse(1, 0, 3, 1, 2, this.protocolMinor, 0, 0x12345678, 0x90abcdef).encode();
       const response = packet(INIT, id, identity);
       // Fragment identity, then coalesce its end with the next message.
       this.push(response.slice(0, 2));
@@ -68,6 +69,32 @@ afterEach(async () => {
 });
 
 describe('API v2 session', () => {
+  it('gates position PID initialization on 2.3 while keeping legacy position commands', async () => {
+    const old = new FakeClient({ protocolMinor: 2 }); await old.connect();
+    const count = old.writes.length;
+    await expect(old.initialize_motor_position_pid_controller(0, 2, 1, 0.02, 0.1, 0.2, 1)).rejects.toThrow('requires firmware protocol 2.3');
+    await expect(old.initialize_platform_position_pid_controller(1, 2, 0.2, 0.5, 0.01, 0.03, 0, 0, 0.2, 0, 0, 0.5)).rejects.toThrow('requires firmware protocol 2.3');
+    expect(old.writes).toHaveLength(count);
+    const c = new FakeClient({ protocolMinor: 3 }); await c.connect();
+    await c.initialize_motor_position_pid_controller(0, 2, 1, 0.02, 0.1, 0.2, 1);
+    expect(c.writes.at(-1)[1]).toBe(0x10);
+    await c.initialize_platform_position_pid_controller(1, 2, 0.2, 0.5, 0.01, 0.03, 0.1, 0.2, 0.2, 0.3, 0.4, 0.5);
+    expect(c.writes.at(-1)[1]).toBe(0x4e);
+  });
+  it('keeps 2.1 connections usable but rejects position commands before writing', async () => {
+    const c = new FakeClient(); await c.connect();
+    const count = c.writes.length;
+    await expect(c.set_motor_position(0, 1)).rejects.toThrow('requires firmware protocol 2.2');
+    expect(c.writes).toHaveLength(count);
+    expect(await c.get_encoder_value(0)).toBe(0xbeef);
+  });
+  it('uses the shared session for acknowledged 2.2 position commands', async () => {
+    const c = new FakeClient({ protocolMinor: 2 }); await c.connect();
+    await c.initialize_motor_position_controller(0, 2, 1, 0.02);
+    expect(c.writes.at(-1)[1]).toBe(0x0c);
+    await c.set_platform_position(1, -2, 0.5);
+    expect(c.writes.at(-1)[1]).toBe(0x4d);
+  });
   it('sends idle pings, suppresses them during traffic, and stops after disable', async () => {
     vi.useFakeTimers();
     const c = new FakeClient({ heartbeatTimeoutMs: 500 });
@@ -118,7 +145,7 @@ describe('API v2 session', () => {
     await expect(c.get_encoder_value(0)).rejects.toThrow('not ready');
     await c.connect();
     expect(c.ready).toBe(true); expect(c.boardInfo.board_patch).toBe(1);
-    expect([...c.writes[0]]).toEqual([11, 0x70, 1, 0, 2, 2, 1, 0, 2, 1, 0, 3]);
+    expect([...c.writes[0]]).toEqual([11, 0x70, 1, 0, 2, 2, 3, 1, 2, 1, 0, 3]);
     expect(c.syncs).toBe(3);
     for (const data of c.writes.filter((d) => d[1] === TIME_SYNC_RESPONSE)) {
       const view = new DataView(data.buffer);

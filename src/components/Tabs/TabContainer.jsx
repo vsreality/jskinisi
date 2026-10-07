@@ -1,4 +1,4 @@
-import { useState, Children, useContext } from 'react';
+import { useState, Children, useContext, cloneElement } from 'react';
 import { ControllerContext } from '../../contexts/ControllerContext';
 import './Tabs.css';
 import '../Common.css';
@@ -8,7 +8,7 @@ import '../Common.css';
  * selected one.
  *
  * A child marked `alwaysEnabled` works without a controller (the Connection
- * section). Every other section is inert until one is connected, so it is
+ * and Settings sections). Every other section is inert until one is connected, so it is
  * disabled in the sidebar rather than merely faded — a disabled control
  * explains itself to assistive tech, which `pointer-events: none` does not.
  */
@@ -16,6 +16,7 @@ function TabContainer({ children }) {
     const [activeTab, setActiveTab] = useState(0);
     const [lastWorked, setLastWorked] = useState(-1);
     const [wasConnected, setWasConnected] = useState(false);
+    const [contentTab, setContentTab] = useState(0);
     const { isConnected } = useContext(ControllerContext);
 
     const sections = Children.toArray(children);
@@ -35,7 +36,7 @@ function TabContainer({ children }) {
     // was last in use, or the first controller section on a cold start.
     if (isConnected !== wasConnected) {
         setWasConnected(isConnected);
-        if (isConnected && sections[activeTab].props.alwaysEnabled) {
+        if (isConnected && sections[activeTab].props.alwaysEnabled && !sections[activeTab].props.settingsPage) {
             const target =
                 lastWorked >= 0
                     ? lastWorked
@@ -52,6 +53,10 @@ function TabContainer({ children }) {
     const shown = isLocked(sections[activeTab])
         ? sections.findIndex((section) => !isLocked(section))
         : activeTab;
+    // Settings temporarily hides the current page so its inputs, controller
+    // initialization and graph history survive the trip to change units.
+    const showingSettings = sections[shown].props.settingsPage;
+    if (!showingSettings && contentTab !== shown) setContentTab(shown);
 
     return (
         <>
@@ -78,8 +83,16 @@ function TabContainer({ children }) {
                 </nav>
             </aside>
             <main className="app-main">
-                <h1 className="app-main-title">{sections[shown].props.title}</h1>
-                {sections[shown]}
+                <header className="page-heading">
+                    <h1 className="app-main-title">{sections[shown].props.title}</h1>
+                    {sections[shown].props.description && <p>{sections[shown].props.description}</p>}
+                </header>
+                {sections.map((section, index) => (
+                    (index === shown || (showingSettings && index === contentTab && !isLocked(section))) &&
+                    <div key={section.props.title} hidden={index !== shown}>
+                        {cloneElement(section, { isActive: index === shown })}
+                    </div>
+                ))}
             </main>
         </>
     );

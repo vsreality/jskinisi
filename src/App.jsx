@@ -7,6 +7,8 @@ import PlatformTab from './components/PlatfirmTab/PlatfirmTab'
 import GPIOTab from './components/GPIOTab/GPIOTab';
 import ControllerProvider from './contexts/ControllerProvider';
 import MotorControllerTab from './components/MotorControllerTab/MotorControllerTab';
+import SettingsProvider from './contexts/SettingsProvider';
+import Settings from './components/Settings/Settings';
 
 const REPO_URL = 'https://github.com/vsreality/jskinisi';
 const SITE_URL = 'https://vsreality.com';
@@ -28,7 +30,7 @@ function GitHubIcon() {
 function App() {
 
   return (
-    <ControllerProvider>
+    <SettingsProvider><ControllerProvider>
     <div className="App">
       <header className="app-header">
         <span className="app-title">Kinisi motor controller</span>
@@ -48,11 +50,12 @@ function App() {
       </header>
       <div className="app-body">
         <TabContainer>
-          <Connection title="Connection" alwaysEnabled></Connection>
-          <MotorTab title="Motor"></MotorTab>
-          <PlatformTab title="Platform"></PlatformTab>
-          <GPIOTab title="GPIO"></GPIOTab>
-          <MotorControllerTab title="Motor Controller"></MotorControllerTab>
+          <Connection title="Connection" description="Connect your board to begin configuring and controlling motion." alwaysEnabled />
+          <MotorTab title="Motor" description="Set up a motor, adjust its PWM output, and inspect encoder feedback." />
+          <PlatformTab title="Platform" description="Configure your platform, tune wheel velocity, and control its position." />
+          <GPIOTab title="GPIO" description="Configure each pin and read or set its digital state." />
+          <MotorControllerTab title="Motor Controller" description="Tune velocity first, then position. Compare each target with measured feedback." />
+          <Settings title="Settings" description="Choose how values are displayed throughout the web client." alwaysEnabled settingsPage />
         </TabContainer>
       </div>
     </div>
@@ -80,7 +83,7 @@ function App() {
         {new Date().getFullYear()} VsReality
       </div>
     </footer>
-    </ControllerProvider>
+    </ControllerProvider></SettingsProvider>
   );
 }
 

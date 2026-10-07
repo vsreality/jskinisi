@@ -14,7 +14,9 @@ checked-in `tools/commands.json` snapshot.
 
 ## Clock synchronization
 
-JavaScript identifies itself as SDK type 2, version 2.1.0. By default it advertises
+JavaScript identifies itself as SDK type 2, version 2.3.1. It requests protocol 2.1
+as the minimum; [position commands](position-control.md) require the board to
+report protocol 2.2 or newer. Position PID initialization (0x10 and 0x4E) requires 2.3 or newer. By default it advertises
 wall-clock and subscription capabilities. The controller initiates each timing exchange; the
 client answers `TIME_SYNC_REQUEST` with receive/send Unix microseconds. A single
 continuous reader services initial and periodic exchanges, including when the UI

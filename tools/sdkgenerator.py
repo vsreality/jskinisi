@@ -36,7 +36,7 @@ def generate_js_code(schema, js_version='ES6'):
             value = f'exactBigInt({value})'
         return f'view.set{TYPES[t][1]}({offset}, {value}'+(', true' if size(t)>1 else '')+');'
     lines = ['// Generated from tools/commands.json by tools/sdkgenerator.py. Do not edit.\n',
-             'export const SDK_VERSION = Object.freeze([2, 1, 0]);\n',
+             'export const SDK_VERSION = Object.freeze([2, 3, 1]);\n',
              f"export const PROTOCOL_VERSION = Object.freeze({json.dumps([int(v) for v in schema['version'].split('.')])});\n"]
     for c in schema['commands']:
         if c.get('direction') not in ('client_to_controller','controller_to_client'):
@@ -84,6 +84,25 @@ function payloadView(buffer, size) {
         props=c.get('properties',[]); n=sum(size(p['type']) for p in props)
         lines.append(f'\n  /** {c["description"]} Errors: '+', '.join(c.get('errors',[]))+'. */\n')
         lines.append('  async '+c['command'].lower()+'('+', '.join(p['name'] for p in props)+') {\n')
+        if c['command'] in {'INITIALIZE_MOTOR_CONTROLLER', 'START_PLATFORM_CONTROLLER'}:
+            # These existing APIs also accept numeric strings from UI controls.
+            for name in ('kp', 'ki', 'kd', 'integral_limit'):
+                lines.append(f"    if (!['number', 'string'].includes(typeof {name}) || String({name}).trim() === '' || !Number.isFinite(Number({name})) || Number({name}) < 0) throw new RangeError('{name} must be finite and nonnegative');\n")
+            lines.append("    if (Number(integral_limit) > 100) throw new RangeError('integral_limit must be 0..100 PWM percentage points');\n")
+        if c['command'] in {'INITIALIZE_MOTOR_POSITION_CONTROLLER', 'RESET_MOTOR_POSITION',
+                            'SET_MOTOR_POSITION', 'GET_MOTOR_POSITION',
+                            'INITIALIZE_PLATFORM_POSITION_CONTROLLER', 'RESET_PLATFORM_POSITION',
+                            'SET_PLATFORM_POSITION', 'INITIALIZE_MOTOR_POSITION_PID_CONTROLLER',
+                            'INITIALIZE_PLATFORM_POSITION_PID_CONTROLLER'}:
+            for p in props:
+                name = p['name']
+                lines.append(f"    if (typeof {name} !== 'number' || !Number.isFinite({name})) throw new TypeError('{name} must be a finite number');\n")
+                if name == 'motor_index':
+                    lines.append("    if (!Number.isInteger(motor_index) || motor_index < 0 || motor_index > 3) throw new RangeError('motor_index must be 0..3');\n")
+                elif 'kp' in name or 'max_' in name:
+                    lines.append(f"    if ({name} <= 0) throw new RangeError('{name} must be positive');\n")
+                elif 'tolerance' in name or name.endswith(('ki', 'kd', 'integral_limit')):
+                    lines.append(f"    if ({name} < 0) throw new RangeError('{name} must be nonnegative');\n")
         lines.append(f'    const payload = new ArrayBuffer({n});\n')
         if n: lines.append('    const requestView = new DataView(payload);\n')
         offset=0

@@ -3,7 +3,7 @@
  * rather than content. */
 
 .app-sidebar {
-    width: 220px;
+    width: 190px;
     flex-shrink: 0;
     box-sizing: border-box;
     display: flex;
@@ -79,14 +79,20 @@
     /* Without this a wide child (the tables in the tabs) would stretch the
      * flex item instead of scrolling inside it. */
     min-width: 0;
-    padding: 16px 20px;
+    padding: 28px;
+    background: #f5f7fa;
+    color: #24292f;
 }
+
+.app-main > * { max-width: 1440px; margin-inline: auto; }
+.page-heading { margin-bottom: 24px; }
+.page-heading p { margin: 6px 0 0; color: #57606a; font-size: 14px; }
 
 /* Names the section on screen; ui.css sizes bare h1 for page titles, which is
  * far too large for a panel heading. */
 .app-main-title {
-    margin: 0 0 16px;
-    font-size: 18px;
+    margin: 0;
+    font-size: 24px;
     font-weight: 600;
     color: #24292f;
 }
@@ -94,6 +100,7 @@
 /* Below this the rail would leave too little room for the tab content, so it
  * becomes a band across the top instead. */
 @media (max-width: 700px) {
+    .app-main { padding: 20px 14px; }
     .app-body {
         flex-direction: column;
     }

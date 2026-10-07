@@ -1,0 +1,28 @@
+.position-workspace { min-width: 0; }
+.position-control { max-width: 100%; }
+.position-control p { font-size: 13px; line-height: 1.5; }
+.position-control .position-fields { border: 0; margin: 0; padding: 0; min-width: 0; }
+.position-control label { display: block; margin-top: 8px; font-size: 13px; }
+.position-control input, .position-control select { width: 100%; box-sizing: border-box; }
+.position-control .k-button { display: block; margin-top: 8px; max-width: 100%; }
+.position-control output { display: block; margin-top: 12px; font-variant-numeric: tabular-nums; }
+.position-control fieldset:disabled { opacity: 0.6; }
+.position-control fieldset:disabled fieldset:disabled { opacity: 1; }
+.position-control h3 { font-size: 14px; font-weight: 600; margin: 16px 0 6px; }
+.position-control .position-tuning-note { margin-top: 0; color: #57606a; }
+.position-control .position-prerequisite { padding: 8px 10px; background: #f1f3f5; border-radius: 5px; }
+.position-control .position-prerequisite.is-ready { color: #166534; background: #eef8f0; }
+.position-control .position-origin-help { color: #57606a; font-size: 12px; }
+.position-setting-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; }
+.position-control .position-initialize { margin: 16px 0; width: 100%; }
+.position-control .position-target { border-top: 1px solid #e8ecf0; padding-top: 2px; }
+.position-target > .k-button { width: 100%; margin-top: 10px; }
+.position-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.position-actions .k-button { flex: 1 1 110px; }
+.position-chart { min-width: 0; max-width: 100%; margin-top: 16px; border: 1px solid #d0d7de; border-radius: 10px; padding: 18px; background: #fff; }
+.motor-controller-options .position-chart { margin-top: 0; }
+.position-chart-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.position-chart-heading h3 { font-size: 16px; font-weight: 600; margin: 0; }
+.position-chart-heading label { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.position-chart p { font-size: 13px; line-height: 1.5; color: #57606a; }
+.position-chart-canvas { position: relative; height: 300px; width: 100%; }

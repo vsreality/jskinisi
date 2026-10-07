@@ -46,19 +46,17 @@ function GPIOTab() {
     };
 
     return (
-        <div id="tabGPIO" className="controllerTab k-panel">
+        <div id="tabGPIO" className="page-layout gpio-page">
             {commandError && <p className="conn-error" role="alert">{commandError}</p>}
-            <h2>Status LED</h2>
-            <div>
+            <section className="panel-card gpio-led">
+                <div><h2>Status LED</h2><p className="section-help">Toggle the board LED to check its response.</p></div>
                 <button className='k-button' onClick={() => runCommand(toggleStatusLED)}>Toggle Status LED</button>
-            </div>
-            <hr/>
-            <h2>GPIO Pins</h2>
-            <div className='gpio-container'>
+            </section>
+            <div className='gpio-container' aria-label="GPIO pins">
             {gpioModes.map((mode, index) => (
                 <div key={index} id={`GPIO${index}`} className="gpio-div">
                     <h3>GPIO {index}</h3>
-                    <samp>Mode:</samp>
+                    <fieldset className="gpio-modes"><legend>Mode</legend>
                     {GPIOModes.map((m, modeIndex) => (
                         <React.Fragment key={modeIndex}>
                             <div>
@@ -74,8 +72,9 @@ function GPIOTab() {
                             </div>
                         </React.Fragment>
                     ))}
+                    </fieldset>
                     <div className={`gpioPanel ${mode === 3 ? '' : 'hidden'}`}>
-                        <label htmlFor={`GPIO${index}State`}>State</label>
+                        <label htmlFor={`GPIO${index}State`}>Output state <output>{gpioStates[index] ? 'High (1)' : 'Low (0)'}</output></label>
                         <input 
                             type="range" 
                             min="0" 
@@ -87,7 +86,7 @@ function GPIOTab() {
                         /><br/>
                     </div>
                     <div className={`gpioPanel ${mode !== 3 ? '' : 'hidden'}`}>
-                        <samp>Value: </samp><div id={`GPIO${index}Value`}>{gpioValues[index]}</div> 
+                        <div><span className="gpio-value-label">Input value</span><output id={`GPIO${index}Value`}>{gpioValues[index]}</output></div>
                         <button className='k-button' id={`buttonGPIO${index}Read`} onClick={() => runCommand(() => readGPIO(index))}>Read</button>
                     </div>
                 </div>

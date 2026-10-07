@@ -1,3 +1,7 @@
+import PositionControl from '../PositionControl/PositionControl';
+import { useSettings } from '../../contexts/SettingsContext';
+import VelocityTuningHelp from '../VelocityTuningHelp';
+import { velocityPidDefaults } from '../../commands/velocity_tuning';
 // API-v2 actions display controller errors and await command acknowledgements.
 import { useCommandAction } from '../../hooks/useCommandAction';
 import { useState, useContext, useEffect, useRef } from 'react';
@@ -9,21 +13,25 @@ import MotorControllerChart from './MotorControllerChart';
 function MotorControllerTab(){
     const [commandError, runCommand] = useCommandAction();
     const updateInterval = 500;
+    const [positionGeneration, setPositionGeneration] = useState(0);
     const motorControllerChartRef = useRef();
     const updateStateIntervalId = useRef(null);
 
     const { controller, isConnected} = useContext(ControllerContext);
-    
+    const pidDefaults = velocityPidDefaults(controller?.boardInfo);
+
     const [motorIndex, setMotorIndex] = useState('0');
     const [isMotorReversed, setIsMotorReversed] = useState(false);
     const [isEncoderReversed, setIsEncoderReversed] = useState(false);
     const [motorSpeed, setMotorSpeed] = useState(0);
+    const { angleUnit: speedUnit } = useSettings();
+    const speedDisplayScale = speedUnit === 'deg' ? 180 / Math.PI : 1;
     const [encoderIndex, setEncoderIndex] = useState('0');
     const [encoderResolution, setEncoderResolution] = useState(1425.1);
-    const [kp, setKp] = useState('0.1');
-    const [ki, setKi] = useState('0');
-    const [kd, setKd] = useState('0');
-    const [integralLimit, setIntegralLimit] = useState('30');
+    const [kp, setKp] = useState(pidDefaults.kp);
+    const [ki, setKi] = useState(pidDefaults.ki);
+    const [kd, setKd] = useState(pidDefaults.kd);
+    const [integralLimit, setIntegralLimit] = useState(pidDefaults.integralLimit);
     const [controllerFrequency, setControllerFrequency] = useState('10');
     const [isMotorControllerInitialized, setIsMotorControllerInitialized] = useState([false, false, false, false]);
     const [isUpdateStateIntervalRunning, setIsUpdateStateIntervalRunning] = useState(false);
@@ -58,7 +66,7 @@ function MotorControllerTab(){
     };
 
     const handleMotorSpeedChange = (event) => {
-        setMotorSpeed(event.target.value);
+        setMotorSpeed(Number(event.target.value) / speedDisplayScale);
     };
 
     const handleEncoderIndexChange = (event) => {
@@ -102,6 +110,7 @@ function MotorControllerTab(){
         console.log(`Initializing motor controller`);
         motorControllerChartRef.current.resetChart();
         await controller.initialize_motor_controller(motorIndex, isMotorReversed, encoderIndex, isEncoderReversed, encoderResolution, kp, ki, kd, integralLimit);
+        setPositionGeneration(value => value + 1);
         // start periodicly requesting motor controller state
         setIsUpdateStateIntervalRunning(true)
         // Set corresponding motor controller initialized flag to true
@@ -117,24 +126,8 @@ function MotorControllerTab(){
     };
 
     const getControllerStateFunction = async () => {
-        //console.log(`Getting controller state`);
-        /*
-        motor_index,
-        kp,
-        ki,
-        kd,
-        target_speed,
-        current_speed,
-        error,
-        output,
-        */
-        var state = await controller.get_motor_controller_state(motorIndex);
-
-        // TODO: Remove this hack
-        state.output = state.output / 10;
-
+        const state = await controller.get_motor_controller_state(motorIndex);
         motorControllerStateUpdate(state);
-        //console.log(state);
     };
 
     // Stop motor controller
@@ -152,6 +145,7 @@ function MotorControllerTab(){
         // Stop motor controller
         console.log(`Stopping motor controller`);
         await controller.delete_motor_controller(motorIndex);
+        setPositionGeneration(value => value + 1);
     };
 
     // Reset the motor controller's PID state (integral/error) without deleting it.
@@ -169,6 +163,8 @@ function MotorControllerTab(){
     useEffect(() => {
         if (!isConnected) {
             setMotorSpeed(0);
+            setIsMotorControllerInitialized([false, false, false, false]);
+            setPositionGeneration(value => value + 1);
             setIsUpdateStateIntervalRunning(false);
         }
     }, [isConnected]);
@@ -194,7 +190,7 @@ function MotorControllerTab(){
             clearInterval(updateStateIntervalId.current);
           }
         }
-    
+
         // Cleanup function to clear the interval
         return () => {
           if (updateStateIntervalId.current) {
@@ -204,79 +200,86 @@ function MotorControllerTab(){
       }, [isUpdateStateIntervalRunning, updateInterval, runCommand]);
 
     return (
-        <div className='controllerTag k-container card-row motor-controller-options'>
+        <div className="motor-controller-options">
             {commandError && <p className="conn-error" role="alert">{commandError}</p>}
-                <fieldset className='settings-card'>
-                <legend>Motor &amp; Encoder</legend>
-                {/* Motor Controls */}
-                <p>
-                    <label>Motor Index </label>
-                    <select value={motorIndex} onChange={handleMotorIndexChange}>
-                        <option value='0'>Motor 0</option>
-                        <option value='1'>Motor 1</option>
-                        <option value='2'>Motor 2</option>
-                        <option value='3'>Motor 3</option>
-                    </select>
-                </p>
-                <p>
-                    <label className='label-for-check'>Is Reverse </label>
-                    <input type='checkbox' className='k-check' checked={isMotorReversed} onChange={handleMotorReversedChange}/>
-                </p>
-                <p>
-                    <label className='label-for-check'>Is Encoder Reverse </label>
-                    <input type='checkbox' className='k-check' checked={isEncoderReversed} onChange={handleEncoderReversedChange}/>
-                </p>
-                <div>
-                    <label htmlFor='encoderIndex'>Encoder Index:</label>
-                    <select id='encoderIndex' value={encoderIndex} onChange={handleEncoderIndexChange}>
-                        <option value='0'>Encoder 0</option>
-                        <option value='1'>Encoder 1</option>
-                        <option value='2'>Encoder 2</option>
-                        <option value='3'>Encoder 3</option>
-                    </select><br/>
-                    <label htmlFor='encoderResolution'>Encoder Resolution (ticks/rev):</label><br/>
-                    <input type='text' id='encoderResolution' value={encoderResolution} onChange={handleEncoderResolutionChange}/><br/>
-                </div>
-                {/* PID Parameters*/}
+            <div className="controller-setup">
+                <fieldset className="settings-card hardware-setup">
+                    <legend>Motor &amp; encoder</legend>
+                    <div className="hardware-fields">
+                        <label htmlFor="motorIndex">Motor
+                            <select id="motorIndex" value={motorIndex} onChange={handleMotorIndexChange}>
+                                {[0, 1, 2, 3].map(index => <option key={index} value={index}>Motor {index}</option>)}
+                            </select>
+                        </label>
+                        <label htmlFor="encoderIndex">Encoder
+                            <select id="encoderIndex" value={encoderIndex} onChange={handleEncoderIndexChange}>
+                                {[0, 1, 2, 3].map(index => <option key={index} value={index}>Encoder {index}</option>)}
+                            </select>
+                        </label>
+                        <label htmlFor="encoderResolution">Resolution (ticks/rev)
+                            <input type="text" id="encoderResolution" value={encoderResolution} onChange={handleEncoderResolutionChange}/>
+                        </label>
+                    </div>
+                    <div className="controller-checks">
+                        <label><input type="checkbox" checked={isMotorReversed} onChange={handleMotorReversedChange}/> Reverse motor</label>
+                        <label><input type="checkbox" checked={isEncoderReversed} onChange={handleEncoderReversedChange}/> Reverse encoder</label>
+                    </div>
                 </fieldset>
-                <fieldset className='settings-card'>
-                <legend>PID Parameters</legend>
-                <div>
-                    <label htmlFor='kp'>Kp:</label><br/>
-                    <input type='text' id='kp' value={kp} onChange={handleKpChange}/><br/>
-                    <label htmlFor='ki'>Ki:</label><br/>
-                    <input type='text' id='ki' value={ki} onChange={handleKiChange}/><br/>
-                    <label htmlFor='kd'>Kd:</label><br/>
-                    <input type='text' id='kd' value={kd} onChange={handleKdChange}/><br/>
-                    <label htmlFor='integralLimit'>Integral Limit:</label><br/>
-                    <input type='text' id='integralLimit' value={integralLimit} onChange={handleIntegralLimitChange}/><br/>
-                </div>
-                {/* Global controller-loop frequency */}
+                <fieldset className="settings-card frequency-setup">
+                    <legend>Loop frequency</legend>
+                    <label htmlFor="controllerFrequency">Frequency (Hz, 1–1000)</label>
+                    <div className="frequency-actions">
+                        <input type="number" id="controllerFrequency" min="1" max="1000" value={controllerFrequency} onChange={handleControllerFrequencyChange}/>
+                        <button className="k-button" onClick={() => runCommand(setControllerFrequencyFunction)}>Set Frequency</button>
+                        <button className="k-button" onClick={() => runCommand(getControllerFrequencyFunction)}>Get Frequency</button>
+                    </div>
                 </fieldset>
-                <fieldset className='settings-card'>
-                <legend>Controller Frequency</legend>
-                <div>
-                    <label htmlFor='controllerFrequency'>Controller Frequency (Hz, 1-1000):</label><br/>
-                    <input type='number' id='controllerFrequency' min='1' max='1000' value={controllerFrequency} onChange={handleControllerFrequencyChange}/><br/>
-                    <button className='k-button' onClick={() => runCommand(setControllerFrequencyFunction)}>Set Frequency</button>
-                    <button className='k-button' onClick={() => runCommand(getControllerFrequencyFunction)}>Get Frequency</button>
-                </div>
-                </fieldset>
-                <fieldset className='settings-card'>
-                <legend>Actions</legend>
-                <p>
-                    <button className='k-button k-button-primary' onClick={() => runCommand(initializeMotorControllerFunction)}>Initialize Motor Controller</button>
-                    <label htmlFor='motorSpeed'>Speed (radian/sec):</label>
-                    <input className='' type='range' min='-8' max='8' step='0.5' value={motorSpeed} id='motorSpeed' onChange={handleMotorSpeedChange}/>
-                    <button className='k-button' onClick={() => runCommand(setMotorSpeedFunction)}>Set motor Speed</button>
-                    <button className='k-button' onClick={() => runCommand(getControllerStateFunction)}>Get Controller State</button>
-                    <button className='k-button' onClick={() => runCommand(resetMotorControllerFunction)}>Reset Controller</button>
-                    <button className='k-button k-button-danger' onClick={() => runCommand(stopMotorControllerFunction)}>Stop Controller</button>
-                </p>
-                </fieldset>
-            <div className='column'>
-            <MotorControllerChart ref={motorControllerChartRef} motorControllerState = {motorControllerState}/>
             </div>
+            <section className="controller-workspace" aria-label="Velocity control and feedback">
+                <fieldset className="settings-card velocity-control">
+                    <legend>1. Velocity control</legend>
+                    <p className="controller-help">Tune speed tracking first. Position control uses this velocity PID.</p>
+                    <VelocityTuningHelp boardInfo={controller?.boardInfo} ki={ki} integralLimit={integralLimit} />
+                    <div className="controller-field-grid">
+                        <label htmlFor="kp">Velocity Kp
+                            <input type="text" id="kp" value={kp} onChange={handleKpChange}/>
+                        </label>
+                        <label htmlFor="ki">Velocity Ki
+                            <input type="text" id="ki" value={ki} onChange={handleKiChange}/>
+                        </label>
+                        <label htmlFor="kd">Velocity Kd
+                            <input type="text" id="kd" value={kd} onChange={handleKdChange}/>
+                        </label>
+                        <label htmlFor="integralLimit">Integral contribution limit (% PWM)
+                            <input type="number" min="0" max="100" id="integralLimit" value={integralLimit} onChange={handleIntegralLimitChange}/>
+                        </label>
+                    </div>
+                    <button className="k-button k-button-primary controller-initialize" onClick={() => runCommand(initializeMotorControllerFunction)}>Initialize velocity controller</button>
+                    <div className="controller-target">
+                        <label htmlFor="motorSpeed">Speed target <output>{Number((motorSpeed * speedDisplayScale).toFixed(3))} {speedUnit}/s</output></label>
+                        <input type="range" min={-8 * speedDisplayScale} max={8 * speedDisplayScale}
+                            step={0.5 * speedDisplayScale} value={motorSpeed * speedDisplayScale} id="motorSpeed" onChange={handleMotorSpeedChange}/>
+                        <button className="k-button" onClick={() => runCommand(setMotorSpeedFunction)}>Set velocity target</button>
+                    </div>
+                    <div className="controller-actions">
+                        <button className="k-button" onClick={() => runCommand(getControllerStateFunction)}>Get Controller State</button>
+                        <button className="k-button" onClick={() => runCommand(resetMotorControllerFunction)}>Reset velocity PID</button>
+                    </div>
+                    <button className="k-button k-button-danger controller-stop" onClick={() => runCommand(stopMotorControllerFunction)}>Stop motor controller</button>
+                </fieldset>
+                <section className="controller-chart velocity-chart" aria-label="Velocity response">
+                    <div className="velocity-chart-heading">
+                        <h3>Velocity response</h3>
+                        <label><input type="checkbox" checked={isUpdateStateIntervalRunning}
+                            disabled={!isConnected || !isMotorControllerInitialized[motorIndex]}
+                            onChange={event => setIsUpdateStateIntervalRunning(event.target.checked)}/> Live velocity graph</label>
+                    </div>
+                    <p className="controller-help">Measured speed and target · 0.5 s updates · latest 120 samples. Select Speed error in the legend to show the error.</p>
+                    <MotorControllerChart ref={motorControllerChartRef} motorControllerState={motorControllerState} speedUnit={speedUnit}/>
+                </section>
+            </section>
+            <PositionControl key={`${motorIndex}-${positionGeneration}-${isConnected}`}
+                motorIndex={Number(motorIndex)} velocityReady={isMotorControllerInitialized[motorIndex]} />
         </div>
     );
 }

@@ -130,6 +130,7 @@ function ConnectionPanel({ onConnect, onDisconnect }) {
 
     return (
         <div className="connection-panel">
+            <h2>Connect a controller</h2>
             {PROXY_ENABLED && (
                 <div className="conn-field">
                     <span className="conn-label" id="connTransportLabel">
