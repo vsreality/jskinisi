@@ -5,12 +5,9 @@ The library is located in the `./src/commands` directory and the web client is l
 The web client is a React application built with [Vite](https://vite.dev/); use the scripts below to run it.\
 Description of the commands can be found in [Kinisi Motion Controller framework documentation](https://raw.githubusercontent.com/szolotykh/kinisi-motor-controller-firmware/command-script/commands.md)
 
-API **2.3.1 is incompatible with API v1**. Connections now complete INIT, time
-sync, and READY before commands are available. See [protocol details](docs/protocol-v2.md).
+API v2 is incompatible with API v1. See [protocol details](docs/protocol-v2.md).
 
-Motor and platform position controls are available with firmware protocol 2.3 or
-newer; existing controls remain compatible with 2.1. See [position setup and API
-examples](docs/position-control.md).
+See [position control](docs/position-control.md) for setup and API examples.
 
 ## Run Controller client
 ```
