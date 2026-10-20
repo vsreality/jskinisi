@@ -11,18 +11,23 @@ function packet(command, id, payload = []) {
 }
 /** Minimal controller with initial and unsolicited sync, used behind both adapters. */
 class Board {
-  constructor(output) { this.output = output; this.writes = []; this.syncs = 0; this.syncId = 800; }
+  constructor(output) { this.output = output; this.writes = []; this.syncs = 0; this.syncId = 800; this.protocolMinor = 1; this.boardMinor = 3; }
   receive(data) {
     this.writes.push(data.slice());
     const command = data[1], id = data[2] | data[3] << 8;
     if (command === INIT) {
       this.initId = id; this.wall = Boolean(data[11] & 1);
-      this.output(packet(INIT, id, new Uint8Array(new InitResponse(1, 0, 3, 0, 2, 1, 0, 0, 0).encode())));
+      this.output(packet(INIT, id, new Uint8Array(new InitResponse(1, 0, this.boardMinor, 0, 2, this.protocolMinor, 0, 0, 0).encode())));
       this.output(packet(this.wall ? TIME_SYNC_REQUEST : READY, this.wall ? this.syncId : id, this.wall ? [] : [0]));
     } else if (command === TIME_SYNC_RESPONSE) {
       this.syncs++;
       if (this.syncs < 3) this.output(packet(TIME_SYNC_REQUEST, ++this.syncId));
       else if (this.syncs === 3) this.output(packet(READY, this.initId, [1]));
+    } else if (command === 0x50) this.output(packet(command, id, [0, 0, 0, 0, 0, 0x10, 0x39, 0x40])); // 25.0625 C
+    else if (command === 0x51) {
+      const payload = new Uint8Array(48);
+      [1, -2, 9.80665, 0.125, -0.25, 0.5].forEach((value, i) => new DataView(payload.buffer).setFloat64(i * 8, value, true));
+      this.output(packet(command, id, payload));
     } else this.output(packet(command, id, command === 0x12 ? [0x34, 0x12] : []));
   }
 }
@@ -82,6 +87,21 @@ class ProxySocket {
 }
 
 describe('Web Serial v2 adapter', () => {
+  it('reads IMU through the USB adapter', async () => {
+    const { board } = serialFixture(); board.protocolMinor = 5; board.boardMinor = 4;
+    const c = new KinisiClient(); connected.push(c); await c.connect();
+    await expect(c.get_imu(0)).resolves.toMatchObject({ acceleration_y: -2, acceleration_z: 9.80665, angular_velocity_z: 0.5 });
+    expect([...board.writes.at(-1)].slice(0, 2)).toEqual([4, 0x51]);
+    expect(board.writes.at(-1)[4]).toBe(0);
+  });
+  it('reads temperature through the USB adapter', async () => {
+    const { board } = serialFixture(); board.protocolMinor = 4; board.boardMinor = 4;
+    const c = new KinisiClient(); connected.push(c);
+    expect(await c.connect()).toBe(true);
+    await expect(c.get_temperature(0)).resolves.toBe(25.0625);
+    expect([...board.writes.at(-1)].slice(0, 2)).toEqual([4, 0x50]);
+    expect(board.writes.at(-1)[4]).toBe(0);
+  });
   it('holds one reader, waits for READY, serves periodic sync and releases stream locks', async () => {
     const { port, board, reader, writer } = serialFixture();
     const c = new KinisiClient(); connected.push(c);
@@ -106,6 +126,24 @@ describe('Web Serial v2 adapter', () => {
 });
 
 describe('WebSocket proxy v2 adapter', () => {
+  it('reads IMU through the proxy adapter', async () => {
+    vi.stubGlobal('WebSocket', ProxySocket);
+    const c = new KinisiWebSocketClient('robot.local'); connected.push(c); await c.connect();
+    ProxySocket.latest.board.protocolMinor = 5; ProxySocket.latest.board.boardMinor = 4; await c.open('/dev/ttyACM0');
+    await expect(c.get_imu(0)).resolves.toMatchObject({ acceleration_y: -2, angular_velocity_y: -0.25 });
+    expect([...ProxySocket.latest.board.writes.at(-1)].slice(0, 2)).toEqual([4, 0x51]);
+  });
+  it('reads temperature through the proxy adapter', async () => {
+    vi.stubGlobal('WebSocket', ProxySocket);
+    const c = new KinisiWebSocketClient('robot.local'); connected.push(c);
+    expect(await c.connect()).toBe(true);
+    ProxySocket.latest.board.protocolMinor = 4; ProxySocket.latest.board.boardMinor = 4;
+    expect((await c.open('/dev/ttyACM0')).ok).toBe(true);
+    await expect(c.get_temperature(0)).resolves.toBe(25.0625);
+    const request = ProxySocket.latest.board.writes.at(-1);
+    expect([...request].slice(0, 2)).toEqual([4, 0x50]);
+    expect(request[4]).toBe(0);
+  });
   it('waits for serial INIT/READY after proxy open and serves idle sync through READ opcodes', async () => {
     vi.stubGlobal('WebSocket', ProxySocket);
     const c = new KinisiWebSocketClient('ws://robot.local:8765'); connected.push(c);

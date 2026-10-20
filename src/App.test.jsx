@@ -20,6 +20,7 @@ describe('App', () => {
       'Platform',
       'GPIO',
       'Motor Controller',
+      'Sensors',
       'Settings',
     ]) {
       expect(
@@ -38,7 +39,7 @@ describe('App', () => {
     // Connection must stay reachable, or there would be no way to connect.
     expect(within(nav).getByRole('button', { name: 'Connection' })).toBeEnabled();
     expect(within(nav).getByRole('button', { name: 'Settings' })).toBeEnabled();
-    for (const section of ['Motor', 'Platform', 'GPIO', 'Motor Controller']) {
+    for (const section of ['Motor', 'Platform', 'GPIO', 'Motor Controller', 'Sensors']) {
       expect(within(nav).getByRole('button', { name: section })).toBeDisabled();
     }
   });

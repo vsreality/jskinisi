@@ -9,6 +9,7 @@ import ControllerProvider from './contexts/ControllerProvider';
 import MotorControllerTab from './components/MotorControllerTab/MotorControllerTab';
 import SettingsProvider from './contexts/SettingsProvider';
 import Settings from './components/Settings/Settings';
+import SensorsTab from './components/SensorsTab/SensorsTab';
 
 const REPO_URL = 'https://github.com/vsreality/jskinisi';
 const SITE_URL = 'https://vsreality.com';
@@ -55,6 +56,7 @@ function App() {
           <PlatformTab title="Platform" description="Configure your platform, tune wheel velocity, and control its position." />
           <GPIOTab title="GPIO" description="Configure each pin and read or set its digital state." />
           <MotorControllerTab title="Motor Controller" description="Tune velocity first, then position. Compare each target with measured feedback." />
+          <SensorsTab title="Sensors" description="Read measurements from your board's sensors." />
           <Settings title="Settings" description="Choose how values are displayed throughout the web client." alwaysEnabled settingsPage />
         </TabContainer>
       </div>

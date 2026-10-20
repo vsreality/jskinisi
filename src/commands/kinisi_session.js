@@ -1,12 +1,15 @@
 // File: kinisi_session.js
 // Shared API-v2 framing, readiness and clock exchange for serial and proxy transports.
 import { Commands, INIT, READY, ERROR, TIME_SYNC_REQUEST, TIME_SYNC_RESPONSE,
-  SDK_VERSION, InitResponse, ErrorCode, ErrorDescriptions,
+  SDK_VERSION, InitResponse, ErrorCode, ErrorDescriptions, GET_TEMPERATURE, GET_IMU,
   SET_HEARTBEAT_CONFIG, UNSUBSCRIBE_ODOMETRY, ENCODER_ODOMETRY_EVENT, PLATFORM_ODOMETRY_EVENT,
   EncoderOdometrySample, PlatformOdometrySample } from './kinisi_commands.js';
 import { POSITION_COMMANDS, supportsPositionControl, POSITION_PID_COMMANDS, supportsPositionPidControl } from './position_control.js';
+import { supportsTemperatureRead } from './temperature.js';
+import { supportsImuRead } from './imu.js';
+import { getBoardProfile, supportsBoardSensor } from './board_profile.js';
 
-// Existing controls need 2.1; additive position commands are gated separately.
+// Existing controls need 2.1; additive commands are gated separately.
 const MIN_PROTOCOL_VERSION = [2, 1, 0];
 
 /** A controller ERROR retains the original request identity and error code. */
@@ -108,9 +111,22 @@ export class KinisiSession extends Commands {
     return task;
   }
 
+  /** Bundled hardware profile selected automatically from INIT identity. */
+  get boardProfile() { return getBoardProfile(this.boardInfo); }
+
+  /** Check both hardware presence and firmware support without performing I/O. */
+  supportsSensor(kind, index = 0) { return supportsBoardSensor(this.boardInfo, kind, index); }
+
   /** Generated commands cannot bypass the INIT/READY gate. */
   async _request(command, payload, responseLength) {
     if (!this.ready) throw new ProtocolError('Controller is not ready; complete INIT first');
+    if (command === GET_IMU && !supportsImuRead(this.boardInfo))
+      throw new ProtocolError('IMU readings require firmware protocol 2.5 or newer');
+    if (command === GET_TEMPERATURE && !supportsTemperatureRead(this.boardInfo))
+      throw new ProtocolError('Temperature readings require firmware protocol 2.4 or newer');
+    const sensorKind = command === GET_TEMPERATURE ? 'temperature' : command === GET_IMU ? 'imu' : null;
+    if (sensorKind && this.boardProfile && !this.supportsSensor(sensorKind, new Uint8Array(payload)[0]))
+      throw new ProtocolError(`This board has no ${sensorKind === 'imu' ? 'IMU' : 'temperature'} sensor at that index`);
     if (POSITION_PID_COMMANDS.has(command) && !supportsPositionPidControl(this.boardInfo))
       throw new ProtocolError('Position PID requires firmware protocol 2.3 or newer');
     if (POSITION_COMMANDS.has(command) && !supportsPositionControl(this.boardInfo))
@@ -266,6 +282,7 @@ export class KinisiSession extends Commands {
   /** End a session, rejecting every waiter and preventing queued writes after disconnect. */
   _endSession(error = new ConnectionClosedError()) {
     this._session = null; this.ready = false;
+    this.boardInfo = null; this.clockMode = null;
     clearTimeout(this._heartbeatTimer); this._heartbeatTimer = null; this._heartbeatIntervalMs = null;
     this._heartbeatPending = false;
     this._subscriptionSamples.clear();

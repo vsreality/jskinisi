@@ -1,6 +1,8 @@
 // Generated from tools/commands.json by tools/sdkgenerator.py. Do not edit.
-export const SDK_VERSION = Object.freeze([2, 3, 1]);
-export const PROTOCOL_VERSION = Object.freeze([2, 3, 1]);
+export const SDK_VERSION = Object.freeze([2, 5, 0]);
+export const PROTOCOL_VERSION = Object.freeze([2, 5, 0]);
+export const GET_TEMPERATURE = 0x50;
+export const GET_IMU = 0x51;
 export const INITIALIZE_MOTOR = 0x01;
 export const SET_MOTOR_SPEED = 0x02;
 export const STOP_MOTOR = 0x03;
@@ -80,6 +82,7 @@ export const ErrorCode = Object.freeze({
   MOTOR_NOT_INITIALIZED: 13,
   CONTROLLER_NOT_INITIALIZED: 14,
   INIT_REQUIRED: 15,
+  SENSOR_NOT_AVAILABLE: 16,
 });
 export const ErrorDescriptions = Object.freeze({
   1: "The requested protocol version is incompatible with this firmware.",
@@ -91,12 +94,13 @@ export const ErrorDescriptions = Object.freeze({
   7: "Initial clock setup is incomplete; wait for READY. Uptime mode also supports READY.",
   8: "Initial time sync exhausted its attempts without a valid sample.",
   9: "Odometry is not running; start odometry before requesting a measurement.",
-  10: "Odometry is running but has no measurement yet, including immediately after reset; retry after an update.",
+  10: "The requested measurement is not ready yet, including after initialization or reset; retry after an update.",
   11: "Initialize the encoder before reading it or starting encoder odometry.",
   12: "Initialize a platform before performing this operation.",
   13: "Initialize the motor before setting its speed.",
   14: "Start or initialize the closed-loop controller before setting its target.",
   15: "Send a valid INIT request before performing this connection-dependent operation.",
+  16: "The selected sensor is not defined on this board.",
 });
 /** Preserve uint64/int64 precision instead of silently accepting rounded Numbers. */
 function exactBigInt(value) {
@@ -396,10 +400,74 @@ export class HeartbeatConfig {
   }
 }
 
+/** Latest independent accelerometer and gyroscope samples in sensor axes. */
+export class ImuSample {
+  /** Store one decoded payload. */
+  constructor(acceleration_x, acceleration_y, acceleration_z, angular_velocity_x, angular_velocity_y, angular_velocity_z) {
+    this.acceleration_x = acceleration_x;
+    this.acceleration_y = acceleration_y;
+    this.acceleration_z = acceleration_z;
+    this.angular_velocity_x = angular_velocity_x;
+    this.angular_velocity_y = angular_velocity_y;
+    this.angular_velocity_z = angular_velocity_z;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 48; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(ImuSample.getSize());
+    const view = new DataView(buffer);
+    view.setFloat64(0, this.acceleration_x, true);
+    view.setFloat64(8, this.acceleration_y, true);
+    view.setFloat64(16, this.acceleration_z, true);
+    view.setFloat64(24, this.angular_velocity_x, true);
+    view.setFloat64(32, this.angular_velocity_y, true);
+    view.setFloat64(40, this.angular_velocity_z, true);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, ImuSample.getSize());
+    return new ImuSample(
+      view.getFloat64(0, true),
+      view.getFloat64(8, true),
+      view.getFloat64(16, true),
+      view.getFloat64(24, true),
+      view.getFloat64(32, true),
+      view.getFloat64(40, true),
+    );
+  }
+}
+
 /** Generated user commands; session framing belongs to KinisiSession. */
 export class Commands {
   /** Implemented by a transport session. */
   async _request(_command, _payload, _responseLength) { throw new Error("No protocol session"); }
+
+  /** Protocol 2.4: read the latest board temperature in degrees Celsius. Sensor 0 is the TMP102 on v0.4. Sampling runs at 4 Hz; faster reads may repeat a sample. Returns SAMPLE_NOT_AVAILABLE during the first 300 ms after sensor initialization or recovery, SENSOR_NOT_AVAILABLE when the board has no such sensor, and INTERNAL_ERROR on I2C or configuration failure. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, SENSOR_NOT_AVAILABLE, SAMPLE_NOT_AVAILABLE, INTERNAL_ERROR. */
+  async get_temperature(sensor_index) {
+    if (!Number.isInteger(sensor_index) || sensor_index < 0 || sensor_index > 255) throw new RangeError('sensor_index must be an integer from 0 to 255');
+    const payload = new ArrayBuffer(1);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, sensor_index);
+    const response = await this._request(GET_TEMPERATURE, payload, 8);
+    const view = payloadView(response, 8);
+    const temperature = view.getFloat64(0, true);
+    if (!Number.isFinite(temperature)) throw new Error('Invalid temperature payload');
+    return temperature;
+  }
+
+  /** Protocol 2.5: read the latest accelerometer and gyroscope samples in native sensor axes. Acceleration is in m/s^2 and includes gravity; angular velocity is in rad/s. BMI088 uses +/-6 g and +/-500 degrees/s at 100 Hz. Each three-axis sample is coherent, but accel and gyro are not time-synchronized. Faster requests may repeat samples. No orientation or calibration is applied. Returns SAMPLE_NOT_AVAILABLE during the 50 ms settling interval after initialization or recovery, SENSOR_NOT_AVAILABLE for an absent sensor, and INTERNAL_ERROR on SPI, identity or configuration failure. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, SENSOR_NOT_AVAILABLE, SAMPLE_NOT_AVAILABLE, INTERNAL_ERROR. */
+  async get_imu(sensor_index) {
+    if (!Number.isInteger(sensor_index) || sensor_index < 0 || sensor_index > 255) throw new RangeError('sensor_index must be an integer from 0 to 255');
+    const payload = new ArrayBuffer(1);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, sensor_index);
+    const response = await this._request(GET_IMU, payload, 48);
+    const sample = ImuSample.decode(response);
+    if (!Object.values(sample).every(Number.isFinite)) throw new Error('Invalid IMU payload');
+    return sample;
+  }
 
   /** This command initializes a motor and prepares it for use. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels), so platform wheels are not reconfigured out from under the platform. Stops the motor velocity and position controllers before applying the command. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, INIT_REQUIRED. */
   async initialize_motor(motor_index, is_reversed) {
@@ -419,7 +487,7 @@ export class Commands {
     await this._request(SET_MOTOR_SPEED, payload, 0);
   }
 
-  /** Coasts the motor to a stop: both H-bridge outputs are driven low, leaving the motor terminals open (high impedance) so it free-wheels and spins down gradually under its own friction. This also stops that motor's closed-loop speed controller if one is running (started via INITIALIZE_MOTOR_CONTROLLER), so the PID loop cannot re-drive the motor; to command the motor by target speed again you must re-initialize its controller. This is a single-motor command and is ignored if the motor is currently owned by an active platform (one of its wheels); to stop a platform, use STOP_PLATFORM_CONTROLLER, COAST_PLATFORM or BRAKE_PLATFORM instead. Use STOP_MOTOR for a soft, low-stress stop; use BRAKE_MOTOR when you need the motor to hold position and stop quickly. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED. */
+  /** Stops the motor's velocity and position controllers and lets the motor coast with the H-bridge outputs in high impedance. On dual-PWM boards both PWM control inputs are low. On V4 enable/direction boards DISABLE is high and EN duty is zero. The command ID and payload are the same for all boards; firmware selects the hardware behavior from the board configuration. A motor owned by an active platform is rejected with MOTOR_OWNED; use COAST_PLATFORM or STOP_PLATFORM_CONTROLLER for platform wheels. Re-initialize the motor controller before using target-speed control again. Use BRAKE_MOTOR for a short brake instead of coasting. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED. */
   async stop_motor(motor_index) {
     const payload = new ArrayBuffer(1);
     const requestView = new DataView(payload);
@@ -427,7 +495,7 @@ export class Commands {
     await this._request(STOP_MOTOR, payload, 0);
   }
 
-  /** Actively brakes the motor (short brake): both H-bridge outputs are driven high, shorting the motor terminals together so the motor's own back-EMF resists rotation and it stops quickly and holds position. This also stops that motor's closed-loop speed controller if one is running (started via INITIALIZE_MOTOR_CONTROLLER), so the PID loop cannot re-drive the motor; to command the motor by target speed again you must re-initialize its controller. This is a single-motor command and is ignored if the motor is currently owned by an active platform (one of its wheels); to brake a platform, use BRAKE_PLATFORM (or STOP_PLATFORM_CONTROLLER / COAST_PLATFORM) instead. Use BRAKE_MOTOR for a fast, holding stop; use STOP_MOTOR to let the motor coast freely instead. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED. */
+  /** Stops the motor's velocity and position controllers and applies a short brake, connecting both motor terminals to the same bridge rail to resist rotation. On dual-PWM boards both PWM control inputs are high. On V4 enable/direction boards DISABLE is low and EN duty is zero; direction does not affect braking. The command ID and payload are the same for all boards; firmware selects the hardware behavior from the board configuration. Short braking does not regulate or hold a specific position. A motor owned by an active platform is rejected with MOTOR_OWNED; use BRAKE_PLATFORM for platform wheels. Re-initialize the motor controller before using target-speed control again. Use STOP_MOTOR to coast instead. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED. */
   async brake_motor(motor_index) {
     const payload = new ArrayBuffer(1);
     const requestView = new DataView(payload);
@@ -748,7 +816,7 @@ export class Commands {
     return PlatformOdometrySample.decode(response);
   }
 
-  /** This command actively brakes all of this platform's wheel motors (short brake) so they resist motion and hold position, and stops the platform velocity controller if it is running (you must call START_PLATFORM_CONTROLLER again to resume closed-loop platform control). Motors used outside this platform are not affected. The motors resist motion until a new command is issued. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR. */
+  /** Stops the platform velocity and position controllers and applies a short brake to this platform's wheel motors using the selected board's motor control model. Other motors are not affected. The brake resists motion until a new command is issued; it does not regulate or hold a specific position. Call START_PLATFORM_CONTROLLER again to resume closed-loop platform control. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR. */
   async brake_platform() {
     const payload = new ArrayBuffer(0);
     await this._request(BRAKE_PLATFORM, payload, 0);
