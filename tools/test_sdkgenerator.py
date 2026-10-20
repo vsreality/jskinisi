@@ -23,7 +23,7 @@ class GeneratorTests(unittest.TestCase):
         self.schema = json.loads((ROOT / 'tools/commands.json').read_text(encoding='utf-8'))
 
     def test_current_schema_matches_shipped_code(self):
-        """The accepted 2.1 schema still produces identical runtime definitions."""
+        """The current schema produces identical runtime definitions."""
         actual = (ROOT / 'src/commands/kinisi_commands.js').read_text(encoding='utf-8')
         self.assertEqual(generate_js_code(self.schema), actual)
 
@@ -42,6 +42,21 @@ class GeneratorTests(unittest.TestCase):
                 with self.subTest(version=version), self.assertRaises(ValueError):
                     generate(schema_path, output)
                 self.assertEqual(output.read_bytes(), b'preserved\n')
+
+    def test_missing_sensor_commands_preserves_output(self):
+        """Every sensor export imported by the session is required before writing."""
+        with tempfile.TemporaryDirectory() as directory:
+            schema_path = Path(directory) / 'commands.json'
+            output = Path(directory) / 'commands.js'
+            output.write_bytes(b'preserved\n')
+            for missing in ({'GET_TEMPERATURE'}, {'GET_IMU'}, {'GET_TEMPERATURE', 'GET_IMU'}):
+                with self.subTest(missing=sorted(missing)):
+                    schema = deepcopy(self.schema)
+                    schema['commands'] = [c for c in schema['commands'] if c['command'] not in missing]
+                    schema_path.write_text(json.dumps(schema), encoding='utf-8')
+                    with self.assertRaisesRegex(ValueError, 'missing runtime commands: ' + ', '.join(sorted(missing))):
+                        generate(schema_path, output)
+                    self.assertEqual(output.read_bytes(), b'preserved\n')
 
     def test_new_versions_and_commands_are_generated(self):
         """A future v2 schema produces its new public request and protocol version."""
@@ -67,17 +82,27 @@ class GeneratorTests(unittest.TestCase):
             outputs = [root / 'tools/commands.json', root / 'src/commands/kinisi_commands.js']
             for output in outputs:
                 output.write_bytes(b'preserved\n')
-            self.schema['version'] = '2.0.0'
-            self.schema['commands'] = [c for c in self.schema['commands'] if c['command'] != 'PING']
             source = root / 'old-schema.json'
-            source.write_text(json.dumps(self.schema), encoding='utf-8')
-            result = subprocess.run(
-                [sys.executable, '-B', str(root / 'tools/update-commands.py'), '--schema', str(source)],
-                capture_output=True, text=True, timeout=10)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn('missing runtime commands: PING', result.stderr)
-            for output in outputs:
-                self.assertEqual(output.read_bytes(), b'preserved\n')
+            for version, missing in (
+                ('2.0.0', {'PING'}),
+                ('2.5.0', {'GET_TEMPERATURE'}),
+                ('2.4.0', {'GET_IMU'}),
+                ('2.3.1', {'GET_TEMPERATURE', 'GET_IMU'}),
+            ):
+                with self.subTest(version=version, missing=sorted(missing)):
+                    for output in outputs:
+                        output.write_bytes(b'preserved\n')
+                    schema = deepcopy(self.schema)
+                    schema['version'] = version
+                    schema['commands'] = [c for c in schema['commands'] if c['command'] not in missing]
+                    source.write_text(json.dumps(schema), encoding='utf-8')
+                    result = subprocess.run(
+                        [sys.executable, '-B', str(root / 'tools/update-commands.py'), '--schema', str(source)],
+                        capture_output=True, text=True, timeout=10)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn('missing runtime commands: ' + ', '.join(sorted(missing)), result.stderr)
+                    for output in outputs:
+                        self.assertEqual(output.read_bytes(), b'preserved\n')
 
 
 if __name__ == '__main__':

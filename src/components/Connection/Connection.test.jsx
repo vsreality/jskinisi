@@ -30,6 +30,13 @@ function fakeController() {
 }
 
 describe('Connection section', () => {
+  it('leaves temperature readings to the Sensors section', () => {
+    const controller = { ...fakeController(), boardInfo: { protocol_major: 2, protocol_minor: 4 },
+      get_temperature: vi.fn().mockResolvedValue(25.0625) };
+    renderConnected(controller);
+    expect(screen.queryByRole('button', { name: 'Read temperature' })).toBeNull();
+    expect(controller.get_temperature).not.toHaveBeenCalled();
+  });
   it('offers only the teardown action once connected', () => {
     renderConnected(fakeController());
     expect(screen.getByRole('button', { name: 'Disconnect' })).toBeEnabled();

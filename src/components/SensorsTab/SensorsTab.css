@@ -1,0 +1,14 @@
+.sensors-page { max-width: 600px; }
+.board-imu { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+.board-imu h2, .board-imu p, .imu-measurement h3 { margin: 0; }
+.imu-readings { width: 100%; }
+.imu-measurement + .imu-measurement { margin-top: 16px; }
+.imu-measurement h3 { font-size: 16px; }
+.imu-measurement h3 span { font-weight: normal; }
+.imu-measurement dl { display: flex; gap: 20px; flex-wrap: wrap; margin: 8px 0 0; }
+.imu-measurement dl div { min-width: 90px; }
+.imu-measurement dt { font-size: 13px; }
+.imu-measurement dd { margin: 4px 0 0; font-size: 22px; font-variant-numeric: tabular-nums; }
+.board-temperature { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+.board-temperature h2 { margin: 0; }
+.board-temperature output { font-size: 24px; font-variant-numeric: tabular-nums; }

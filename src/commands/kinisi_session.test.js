@@ -5,7 +5,7 @@ import { KinisiSession, ControllerError, RequestTimeoutError } from './kinisi_se
 import { INIT, READY, TIME_SYNC_REQUEST, TIME_SYNC_RESPONSE, ERROR,
   GET_ENCODER_VALUE, GET_ENCODER_ODOMETRY, GET_TIME_STATUS, InitResponse,
   EncoderOdometrySample, TimeStatus, MotorControllerState,
-  PING, SET_HEARTBEAT_CONFIG, ENCODER_ODOMETRY_EVENT } from './kinisi_commands.js';
+  PING, SET_HEARTBEAT_CONFIG, ENCODER_ODOMETRY_EVENT, GET_TEMPERATURE, ErrorCode } from './kinisi_commands.js';
 
 /** Build fixture messages independently of the SDK frame encoder. */
 function packet(command, id, payload = []) {
@@ -24,6 +24,8 @@ class FakeClient extends KinisiSession {
     this.chunks = []; this.writes = []; this.waiter = null;
     this.syncs = 0; this.syncId = 400; this.handler = null;
     this.protocolMinor = options.protocolMinor ?? 1;
+    this.boardMinor = options.boardMinor ?? 3;
+    this.boardPatch = options.boardPatch ?? (this.boardMinor === 4 ? 0 : 1);
     clients.push(this);
   }
   /** Feed raw bytes into the production stream parser. */
@@ -43,7 +45,7 @@ class FakeClient extends KinisiSession {
     const command = data[1], id = data[2] | data[3] << 8;
     if (command === INIT) {
       this.initId = id;
-      const identity = new InitResponse(1, 0, 3, 1, 2, this.protocolMinor, 0, 0x12345678, 0x90abcdef).encode();
+      const identity = new InitResponse(1, 0, this.boardMinor, this.boardPatch, 2, this.protocolMinor, 0, 0x12345678, 0x90abcdef).encode();
       const response = packet(INIT, id, identity);
       // Fragment identity, then coalesce its end with the next message.
       this.push(response.slice(0, 2));
@@ -69,6 +71,90 @@ afterEach(async () => {
 });
 
 describe('API v2 session', () => {
+  it('selects the profile after INIT and clears it after disconnect', async () => {
+    const c = new FakeClient({ protocolMinor: 5, boardMinor: 4 });
+    expect(c.boardProfile).toBeNull(); expect(c.supportsSensor('imu')).toBe(false);
+    await c.connect();
+    expect(c.boardProfile.board).toEqual({ model: 1, revision: '0.4.0' });
+    expect(c.boardProfile.resources.motors).toBe(4);
+    expect(c.supportsSensor('temperature')).toBe(true); expect(c.supportsSensor('imu')).toBe(true);
+    await c.disconnect();
+    expect(c.boardProfile).toBeNull(); expect(c.supportsSensor('imu')).toBe(false);
+  });
+  it('blocks sensor requests on known legacy hardware before I/O', async () => {
+    const c = new FakeClient({ protocolMinor: 5, boardMinor: 3, boardPatch: 0 }); await c.connect();
+    const count = c.writes.length;
+    expect(c.boardProfile.resources.motors).toBe(4);
+    expect(c.supportsSensor('temperature')).toBe(false); expect(c.supportsSensor('imu')).toBe(false);
+    await expect(c.get_temperature(0)).rejects.toThrow('no temperature sensor');
+    await expect(c.get_imu(0)).rejects.toThrow('no IMU sensor');
+    expect(c.writes).toHaveLength(count);
+    expect(await c.get_encoder_value(0)).toBe(0xbeef);
+  });
+  it('keeps unknown boards connected without guessing a profile', async () => {
+    const c = new FakeClient({ protocolMinor: 5, boardMinor: 99 }); await c.connect();
+    expect(c.boardProfile).toBeNull(); expect(c.supportsSensor('imu')).toBe(false);
+    expect(await c.get_encoder_value(0)).toBe(0xbeef);
+  });
+  it.each([1, 2, 3, 4])('keeps protocol 2.%s usable while rejecting IMU without I/O', async protocolMinor => {
+    const c = new FakeClient({ protocolMinor }); await c.connect();
+    const count = c.writes.length;
+    await expect(c.get_imu(0)).rejects.toThrow('require firmware protocol 2.5');
+    expect(c.writes).toHaveLength(count);
+    expect(await c.get_encoder_value(0)).toBe(0xbeef);
+  });
+  it('reads a fragmented 48-byte IMU sample over a ready 2.5 session', async () => {
+    const c = new FakeClient({ protocolMinor: 5, boardMinor: 4 }); await c.connect();
+    c.handler = request => {
+      expect([...request]).toEqual([4, 0x51, 2, 0, 0]);
+      const payload = new ArrayBuffer(48);
+      [0, -1, 9.80665, 0.125, -0.25, 0.5].forEach((value, i) => new DataView(payload).setFloat64(i * 8, value, true));
+      const reply = packet(0x51, 2, payload);
+      for (let i = 0; i < reply.length; i += 3) c.push(reply.slice(i, i + 3));
+    };
+    await expect(c.get_imu(0)).resolves.toMatchObject({ acceleration_y: -1, acceleration_z: 9.80665, angular_velocity_z: 0.5 });
+  });
+  it.each([ErrorCode.SAMPLE_NOT_AVAILABLE, ErrorCode.SENSOR_NOT_AVAILABLE, ErrorCode.INTERNAL_ERROR])(
+    'preserves IMU error %s and keeps the session usable', async code => {
+      const c = new FakeClient({ protocolMinor: 5, boardMinor: 4 }); await c.connect();
+      c.handler = request => {
+        const id = request[2] | request[3] << 8;
+        c.push(request[1] === 0x51 ? packet(ERROR, id, [0x51, code]) : packet(request[1], id));
+      };
+      await expect(c.get_imu(0)).rejects.toMatchObject({ name: 'ControllerError', code, command: 0x51, messageId: 2 });
+      await expect(c.ping()).resolves.toBeUndefined();
+    });
+  it.each([1, 2, 3])('keeps protocol 2.%s usable while rejecting temperature without I/O', async protocolMinor => {
+    const c = new FakeClient({ protocolMinor }); await c.connect();
+    const count = c.writes.length;
+    await expect(c.get_temperature(0)).rejects.toThrow('require firmware protocol 2.4');
+    expect(c.writes).toHaveLength(count);
+    expect(await c.get_encoder_value(0)).toBe(0xbeef);
+  });
+
+  it('reads a fragmented signed temperature response over a ready 2.4 session', async () => {
+    const c = new FakeClient({ protocolMinor: 4, boardMinor: 4 }); await c.connect();
+    c.handler = request => {
+      expect([...request]).toEqual([4, 0x50, 2, 0, 0]);
+      const response = packet(0x50, 2, [0, 0, 0, 0, 0, 0, 0xb0, 0xbf]); // -0.0625 C
+      c.push(response.slice(0, 6)); c.push(response.slice(6));
+    };
+    await expect(c.get_temperature(0)).resolves.toBe(-0.0625);
+  });
+
+  it.each([ErrorCode.SAMPLE_NOT_AVAILABLE, ErrorCode.SENSOR_NOT_AVAILABLE, ErrorCode.INTERNAL_ERROR])(
+    'preserves temperature error %s and keeps the session usable', async code => {
+      const c = new FakeClient({ protocolMinor: 4, boardMinor: 4 }); await c.connect();
+      c.handler = request => {
+        const id = request[2] | request[3] << 8;
+        c.push(request[1] === GET_TEMPERATURE
+          ? packet(ERROR, id, [GET_TEMPERATURE, code]) : packet(request[1], id));
+      };
+      await expect(c.get_temperature(0)).rejects.toMatchObject({ name: 'ControllerError', code, command: 0x50, messageId: 2 });
+      expect(c.ready).toBe(true);
+      await expect(c.ping()).resolves.toBeUndefined();
+    });
+
   it('gates position PID initialization on 2.3 while keeping legacy position commands', async () => {
     const old = new FakeClient({ protocolMinor: 2 }); await old.connect();
     const count = old.writes.length;
@@ -145,7 +231,7 @@ describe('API v2 session', () => {
     await expect(c.get_encoder_value(0)).rejects.toThrow('not ready');
     await c.connect();
     expect(c.ready).toBe(true); expect(c.boardInfo.board_patch).toBe(1);
-    expect([...c.writes[0]]).toEqual([11, 0x70, 1, 0, 2, 2, 3, 1, 2, 1, 0, 3]);
+    expect([...c.writes[0]]).toEqual([11, 0x70, 1, 0, 2, 2, 5, 0, 2, 1, 0, 3]);
     expect(c.syncs).toBe(3);
     for (const data of c.writes.filter((d) => d[1] === TIME_SYNC_RESPONSE)) {
       const view = new DataView(data.buffer);

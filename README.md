@@ -7,7 +7,28 @@ Description of the commands can be found in [Kinisi Motion Controller framework 
 
 API v2 is incompatible with API v1. See [protocol details](docs/protocol-v2.md).
 
+Communication protocol versions use `major.minor.patch`: major releases introduce
+breaking changes, minor releases add compatible features, and patch releases
+provide compatible fixes. The client and firmware must support the same protocol
+major, and the firmware must meet the client's minimum required minor. Optional
+commands are enabled according to the firmware's reported protocol version.
+Board revision and JavaScript package version are separate from protocol
+compatibility. See the [versioning policy](docs/protocol-v2.md#protocol-versioning-and-compatibility).
+
+The SDK bundles generated profiles for the supported boards. After connecting,
+`controller.boardProfile` contains hardware counts/features and
+`controller.supportsSensor('imu')` checks both hardware and firmware support.
+Profiles are selected automatically; see [board profiles](docs/protocol-v2.md#bundled-board-profiles).
+
 See [position control](docs/position-control.md) for setup and API examples.
+
+For v0.4 board temperature, use `await controller.get_temperature(0)` or
+**Sensors → Read temperature** in the web client. See [temperature support](docs/protocol-v2.md#board-temperature)
+for firmware requirements and error handling.
+
+For v0.4 accelerometer and gyroscope readings, use `await controller.get_imu(0)`
+or **Sensors → Read IMU**. See [IMU support](docs/protocol-v2.md#imu) for units,
+firmware requirements and sampling behavior.
 
 ## Run Controller client
 ```

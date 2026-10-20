@@ -12,9 +12,91 @@ shows the board version after connecting. Keep command-specific documentation in
 the firmware's generated `commands.md`; local methods are generated from the
 checked-in `tools/commands.json` snapshot.
 
+## Protocol versioning and compatibility
+
+The communication protocol uses `major.minor.patch`:
+
+- **Major:** breaking changes to existing framing, request/response layouts,
+  units or command meaning. The client and firmware must support the same
+  protocol major. This client supports major 2 and rejects other majors.
+- **Minor:** compatible additions. Existing commands retain their IDs, payloads
+  and documented meanings. New commands require the firmware minor that
+  introduced them; the client must check this before sending.
+- **Patch:** compatible fixes that preserve the documented interface and
+  behavior. Patch differences do not block connection.
+
+An incompatible replacement within the same major must use a new command ID
+while retaining the original command. Changing or removing the original command
+requires a new protocol major.
+
+INIT declares the client's supported protocol major and its minimum required
+minor. The board reports the protocol it implements. Compatibility requires
+matching majors and a board minor at least as high as the client's required
+minor; INIT does not translate between major versions or select an older wire
+format. This client requires protocol `2.1` for baseline functionality. It also
+connects to firmware `2.2` through `2.5`, gating newer commands individually.
+Temperature reads require `2.4`; IMU reads require `2.5`.
+
+These checks use communication protocol versions. The JavaScript package
+version, board hardware revision and firmware build ID are independent. Sensor
+presence and other hardware resources are checked separately from protocol
+support. The firmware documentation defines the
+[shared versioning policy](https://github.com/szolotykh/kinisi-motor-controller-firmware/blob/main/docs/initialization.md#protocol-versioning-and-compatibility).
+
+## Bundled board profiles
+
+Both transport clients automatically select a bundled hardware profile from the
+board model and complete revision reported in INIT. The profile is independent
+of protocol and JavaScript package versions and is cleared on disconnect.
+
+```js
+// After a successful connection:
+const profile = controller.boardProfile; // null for an unknown board identity
+if (profile) {
+  console.log(profile.resources.motors, profile.resources.encoders);
+}
+if (controller.supportsSensor('imu', 0)) {
+  const sample = await controller.get_imu(0);
+  console.log(sample.acceleration_z);
+}
+```
+
+`boardProfile` contains the board identity, resource counts, per-motor hardware
+current-sense/current-limit flags and sensor IDs/features. These immutable
+profiles omit all MCU, pin, bus, timer, address and motor control-mode details.
+Current flags indicate fitted hardware; they do not establish firmware command
+availability. Current ADC reads and adjustable-current commands remain
+unimplemented in the firmware.
+
+`supportsSensor('temperature' | 'imu', index = 0)` combines hardware presence and
+firmware protocol support. The exported helpers in `src/commands/board_profile.js`
+provide `getBoardProfile(info)`, `hasBoardSensor(info, kind, index)` for physical
+presence, and `supportsBoardSensor(info, kind, index)` for combined support.
+Protocol-only helpers remain available but do not establish sensor presence.
+
+An unknown board returns no profile and `supportsSensor` returns false. It can
+still connect and use protocol-compatible commands. The UI asks for a client
+update rather than assuming another revision's hardware. Low-level sensor
+requests for unknown boards rely on firmware availability checks; requests for
+known absent sensors fail locally before I/O with `ProtocolError`.
+
+The source bundle is generated from the firmware's board JSON. Update the SDK
+snapshot and generated module together:
+
+```sh
+python tools/update-board-profiles.py --profiles ../kinisi-motor-controller-firmware/include/board_profiles.json
+python tools/update-board-profiles.py --profiles ../kinisi-motor-controller-firmware/include/board_profiles.json --check
+```
+
+An explicit firmware `--branch` may be imported instead of a local `--profiles`
+file. Imports validate all metadata before replacing either output. The bundled
+JSON snapshot is in `tools/board_profiles.json`; the generated native JavaScript
+module is `src/commands/board_profiles.js`, so runtime lookup needs no network,
+custom file or JSON-module loader. Custom profiles are not supported.
+
 ## Clock synchronization
 
-JavaScript identifies itself as SDK type 2, version 2.3.1. It requests protocol 2.1
+JavaScript identifies itself as SDK type 2, version 2.5.0. It requests protocol 2.1
 as the minimum; [position commands](position-control.md) require the board to
 report protocol 2.2 or newer. Position PID initialization (0x10 and 0x4E) requires 2.3 or newer. By default it advertises
 wall-clock and subscription capabilities. The controller initiates each timing exchange; the
@@ -81,6 +163,69 @@ client's request deadline. The proxy serializes READ and WRITE, so an idle READ
 can delay the next command by that timeout. For interactive control, start the
 proxy with `--serial-timeout 0.05`; its existing default is one second. Direct Web Serial
 holds one reader/writer pair until disconnect and cancels I/O before releasing it.
+
+## Board temperature
+
+Both Web Serial and WebSocket clients expose the same method after connecting:
+
+```js
+const celsius = await controller.get_temperature(0);
+console.log(`${celsius.toFixed(2)} °C`);
+```
+
+Sensor 0 is the TMP102 on v0.4. The method sends `GET_TEMPERATURE` (`0x50`)
+with one unsigned-byte sensor index and decodes an eight-byte, little-endian
+double into a JavaScript Number. Indices must be integers from 0 to 255; the
+board determines which indices exist. Firmware initializes the sensor at startup.
+
+The command requires protocol 2.4 or newer. Older firmware can still connect
+and use its existing controls; temperature requests fail locally without sending
+an unsupported command. Protocol support alone does not imply a fitted sensor.
+`ControllerError.code` distinguishes `ErrorCode.SENSOR_NOT_AVAILABLE` (16),
+`ErrorCode.SAMPLE_NOT_AVAILABLE` (10, retry after startup/recovery), and
+`ErrorCode.INTERNAL_ERROR` (6, sensor communication/configuration failure).
+Malformed payload lengths and non-finite temperatures are rejected.
+
+On the web client's **Sensors** tab, **Read temperature** requests sensor 0
+and displays the result in °C. Connect to the board to enable the tab. Temperature
+controls appear when the selected profile has the sensor and the board reports
+protocol 2.4 or newer. A fitted sensor with older firmware shows an update message;
+boards without temperature hardware have no temperature controls. Readings are
+requested manually; failures clear the previous displayed
+value. The sensor updates at 4 Hz, so repeated reads can return the same sample.
+
+## IMU
+
+After connecting to firmware with protocol 2.5 or newer:
+
+```js
+const sample = await controller.get_imu(0);
+console.log(sample.acceleration_x, sample.acceleration_y, sample.acceleration_z); // m/s²
+console.log(sample.angular_velocity_x, sample.angular_velocity_y, sample.angular_velocity_z); // rad/s
+```
+
+`GET_IMU` (`0x51`) sends one unsigned-byte sensor index and decodes six
+little-endian doubles (48 bytes) in the order shown above. Indices must be
+integers from 0 to 255. Sensor 0 is the BMI088 on v0.4; the board determines
+availability. Both Web Serial and WebSocket proxy clients use this API.
+
+Firmware initializes the sensor automatically at 100 Hz, with ±6 g acceleration
+and ±500 degrees/s angular velocity ranges. Readings use native sensor axes;
+acceleration includes gravity. Each three-axis sample is coherent, but acceleration
+and angular velocity are not time-synchronized. No calibration, axis remapping,
+orientation or gravity subtraction is applied. Faster reads may repeat samples.
+
+Older firmware still connects and supports existing controls. IMU requests fail
+locally before sending on protocol versions below 2.5. Protocol support alone
+does not establish hardware availability. Errors use `ControllerError.code`:
+`SENSOR_NOT_AVAILABLE` (16), `SAMPLE_NOT_AVAILABLE` (10, retry after sensor startup
+or recovery), or `INTERNAL_ERROR` (6, communication/identity/configuration failure).
+Malformed lengths and non-finite values are rejected.
+
+In **Sensors → Read IMU**, each click requests sensor 0 and displays all six axes
+with their units. Failures clear the previous values and allow retry. Controls
+appear only for a profile with an IMU; fitted hardware with older firmware shows
+an update message. These are manually requested snapshots.
 
 ## Development checks
 

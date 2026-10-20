@@ -8,8 +8,10 @@ TYPES = {'bool':(1,'Uint8'), 'uint8_t':(1,'Uint8'), 'int8_t':(1,'Int8'),
          'uint16_t':(2,'Uint16'), 'int16_t':(2,'Int16'), 'uint32_t':(4,'Uint32'),
          'int32_t':(4,'Int32'), 'uint64_t':(8,'BigUint64'), 'int64_t':(8,'BigInt64'), 'double':(8,'Float64')}
 # Additional user commands are generated freely; these support handwritten session behavior.
+# Sensor exports are required by the session even when connected firmware is older.
 SESSION_COMMANDS = {'PING', 'SET_HEARTBEAT_CONFIG', 'SUBSCRIBE_ODOMETRY',
-                    'UNSUBSCRIBE_ODOMETRY', 'ENCODER_ODOMETRY_EVENT', 'PLATFORM_ODOMETRY_EVENT'}
+                    'UNSUBSCRIBE_ODOMETRY', 'ENCODER_ODOMETRY_EVENT', 'PLATFORM_ODOMETRY_EVENT',
+                    'GET_TEMPERATURE', 'GET_IMU'}
 
 
 def class_name(name):
@@ -36,7 +38,7 @@ def generate_js_code(schema, js_version='ES6'):
             value = f'exactBigInt({value})'
         return f'view.set{TYPES[t][1]}({offset}, {value}'+(', true' if size(t)>1 else '')+');'
     lines = ['// Generated from tools/commands.json by tools/sdkgenerator.py. Do not edit.\n',
-             'export const SDK_VERSION = Object.freeze([2, 3, 1]);\n',
+             'export const SDK_VERSION = Object.freeze([2, 5, 0]);\n',
              f"export const PROTOCOL_VERSION = Object.freeze({json.dumps([int(v) for v in schema['version'].split('.')])});\n"]
     for c in schema['commands']:
         if c.get('direction') not in ('client_to_controller','controller_to_client'):
@@ -84,6 +86,8 @@ function payloadView(buffer, size) {
         props=c.get('properties',[]); n=sum(size(p['type']) for p in props)
         lines.append(f'\n  /** {c["description"]} Errors: '+', '.join(c.get('errors',[]))+'. */\n')
         lines.append('  async '+c['command'].lower()+'('+', '.join(p['name'] for p in props)+') {\n')
+        if c['command'] in {'GET_TEMPERATURE', 'GET_IMU'}:
+            lines.append("    if (!Number.isInteger(sensor_index) || sensor_index < 0 || sensor_index > 255) throw new RangeError('sensor_index must be an integer from 0 to 255');\n")
         if c['command'] in {'INITIALIZE_MOTOR_CONTROLLER', 'START_PLATFORM_CONTROLLER'}:
             # These existing APIs also accept numeric strings from UI controls.
             for name in ('kp', 'ki', 'kd', 'integral_limit'):
@@ -112,7 +116,13 @@ function payloadView(buffer, size) {
         if r:
             t=r['name'] if r['type']=='object' else r['type']
             lines.append(f'    const response = await this._request({c["command"]}, payload, {size(t)});\n')
-            if t in objects: lines.append(f'    return {class_name(t)}.decode(response);\n')
+            if c['command'] == 'GET_IMU':
+                lines.append(f'    const sample = {class_name(t)}.decode(response);\n')
+                lines.append("    if (!Object.values(sample).every(Number.isFinite)) throw new Error('Invalid IMU payload');\n    return sample;\n")
+            elif t in objects: lines.append(f'    return {class_name(t)}.decode(response);\n')
+            elif c['command'] == 'GET_TEMPERATURE':
+                lines.append(f'    const view = payloadView(response, {size(t)});\n    const temperature = {read(t,0)};\n')
+                lines.append("    if (!Number.isFinite(temperature)) throw new Error('Invalid temperature payload');\n    return temperature;\n")
             else:
                 lines.append(f'    const view = payloadView(response, {size(t)});\n    return {read(t,0)};\n')
         else: lines.append(f'    await this._request({c["command"]}, payload, 0);\n')
