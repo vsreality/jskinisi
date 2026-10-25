@@ -29,13 +29,22 @@ An incompatible replacement within the same major must use a new command ID
 while retaining the original command. Changing or removing the original command
 requires a new protocol major.
 
+Commands may be marked **retired** in the shared schema, with the retirement
+protocol version, replacement command and earliest removal major. They remain
+callable with unchanged wire behavior throughout the current major. Generated
+SDK methods use the standard `@deprecated` annotation for editor guidance.
+Retirement produces no runtime warning or rejection. Legacy odometry
+subscriptions and events are retired from protocol `2.6.0`; they remain supported
+in `2.x` and are eligible for removal in `3.0.0`. Use the generic subscription API
+with 2.6+ firmware; the legacy API remains available for older firmware.
+
 INIT declares the client's supported protocol major and its minimum required
 minor. The board reports the protocol it implements. Compatibility requires
 matching majors and a board minor at least as high as the client's required
 minor; INIT does not translate between major versions or select an older wire
 format. This client requires protocol `2.1` for baseline functionality. It also
-connects to firmware `2.2` through `2.5`, gating newer commands individually.
-Temperature reads require `2.4`; IMU reads require `2.5`.
+connects to firmware `2.2` through `2.6`, gating newer commands individually.
+Temperature reads require `2.4`; IMU reads require `2.5`; generic subscriptions require `2.6`.
 
 These checks use communication protocol versions. The JavaScript package
 version, board hardware revision and firmware build ID are independent. Sensor
@@ -96,7 +105,7 @@ custom file or JSON-module loader. Custom profiles are not supported.
 
 ## Clock synchronization
 
-JavaScript identifies itself as SDK type 2, version 2.5.0. It requests protocol 2.1
+JavaScript identifies itself as SDK type 2, version 2.6.0. It requests protocol 2.1
 as the minimum; [position commands](position-control.md) require the board to
 report protocol 2.2 or newer. Position PID initialization (0x10 and 0x4E) requires 2.3 or newer. By default it advertises
 wall-clock and subscription capabilities. The controller initiates each timing exchange; the

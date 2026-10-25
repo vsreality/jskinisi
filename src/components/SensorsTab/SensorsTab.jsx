@@ -7,7 +7,7 @@ import { supportsImuRead } from '../../commands/imu';
 import { getBoardProfile } from '../../commands/board_profile';
 import './SensorsTab.css';
 
-export default function SensorsTab() {
+export default function SensorsTab({ isActive = true }) {
   const { controller, isConnected } = useContext(ControllerContext);
   const profile = getBoardProfile(controller?.boardInfo);
   return <div className="page-layout sensors-page">
@@ -17,13 +17,13 @@ export default function SensorsTab() {
         <p className="section-help">This board is not recognized. Update the client to view its sensors.</p>
       </section> : <>
       {profile.sensors.temperature.map(sensor => supportsTemperatureRead(controller?.boardInfo)
-        ? <BoardTemperature key={sensor.id} controller={controller} sensorIndex={sensor.id} />
+        ? <BoardTemperature key={sensor.id} controller={controller} sensorIndex={sensor.id} isActive={isActive} />
         : <section key={sensor.id} className="panel-card">
           <h2>Board temperature</h2>
           <p className="section-help">Update the board firmware to read temperature.</p>
         </section>)}
       {profile.sensors.imu.map(sensor => supportsImuRead(controller?.boardInfo)
-        ? <BoardImu key={sensor.id} controller={controller} sensorIndex={sensor.id} />
+        ? <BoardImu key={sensor.id} controller={controller} sensorIndex={sensor.id} isActive={isActive} />
         : <section key={sensor.id} className="panel-card">
           <h2>Motion sensor (IMU)</h2>
           <p className="section-help">Update the board firmware to read the IMU.</p>

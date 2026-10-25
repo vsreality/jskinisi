@@ -6,6 +6,8 @@ import { INIT, READY, TIME_SYNC_REQUEST, TIME_SYNC_RESPONSE, ERROR,
   GET_ENCODER_VALUE, GET_ENCODER_ODOMETRY, GET_TIME_STATUS, InitResponse,
   EncoderOdometrySample, TimeStatus, MotorControllerState,
   PING, SET_HEARTBEAT_CONFIG, ENCODER_ODOMETRY_EVENT, GET_TEMPERATURE, ErrorCode } from './kinisi_commands.js';
+import { Topic, SUBSCRIBE, UNSUBSCRIBE, TELEMETRY_EVENT, TemperatureSample, ImuTelemetrySample,
+  PlatformOdometrySample, SUBSCRIBE_ODOMETRY } from './kinisi_commands.js';
 
 /** Build fixture messages independently of the SDK frame encoder. */
 function packet(command, id, payload = []) {
@@ -15,6 +17,10 @@ function packet(command, id, payload = []) {
 /** Give the promise-based read/write queues time to drain without sleeping. */
 async function flush() { for (let i = 0; i < 40; i++) await Promise.resolve(); }
 const clients = [];
+
+function telemetry(topic, index, sample) {
+  return packet(TELEMETRY_EVENT, 0, [topic, index, ...new Uint8Array(sample.encode())]);
+}
 
 class FakeClient extends KinisiSession {
   /** Start an in-memory endpoint that can split, delay, and reorder board replies. */
@@ -231,7 +237,7 @@ describe('API v2 session', () => {
     await expect(c.get_encoder_value(0)).rejects.toThrow('not ready');
     await c.connect();
     expect(c.ready).toBe(true); expect(c.boardInfo.board_patch).toBe(1);
-    expect([...c.writes[0]]).toEqual([11, 0x70, 1, 0, 2, 2, 5, 0, 2, 1, 0, 3]);
+    expect([...c.writes[0]]).toEqual([11, 0x70, 1, 0, 2, 2, 6, 0, 2, 1, 0, 3]);
     expect(c.syncs).toBe(3);
     for (const data of c.writes.filter((d) => d[1] === TIME_SYNC_RESPONSE)) {
       const view = new DataView(data.buffer);
@@ -333,5 +339,161 @@ describe('generated payload codecs', () => {
     expect(MotorControllerState.decode(padded.subarray(5, 62))).toEqual(state);
     expect(() => MotorControllerState.decode(new ArrayBuffer(58))).toThrow('Expected 57');
     expect(() => new EncoderOdometrySample(Number.MAX_SAFE_INTEGER + 1, 0, 1, 0).encode()).toThrow('bigint');
+  });
+});
+
+describe('Generic telemetry subscriptions', () => {
+  const options = { protocolMinor: 6, boardMinor: 4, heartbeatTimeoutMs: 500 };
+  const imu = stamp => new ImuTelemetrySample(stamp, 0, 1, 1, 2, 3, 4, 5, 6);
+  it.each([
+    [Topic.ENCODER_ODOMETRY, 0, 100, new EncoderOdometrySample(123n, 0, 1, 2.5)],
+    [Topic.PLATFORM_ODOMETRY, 0, 100, new PlatformOdometrySample(123n, 0, 1, 1, 2, 3)],
+    [Topic.TEMPERATURE, 0, 1000, new TemperatureSample(123n, 0, 1, -12.5)],
+    [Topic.IMU, 0, 20, imu(123n)],
+  ])('encodes enum topic %s and dispatches its typed sample', async (topic, index, intervalMs, sample) => {
+    const c = new FakeClient(options); await c.connect();
+    const listener = vi.fn();
+    const sub = await c.subscribe({ topic, index, intervalMs }, listener);
+    const wire = c.writes.at(-1);
+    expect([...wire.slice(0, 2)]).toEqual([9, SUBSCRIBE]);
+    expect([...wire.slice(4, 6)]).toEqual([topic, index]);
+    expect(new DataView(wire.buffer).getUint32(6, true)).toBe(intervalMs);
+    expect(sub.active).toBe(true);
+    const data = telemetry(topic, index, sample);
+    c.push(data.slice(0, 7)); c.push(data.slice(7)); await flush();
+    expect(listener).toHaveBeenCalledExactlyOnceWith(sample);
+    expect(Object.isFrozen(listener.mock.calls[0][0])).toBe(true);
+    await sub.unsubscribe(); await sub.unsubscribe();
+    expect(c.writes.filter(w => w[1] === UNSUBSCRIBE)).toHaveLength(1);
+    expect(sub.active).toBe(false);
+    c.push(data); await flush(); expect(listener).toHaveBeenCalledTimes(1);
+  });
+  it('rejects unsupported firmware, hardware, indices and intervals before sending', async () => {
+    const old = new FakeClient({ ...options, protocolMinor: 5 }); await old.connect();
+    let count = old.writes.length;
+    await expect(old.subscribe({ topic: Topic.IMU, intervalMs: 20 }, vi.fn())).rejects.toThrow('protocol 2.6');
+    expect(old.writes).toHaveLength(count);
+    const c = new FakeClient(options); await c.connect(); count = c.writes.length;
+    for (const parameters of [{ topic: 'IMU', intervalMs: 20 }, { topic: 255, intervalMs: 20 },
+      { topic: Topic.PLATFORM_ODOMETRY, index: 1, intervalMs: 100 },
+      { topic: Topic.TEMPERATURE, index: 1, intervalMs: 1000 },
+      { topic: Topic.TEMPERATURE, intervalMs: 249 }, { topic: Topic.IMU, intervalMs: NaN },
+      { topic: Topic.IMU, intervalMs: 10.5 }, { topic: Topic.IMU, intervalMs: 3600001 }]) {
+      await expect(c.subscribe(parameters, vi.fn())).rejects.toThrow();
+    }
+    expect(c.writes).toHaveLength(count);
+    await c.set_heartbeat_config(false, 500); count = c.writes.length;
+    await expect(c.subscribe({ topic: Topic.IMU, intervalMs: 20 }, vi.fn())).rejects.toThrow('heartbeat');
+    expect(c.writes).toHaveLength(count);
+  });
+  it('replaces a listener without letting an old handle remove the replacement', async () => {
+    const c = new FakeClient(options); await c.connect();
+    const first = vi.fn(), second = vi.fn();
+    const a = await c.subscribe({ topic: Topic.IMU, intervalMs: 20 }, first);
+    const b = await c.subscribe({ topic: Topic.IMU, intervalMs: 30 }, second);
+    expect(a.active).toBe(false); await a.unsubscribe();
+    expect(c.writes.filter(w => w[1] === UNSUBSCRIBE)).toHaveLength(0);
+    c.push(telemetry(Topic.IMU, 0, imu(1n))); await flush();
+    expect(first).not.toHaveBeenCalled(); expect(second).toHaveBeenCalledOnce();
+    expect(b.active).toBe(true);
+  });
+  it('delivers an event coalesced with the subscribe ACK', async () => {
+    const c = new FakeClient(options); await c.connect();
+    const listener = vi.fn(), sample = imu(42n);
+    c.handler = d => c.push(new Uint8Array([
+      ...packet(d[1], d[2] | d[3] << 8), ...telemetry(Topic.IMU, 0, sample),
+    ]));
+    await c.subscribe({ topic: Topic.IMU, intervalMs: 20 }, listener);
+    await flush();
+    expect(listener).toHaveBeenCalledExactlyOnceWith(sample);
+  });
+  it('serializes overlapping subscribe and unsubscribe requests', async () => {
+    const c = new FakeClient(options); await c.connect();
+    const first = c.subscribe({ topic: Topic.IMU, intervalMs: 20 }, vi.fn());
+    const second = c.subscribe({ topic: Topic.IMU, intervalMs: 30 }, vi.fn());
+    const a = await first, b = await second;
+    await a.unsubscribe(); await b.unsubscribe();
+    expect(c.writes.filter(w => [SUBSCRIBE, UNSUBSCRIBE].includes(w[1])).map(w => w[1])).toEqual([SUBSCRIBE, SUBSCRIBE, UNSUBSCRIBE]);
+  });
+  it('keeps the previous listener after a rejected replacement and allows unsubscribe retry', async () => {
+    const c = new FakeClient(options); await c.connect();
+    const listener = vi.fn();
+    const sub = await c.subscribe({ topic: Topic.IMU, intervalMs: 20 }, listener);
+    c.handler = d => c.push(packet(ERROR, d[2] | d[3] << 8, [d[1], ErrorCode.INTERNAL_ERROR]));
+    await expect(c.subscribe({ topic: Topic.IMU, intervalMs: 30 }, vi.fn())).rejects.toThrow('INTERNAL_ERROR');
+    expect(sub.active).toBe(true);
+    c.push(telemetry(Topic.IMU, 0, imu(1n))); await flush();
+    expect(listener).toHaveBeenCalledOnce();
+    await expect(sub.unsubscribe()).rejects.toThrow('INTERNAL_ERROR');
+    expect(sub.active).toBe(true);
+    c.handler = null; await sub.unsubscribe(); expect(sub.active).toBe(false);
+  });
+  it('cancels an unconfirmed subscription after its ACK times out', async () => {
+    vi.useFakeTimers();
+    const c = new FakeClient({ ...options, requestTimeoutMs: 20 }); await c.connect();
+    c.handler = d => { if (d[1] !== SUBSCRIBE) c.push(packet(d[1], d[2] | d[3] << 8)); };
+    const result = c.subscribe({ topic: Topic.IMU, intervalMs: 20 }, vi.fn()).catch(error => error);
+    await flush(); await vi.advanceTimersByTimeAsync(21);
+    expect(await result).toBeInstanceOf(RequestTimeoutError);
+    expect(c.writes.at(-1)[1]).toBe(UNSUBSCRIBE);
+    expect(c._telemetryListeners.size).toBe(0);
+    expect(c.ready).toBe(true);
+  });
+  it('closes the session if unsubscribe cannot be confirmed', async () => {
+    vi.useFakeTimers();
+    const c = new FakeClient({ ...options, requestTimeoutMs: 20 }); await c.connect();
+    const sub = await c.subscribe({ topic: Topic.IMU, intervalMs: 20 }, vi.fn());
+    c.handler = () => {};
+    const result = sub.unsubscribe().catch(error => error);
+    await flush(); await vi.advanceTimersByTimeAsync(21);
+    expect(await result).toBeInstanceOf(RequestTimeoutError);
+    expect(c.ready).toBe(false); expect(sub.active).toBe(false);
+  });
+  it('coalesces slow callbacks to the latest waiting sample and allows commands inside them', async () => {
+    const c = new FakeClient(options); await c.connect();
+    let release;
+    const blocked = new Promise(resolve => { release = resolve; });
+    const listener = vi.fn(async () => { await c.ping(); await blocked; });
+    await c.subscribe({ topic: Topic.IMU, intervalMs: 20 }, listener);
+    c.push(telemetry(Topic.IMU, 0, imu(1n))); await flush();
+    c.push(telemetry(Topic.IMU, 0, imu(2n))); await flush();
+    c.push(telemetry(Topic.IMU, 0, imu(3n))); await flush();
+    expect(listener).toHaveBeenCalledTimes(1);
+    release(); await flush(); expect(listener).toHaveBeenCalledTimes(2);
+    expect(listener.mock.calls[1][0].timestamp_us).toBe(3n);
+    expect(c.ready).toBe(true);
+  });
+  it('contains callback failures and ignores future unknown topics', async () => {
+    const c = new FakeClient(options); await c.connect();
+    await c.subscribe({ topic: Topic.IMU, intervalMs: 20 }, () => { throw new Error('application failure'); });
+    c.push(telemetry(Topic.IMU, 0, imu(1n))); await flush();
+    expect(c.lastTelemetryError.message).toBe('application failure');
+    c.push(packet(TELEMETRY_EVENT, 0, [200, 0, 1, 2])); await flush();
+    expect(c.ready).toBe(true); await c.ping();
+  });
+  it('clears subscriptions on heartbeat disable, disconnect and legacy replacement', async () => {
+    const c = new FakeClient(options); await c.connect(); const listener = vi.fn();
+    const a = await c.subscribe({ topic: Topic.ENCODER_ODOMETRY, intervalMs: 100 }, listener);
+    await c.subscribe_odometry(0, 100); expect(c.writes.at(-1)[1]).toBe(SUBSCRIBE_ODOMETRY);
+    expect(a.active).toBe(false);
+    const b = await c.subscribe({ topic: Topic.IMU, intervalMs: 20 }, listener);
+    await c.set_heartbeat_config(false, 500); expect(b.active).toBe(false);
+    await c.set_heartbeat_config(true, 500);
+    const d = await c.subscribe({ topic: Topic.IMU, intervalMs: 20 }, listener);
+    await c.disconnect(); expect(d.active).toBe(false);
+    await c.connect(); c.push(telemetry(Topic.IMU, 0, imu(1n))); await flush();
+    expect(listener).not.toHaveBeenCalled();
+    const count = c.writes.length; await d.unsubscribe(); expect(c.writes).toHaveLength(count);
+  });
+  it.each(['length', 'clock', 'nan', 'id'])('rejects malformed %s telemetry', async kind => {
+    const c = new FakeClient(options); await c.connect();
+    await c.subscribe({ topic: Topic.IMU, intervalMs: 20 }, vi.fn());
+    const sample = imu(1n);
+    if (kind === 'clock') sample.clock_quality = 0;
+    if (kind === 'nan') sample.acceleration_x = NaN;
+    let frame = telemetry(Topic.IMU, 0, sample);
+    if (kind === 'id') frame[2] = 1;
+    if (kind === 'length') { frame = frame.slice(0, -1); frame[0]--; }
+    c.push(frame); await flush(); expect(c.ready).toBe(false);
   });
 });

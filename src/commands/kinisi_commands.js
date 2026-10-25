@@ -1,6 +1,6 @@
 // Generated from tools/commands.json by tools/sdkgenerator.py. Do not edit.
-export const SDK_VERSION = Object.freeze([2, 5, 0]);
-export const PROTOCOL_VERSION = Object.freeze([2, 5, 0]);
+export const SDK_VERSION = Object.freeze([2, 6, 0]);
+export const PROTOCOL_VERSION = Object.freeze([2, 6, 0]);
 export const GET_TEMPERATURE = 0x50;
 export const GET_IMU = 0x51;
 export const INITIALIZE_MOTOR = 0x01;
@@ -52,9 +52,13 @@ export const GET_TIME_STATUS = 0x75;
 export const PING = 0x76;
 export const SET_HEARTBEAT_CONFIG = 0x77;
 export const GET_HEARTBEAT_CONFIG = 0x78;
+/** @deprecated Retired since protocol 2.6.0. Use SUBSCRIBE. Kept for compatibility; eligible for removal in protocol 3.0.0. */
 export const SUBSCRIBE_ODOMETRY = 0x79;
+/** @deprecated Retired since protocol 2.6.0. Use UNSUBSCRIBE. Kept for compatibility; eligible for removal in protocol 3.0.0. */
 export const UNSUBSCRIBE_ODOMETRY = 0x7a;
+/** @deprecated Retired since protocol 2.6.0. Use TELEMETRY_EVENT. Kept for compatibility; eligible for removal in protocol 3.0.0. */
 export const ENCODER_ODOMETRY_EVENT = 0x7b;
+/** @deprecated Retired since protocol 2.6.0. Use TELEMETRY_EVENT. Kept for compatibility; eligible for removal in protocol 3.0.0. */
 export const PLATFORM_ODOMETRY_EVENT = 0x7c;
 export const POLL_TELEMETRY = 0x7d;
 export const INITIALIZE_MOTOR_POSITION_CONTROLLER = 0x0C;
@@ -66,6 +70,9 @@ export const RESET_PLATFORM_POSITION = 0x4C;
 export const SET_PLATFORM_POSITION = 0x4D;
 export const INITIALIZE_MOTOR_POSITION_PID_CONTROLLER = 0x10;
 export const INITIALIZE_PLATFORM_POSITION_PID_CONTROLLER = 0x4E;
+export const SUBSCRIBE = 0x80;
+export const UNSUBSCRIBE = 0x81;
+export const TELEMETRY_EVENT = 0x82;
 export const ErrorCode = Object.freeze({
   INCOMPATIBLE_PROTOCOL: 1,
   INVALID_ARGUMENT: 2,
@@ -83,6 +90,7 @@ export const ErrorCode = Object.freeze({
   CONTROLLER_NOT_INITIALIZED: 14,
   INIT_REQUIRED: 15,
   SENSOR_NOT_AVAILABLE: 16,
+  SUBSCRIPTION_LIMIT: 17,
 });
 export const ErrorDescriptions = Object.freeze({
   1: "The requested protocol version is incompatible with this firmware.",
@@ -101,6 +109,7 @@ export const ErrorDescriptions = Object.freeze({
   14: "Start or initialize the closed-loop controller before setting its target.",
   15: "Send a valid INIT request before performing this connection-dependent operation.",
   16: "The selected sensor is not defined on this board.",
+  17: "This connection has no free subscription slots; unsubscribe an existing source first.",
 });
 /** Preserve uint64/int64 precision instead of silently accepting rounded Numbers. */
 function exactBigInt(value) {
@@ -439,12 +448,122 @@ export class ImuSample {
   }
 }
 
+/** Timestamped temperature register reading in degrees Celsius. */
+export class TemperatureSample {
+  /** Store one decoded payload. */
+  constructor(timestamp_us, clock_mode, clock_quality, celsius) {
+    this.timestamp_us = timestamp_us;
+    this.clock_mode = clock_mode;
+    this.clock_quality = clock_quality;
+    this.celsius = celsius;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 18; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(TemperatureSample.getSize());
+    const view = new DataView(buffer);
+    view.setBigUint64(0, exactBigInt(this.timestamp_us), true);
+    view.setUint8(8, this.clock_mode);
+    view.setUint8(9, this.clock_quality);
+    view.setFloat64(10, this.celsius, true);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, TemperatureSample.getSize());
+    return new TemperatureSample(
+      view.getBigUint64(0, true),
+      view.getUint8(8),
+      view.getUint8(9),
+      view.getFloat64(10, true),
+    );
+  }
+}
+
+/** Timestamped IMU register reading. Acceleration and angular velocity are not synchronized with each other. */
+export class ImuTelemetrySample {
+  /** Store one decoded payload. */
+  constructor(timestamp_us, clock_mode, clock_quality, acceleration_x, acceleration_y, acceleration_z, angular_velocity_x, angular_velocity_y, angular_velocity_z) {
+    this.timestamp_us = timestamp_us;
+    this.clock_mode = clock_mode;
+    this.clock_quality = clock_quality;
+    this.acceleration_x = acceleration_x;
+    this.acceleration_y = acceleration_y;
+    this.acceleration_z = acceleration_z;
+    this.angular_velocity_x = angular_velocity_x;
+    this.angular_velocity_y = angular_velocity_y;
+    this.angular_velocity_z = angular_velocity_z;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 58; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(ImuTelemetrySample.getSize());
+    const view = new DataView(buffer);
+    view.setBigUint64(0, exactBigInt(this.timestamp_us), true);
+    view.setUint8(8, this.clock_mode);
+    view.setUint8(9, this.clock_quality);
+    view.setFloat64(10, this.acceleration_x, true);
+    view.setFloat64(18, this.acceleration_y, true);
+    view.setFloat64(26, this.acceleration_z, true);
+    view.setFloat64(34, this.angular_velocity_x, true);
+    view.setFloat64(42, this.angular_velocity_y, true);
+    view.setFloat64(50, this.angular_velocity_z, true);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, ImuTelemetrySample.getSize());
+    return new ImuTelemetrySample(
+      view.getBigUint64(0, true),
+      view.getUint8(8),
+      view.getUint8(9),
+      view.getFloat64(10, true),
+      view.getFloat64(18, true),
+      view.getFloat64(26, true),
+      view.getFloat64(34, true),
+      view.getFloat64(42, true),
+      view.getFloat64(50, true),
+    );
+  }
+}
+
+/** Stable uint8 telemetry topic enum. */
+export const Topic = Object.freeze({
+  ENCODER_ODOMETRY: 1,
+  PLATFORM_ODOMETRY: 2,
+  TEMPERATURE: 3,
+  IMU: 4,
+});
+export const TopicDefinitions = Object.freeze({
+  1: Object.freeze({ payloadType: EncoderOdometrySample, indexMax: 3, minIntervalMs: 2 }),
+  2: Object.freeze({ payloadType: PlatformOdometrySample, indexMax: 0, minIntervalMs: 2 }),
+  3: Object.freeze({ payloadType: TemperatureSample, indexMax: 255, minIntervalMs: 250 }),
+  4: Object.freeze({ payloadType: ImuTelemetrySample, indexMax: 255, minIntervalMs: 10 }),
+});
+/** Decode a topic-selected payload. Future unknown topics can be ignored by the session. */
+export function decodeTelemetryEvent(payload) {
+  const data = ArrayBuffer.isView(payload)
+    ? new Uint8Array(payload.buffer, payload.byteOffset, payload.byteLength) : new Uint8Array(payload);
+  if (data.length < 2) throw new Error('Truncated telemetry envelope');
+  const [topic, index] = data;
+  const definition = TopicDefinitions[topic];
+  if (!definition) return null;
+  if (index > definition.indexMax) throw new Error('Invalid telemetry index');
+  const sample = definition.payloadType.decode(data.subarray(2));
+  if (![0, 1].includes(sample.clock_mode) || ![1, 2].includes(sample.clock_quality) ||
+      Object.values(sample).some(value => typeof value === 'number' && !Number.isFinite(value)))
+    throw new Error('Invalid telemetry sample');
+  return { topic, index, sample };
+}
+
 /** Generated user commands; session framing belongs to KinisiSession. */
 export class Commands {
   /** Implemented by a transport session. */
   async _request(_command, _payload, _responseLength) { throw new Error("No protocol session"); }
 
-  /** Protocol 2.4: read the latest board temperature in degrees Celsius. Sensor 0 is the TMP102 on v0.4. Sampling runs at 4 Hz; faster reads may repeat a sample. Returns SAMPLE_NOT_AVAILABLE during the first 300 ms after sensor initialization or recovery, SENSOR_NOT_AVAILABLE when the board has no such sensor, and INTERNAL_ERROR on I2C or configuration failure. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, SENSOR_NOT_AVAILABLE, SAMPLE_NOT_AVAILABLE, INTERNAL_ERROR. */
+  /** Read the latest board temperature in degrees Celsius. Sensor 0 is the TMP102 on v0.4. Sampling runs at 4 Hz; faster reads may repeat a sample. Returns SAMPLE_NOT_AVAILABLE during the first 300 ms after sensor initialization or recovery, SENSOR_NOT_AVAILABLE when the board has no such sensor, and INTERNAL_ERROR on I2C or configuration failure. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, SENSOR_NOT_AVAILABLE, SAMPLE_NOT_AVAILABLE, INTERNAL_ERROR. */
   async get_temperature(sensor_index) {
     if (!Number.isInteger(sensor_index) || sensor_index < 0 || sensor_index > 255) throw new RangeError('sensor_index must be an integer from 0 to 255');
     const payload = new ArrayBuffer(1);
@@ -457,7 +576,7 @@ export class Commands {
     return temperature;
   }
 
-  /** Protocol 2.5: read the latest accelerometer and gyroscope samples in native sensor axes. Acceleration is in m/s^2 and includes gravity; angular velocity is in rad/s. BMI088 uses +/-6 g and +/-500 degrees/s at 100 Hz. Each three-axis sample is coherent, but accel and gyro are not time-synchronized. Faster requests may repeat samples. No orientation or calibration is applied. Returns SAMPLE_NOT_AVAILABLE during the 50 ms settling interval after initialization or recovery, SENSOR_NOT_AVAILABLE for an absent sensor, and INTERNAL_ERROR on SPI, identity or configuration failure. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, SENSOR_NOT_AVAILABLE, SAMPLE_NOT_AVAILABLE, INTERNAL_ERROR. */
+  /** Read the latest accelerometer and gyroscope samples in native sensor axes. Acceleration is in m/s^2 and includes gravity; angular velocity is in rad/s. BMI088 uses +/-6 g and +/-500 degrees/s at 100 Hz. Each three-axis sample is coherent, but accel and gyro are not time-synchronized. Faster requests may repeat samples. No orientation or calibration is applied. Returns SAMPLE_NOT_AVAILABLE during the 50 ms settling interval after initialization or recovery, SENSOR_NOT_AVAILABLE for an absent sensor, and INTERNAL_ERROR on SPI, identity or configuration failure. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, SENSOR_NOT_AVAILABLE, SAMPLE_NOT_AVAILABLE, INTERNAL_ERROR. */
   async get_imu(sensor_index) {
     if (!Number.isInteger(sensor_index) || sensor_index < 0 || sensor_index > 255) throw new RangeError('sensor_index must be an integer from 0 to 255');
     const payload = new ArrayBuffer(1);
@@ -865,7 +984,9 @@ export class Commands {
     return HeartbeatConfig.decode(response);
   }
 
-  /** Publish the latest completed sample using the requested scheduling interval without rounding it to calculation ticks. Delivery is subject to transport capacity and task scheduling. Requires READY, an enabled heartbeat and running odometry. Replaces an existing subscription for this source. Interval must be at least twice the calculation period. No renewal is needed. Stop/reset of calculation pauses samples until fresh measurements exist; unsubscribe, INIT, disconnect or watchdog timeout removes subscriptions. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CLOCK_NOT_READY, ODOMETRY_NOT_INITIALIZED. */
+  /** Create or replace this connection's subscription for an odometry source. Requires READY, enabled heartbeat and running odometry. The interval must be at least twice the calculation period. Stop or reset pauses delivery until a fresh sample is available. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CLOCK_NOT_READY, ODOMETRY_NOT_INITIALIZED.
+   * @deprecated Retired since protocol 2.6.0. Use SUBSCRIBE. Kept for compatibility; eligible for removal in protocol 3.0.0.
+    */
   async subscribe_odometry(source, interval_ms) {
     const payload = new ArrayBuffer(5);
     const requestView = new DataView(payload);
@@ -874,7 +995,9 @@ export class Commands {
     await this._request(SUBSCRIBE_ODOMETRY, payload, 0);
   }
 
-  /** Remove this source subscription; succeeds if already absent. Does not stop odometry calculation. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
+  /** Remove this connection's subscription for an odometry source. Succeeds if already absent and leaves odometry calculation running. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED.
+   * @deprecated Retired since protocol 2.6.0. Use UNSUBSCRIBE. Kept for compatibility; eligible for removal in protocol 3.0.0.
+    */
   async unsubscribe_odometry(source) {
     const payload = new ArrayBuffer(1);
     const requestView = new DataView(payload);
@@ -882,7 +1005,7 @@ export class Commands {
     await this._request(UNSUBSCRIBE_ODOMETRY, payload, 0);
   }
 
-  /** I2C master service request. Allows at most one due odometry event before its empty ACK, so the master can clock out telemetry without waiting indefinitely when no sample is available. USB clients receive events automatically and do not need this command. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CLOCK_NOT_READY. */
+  /** Allow an I2C master to read at most one due telemetry event followed by an empty ACK. Return only the ACK when no sample is available. USB clients receive events automatically. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CLOCK_NOT_READY. */
   async poll_telemetry() {
     const payload = new ArrayBuffer(0);
     await this._request(POLL_TELEMETRY, payload, 0);
@@ -985,7 +1108,7 @@ export class Commands {
     await this._request(SET_PLATFORM_POSITION, payload, 0);
   }
 
-  /** Protocol 2.3: initialize a position PID over the existing velocity controller. Initialize a bounded position PID loop over an already running motor velocity controller. Zero is the current encoder position; initially holds zero. Stop/delete/reinitialize of velocity control discards position tuning. Clears position PID history. Ki and Kd may be zero to disable I and D. Integral limits bound the integral velocity contribution. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, MOTOR_OWNED. */
+  /** Initialize a position PID over the existing velocity controller. Initialize a bounded position PID loop over an already running motor velocity controller. Zero is the current encoder position; initially holds zero. Stop/delete/reinitialize of velocity control discards position tuning. Clears position PID history. Ki and Kd may be zero to disable I and D. Integral limits bound the integral velocity contribution. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, MOTOR_OWNED. */
   async initialize_motor_position_pid_controller(motor_index, kp, max_speed, tolerance, ki, kd, integral_limit) {
     if (typeof motor_index !== 'number' || !Number.isFinite(motor_index)) throw new TypeError('motor_index must be a finite number');
     if (!Number.isInteger(motor_index) || motor_index < 0 || motor_index > 3) throw new RangeError('motor_index must be 0..3');
@@ -1013,7 +1136,7 @@ export class Commands {
     await this._request(INITIALIZE_MOTOR_POSITION_PID_CONTROLLER, payload, 0);
   }
 
-  /** Protocol 2.3: initialize a position PID over the existing velocity controller. Initialize bounded pose control after START_PLATFORM_CONTROLLER. Starts odometry if needed, preserves its world frame and zeros velocity targets. No motion until SET_PLATFORM_POSITION. Supports omni, mecanum and differential bases. Clears position PID history. Ki and Kd may be zero to disable I and D. Integral limits bound the integral velocity contribution. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, PLATFORM_NOT_INITIALIZED, ENCODER_NOT_INITIALIZED. */
+  /** Initialize a position PID over the existing velocity controller. Initialize bounded pose control after START_PLATFORM_CONTROLLER. Starts odometry if needed, preserves its world frame and zeros velocity targets. No motion until SET_PLATFORM_POSITION. Supports omni, mecanum and differential bases. Clears position PID history. Ki and Kd may be zero to disable I and D. Integral limits bound the integral velocity contribution. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, PLATFORM_NOT_INITIALIZED, ENCODER_NOT_INITIALIZED. */
   async initialize_platform_position_pid_controller(linear_kp, angular_kp, max_linear_speed, max_angular_speed, position_tolerance, heading_tolerance, linear_ki, linear_kd, linear_integral_limit, angular_ki, angular_kd, angular_integral_limit) {
     if (typeof linear_kp !== 'number' || !Number.isFinite(linear_kp)) throw new TypeError('linear_kp must be a finite number');
     if (linear_kp <= 0) throw new RangeError('linear_kp must be positive');
@@ -1054,5 +1177,29 @@ export class Commands {
     requestView.setFloat64(80, angular_kd, true);
     requestView.setFloat64(88, angular_integral_limit, true);
     await this._request(INITIALIZE_PLATFORM_POSITION_PID_CONTROLLER, payload, 0);
+  }
+
+  /** Create or replace this connection's subscription for a topic and resource. Requires READY and enabled heartbeat. Odometry must be running. The interval must meet the topic minimum and, for odometry, be at least twice the calculation period. Failed reads pause delivery until recovery. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, ODOMETRY_NOT_INITIALIZED, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SUBSCRIPTION_LIMIT. */
+  async subscribe(topic_id, index, interval_ms) {
+    if (!Number.isInteger(topic_id) || !Object.hasOwn(TopicDefinitions, topic_id)) throw new RangeError('Invalid topic');
+    if (!Number.isInteger(index) || index < 0 || index > TopicDefinitions[topic_id].indexMax) throw new RangeError('Invalid topic index');
+    if (!Number.isInteger(interval_ms) || interval_ms < TopicDefinitions[topic_id].minIntervalMs || interval_ms > 3600000) throw new RangeError('Invalid subscription interval');
+    const payload = new ArrayBuffer(6);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, topic_id);
+    requestView.setUint8(1, index);
+    requestView.setUint32(2, interval_ms, true);
+    await this._request(SUBSCRIBE, payload, 0);
+  }
+
+  /** Remove this connection's subscription for a topic and resource. Requires READY. Succeeds if already absent and leaves calculation running. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY. */
+  async unsubscribe(topic_id, index) {
+    if (!Number.isInteger(topic_id) || !Object.hasOwn(TopicDefinitions, topic_id)) throw new RangeError('Invalid topic');
+    if (!Number.isInteger(index) || index < 0 || index > TopicDefinitions[topic_id].indexMax) throw new RangeError('Invalid topic index');
+    const payload = new ArrayBuffer(2);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, topic_id);
+    requestView.setUint8(1, index);
+    await this._request(UNSUBSCRIBE, payload, 0);
   }
 }

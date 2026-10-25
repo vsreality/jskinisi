@@ -3,11 +3,15 @@
 import { Commands, INIT, READY, ERROR, TIME_SYNC_REQUEST, TIME_SYNC_RESPONSE,
   SDK_VERSION, InitResponse, ErrorCode, ErrorDescriptions, GET_TEMPERATURE, GET_IMU,
   SET_HEARTBEAT_CONFIG, UNSUBSCRIBE_ODOMETRY, ENCODER_ODOMETRY_EVENT, PLATFORM_ODOMETRY_EVENT,
-  EncoderOdometrySample, PlatformOdometrySample } from './kinisi_commands.js';
+  SUBSCRIBE_ODOMETRY, SUBSCRIBE, UNSUBSCRIBE, TELEMETRY_EVENT, Topic,
+  decodeTelemetryEvent, EncoderOdometrySample, PlatformOdometrySample } from './kinisi_commands.js';
 import { POSITION_COMMANDS, supportsPositionControl, POSITION_PID_COMMANDS, supportsPositionPidControl } from './position_control.js';
 import { supportsTemperatureRead } from './temperature.js';
 import { supportsImuRead } from './imu.js';
 import { getBoardProfile, supportsBoardSensor } from './board_profile.js';
+import { supportsTelemetry, supportsTopic } from './telemetry.js';
+
+export { Topic } from './kinisi_commands.js';
 
 // Existing controls need 2.1; additive commands are gated separately.
 const MIN_PROTOCOL_VERSION = [2, 1, 0];
@@ -63,6 +67,10 @@ export class KinisiSession extends Commands {
     this._heartbeatTimer = null; this._heartbeatIntervalMs = null; this._lastSentMs = 0;
     this._heartbeatPending = false;
     this._subscriptionSamples = new Map();
+    this._telemetryListeners = new Map();
+    this._telemetryCandidates = new Map();
+    this._telemetryOperations = new Map();
+    this.lastTelemetryError = null;
     this.ready = false; this.boardInfo = null; this.clockMode = null;
     this.lastError = null; this.lastSyncError = null;
     this._pending = new Map(); this._retired = new Set(); this._nextId = 1;
@@ -75,6 +83,7 @@ export class KinisiSession extends Commands {
     if (this._session) throw new ProtocolError('Session already active');
     this.ready = false; this.boardInfo = null; this.clockMode = null;
     this.lastError = null; this.lastSyncError = null; this._buffer = new Uint8Array();
+    this.lastTelemetryError = null;
     this._retired.clear(); this._writeChain = Promise.resolve();
     const session = {}; this._session = session;
     const init = this._sendRequest(INIT, new Uint8Array([2, ...SDK_VERSION, ...MIN_PROTOCOL_VERSION, this.wallClock ? 3 : 2]), InitResponse.getSize(), true);
@@ -117,9 +126,104 @@ export class KinisiSession extends Commands {
   /** Check both hardware presence and firmware support without performing I/O. */
   supportsSensor(kind, index = 0) { return supportsBoardSensor(this.boardInfo, kind, index); }
 
+  supportsTopic(topic, index = 0) { return supportsTopic(this.boardInfo, topic, index); }
+
+  /** Serialize changes to one source, including cleanup racing with a replacement. */
+  _telemetryOperation(key, operation) {
+    const session = this._session;
+    const task = (this._telemetryOperations.get(key) ?? Promise.resolve()).catch(() => {}).then(() => {
+      if (!session || session !== this._session) throw new ConnectionClosedError();
+      return operation();
+    });
+    this._telemetryOperations.set(key, task);
+    const cleanup = () => { if (this._telemetryOperations.get(key) === task) this._telemetryOperations.delete(key); };
+    task.then(cleanup, cleanup);
+    return task;
+  }
+
+  /** Subscribe using the generated topic enum; one callback per topic/index/session. */
+  async subscribe({ topic, index = 0, intervalMs }, callback) {
+    if (typeof callback !== 'function') throw new TypeError('A sample callback is required');
+    const key = topic + ':' + index;
+    return this._telemetryOperation(key, async () => {
+      const entry = { callback, closing: false, session: this._session };
+      this._telemetryCandidates.set(key, entry);
+      try { await super.subscribe(topic, index, intervalMs); }
+      catch (error) {
+        // A lost ACK may still have installed a stream. Cancel that source so
+        // a failed subscribe cannot leave an unreachable background subscription.
+        if (error instanceof RequestTimeoutError && this._session === entry.session) {
+          try { await this._unsubscribeTelemetry(topic, index); }
+          catch (cleanupError) { if (this._session === entry.session) this._fatal(cleanupError); }
+        }
+        throw error;
+      }
+      finally { if (this._telemetryCandidates.get(key) === entry) this._telemetryCandidates.delete(key); }
+      const owner = this;
+      let closing;
+      return Object.freeze({
+        get active() { return !entry.closing && owner._session === entry.session && owner._telemetryListeners.get(key) === entry; },
+        unsubscribe: () => {
+          if (closing) return closing;
+          if (this._telemetryListeners.get(key) !== entry || this._session !== entry.session) return Promise.resolve();
+          entry.closing = true;
+          closing = this._telemetryOperation(key, async () => {
+            if (this._telemetryListeners.get(key) === entry) await this._unsubscribeTelemetry(topic, index);
+          }).catch(error => { entry.closing = false; closing = null; throw error; });
+          return closing;
+        },
+      });
+    });
+  }
+
+  async _unsubscribeTelemetry(topic, index) {
+    const session = this._session;
+    try { await super.unsubscribe(topic, index); }
+    catch (error) {
+      // Without confirmation, closing the session lets the board watchdog clear
+      // the stream instead of leaving it active after the owning view is gone.
+      if (error instanceof RequestTimeoutError && this._session === session) this._fatal(error);
+      throw error;
+    }
+  }
+
+  _clearTelemetry() {
+    for (const entry of this._telemetryListeners.values()) entry.closing = true;
+    for (const entry of this._telemetryCandidates.values()) entry.closing = true;
+    this._telemetryListeners.clear();
+    this._telemetryCandidates.clear();
+    this._telemetryOperations.clear();
+  }
+
+  /** Keep at most the latest waiting sample while an asynchronous callback runs. */
+  _deliverTelemetry(key, entry, sample) {
+    entry.latest = sample;
+    if (entry.delivering) return;
+    const deliver = () => {
+      if (entry.closing || this._telemetryListeners.get(key) !== entry || !entry.latest) {
+        entry.latest = null; entry.delivering = false; return;
+      }
+      const next = entry.latest;
+      entry.latest = null;
+      Promise.resolve().then(() => {
+        if (!entry.closing && this._telemetryListeners.get(key) === entry) return entry.callback(next);
+      }).catch(error => { this.lastTelemetryError = error; }).then(deliver);
+    };
+    entry.delivering = true;
+    deliver();
+  }
+
   /** Generated commands cannot bypass the INIT/READY gate. */
   async _request(command, payload, responseLength) {
     if (!this.ready) throw new ProtocolError('Controller is not ready; complete INIT first');
+    if ([SUBSCRIBE, UNSUBSCRIBE].includes(command)) {
+      if (!supportsTelemetry(this.boardInfo)) throw new ProtocolError('Subscriptions require firmware protocol 2.6 or newer');
+      const [topic, index] = bytes(payload);
+      if (this.boardProfile && !this.supportsTopic(topic, index))
+        throw new ProtocolError('This board does not support the selected telemetry source');
+      if (command === SUBSCRIBE && this._heartbeatIntervalMs === null)
+        throw new ProtocolError('Enable heartbeat monitoring before subscribing');
+    }
     if (command === GET_IMU && !supportsImuRead(this.boardInfo))
       throw new ProtocolError('IMU readings require firmware protocol 2.5 or newer');
     if (command === GET_TEMPERATURE && !supportsTemperatureRead(this.boardInfo))
@@ -138,9 +242,29 @@ export class KinisiSession extends Commands {
     if (command === SET_HEARTBEAT_CONFIG) {
       const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
       this._heartbeatIntervalMs = data[0] ? view.getUint32(1, true) / 5 : null;
-      if (!data[0]) this._subscriptionSamples.clear();
+      if (!data[0]) { this._subscriptionSamples.clear(); this._clearTelemetry(); }
       this._scheduleHeartbeat(session);
-    } else if (command === UNSUBSCRIBE_ODOMETRY) this._subscriptionSamples.delete(data[0]);
+    } else if (command === SUBSCRIBE) {
+      // Activate at the ACK boundary, before the reader dispatches a coalesced event.
+      const key = data[0] + ':' + data[1];
+      const entry = this._telemetryCandidates.get(key);
+      if (entry && !entry.closing && entry.session === session) this._telemetryListeners.set(key, entry);
+      if (data[0] === Topic.ENCODER_ODOMETRY) this._subscriptionSamples.delete(data[1]);
+      if (data[0] === Topic.PLATFORM_ODOMETRY) this._subscriptionSamples.delete(4);
+    } else if (command === UNSUBSCRIBE) {
+      const key = data[0] + ':' + data[1];
+      const entry = this._telemetryListeners.get(key);
+      if (entry) entry.closing = true;
+      this._telemetryListeners.delete(key);
+      if (data[0] === Topic.ENCODER_ODOMETRY) this._subscriptionSamples.delete(data[1]);
+      if (data[0] === Topic.PLATFORM_ODOMETRY) this._subscriptionSamples.delete(4);
+    } else if ([SUBSCRIBE_ODOMETRY, UNSUBSCRIBE_ODOMETRY].includes(command)) {
+      const key = data[0] === 4 ? Topic.PLATFORM_ODOMETRY + ':0' : Topic.ENCODER_ODOMETRY + ':' + data[0];
+      const entry = this._telemetryListeners.get(key);
+      if (entry) entry.closing = true;
+      this._telemetryListeners.delete(key);
+      this._subscriptionSamples.delete(data[0]);
+    }
     return response;
   }
 
@@ -162,7 +286,9 @@ export class KinisiSession extends Commands {
     }, delay);
   }
 
-  /** Return the latest streamed sample without a request or an unbounded event queue. */
+  /** Return the latest legacy odometry sample without a request or an unbounded event queue.
+   * @deprecated Legacy odometry subscriptions are retired. Use subscribe() callbacks with protocol 2.6+.
+   */
   getSubscriptionSample(source) {
     if (!Number.isInteger(source) || source < 0 || source > 4) throw new TypeError('source must be 0..4');
     return this._subscriptionSamples.get(source) ?? null;
@@ -222,6 +348,19 @@ export class KinisiSession extends Commands {
   /** Dispatch replies by command + ID; controller IDs occupy an independent namespace. */
   async _message(message, receivedUs) {
     const command = message[1], id = message[2] | message[3] << 8, payload = message.slice(4);
+    if (command === TELEMETRY_EVENT) {
+      if (id) throw new ProtocolError('Telemetry events must use message ID zero');
+      let event;
+      try { event = decodeTelemetryEvent(payload); }
+      catch (error) { throw new ProtocolError(error.message); }
+      if (!event || !this.ready) return;
+      const { topic, index, sample } = event, key = topic + ':' + index;
+      const entry = this._telemetryListeners.get(key);
+      if (!entry || entry.closing) return;
+      Object.freeze(sample);
+      this._deliverTelemetry(key, entry, sample);
+      return;
+    }
     if ([ENCODER_ODOMETRY_EVENT, PLATFORM_ODOMETRY_EVENT].includes(command)) {
       const encoder = command === ENCODER_ODOMETRY_EVENT;
       if (id || payload.length !== (encoder ? 19 : 34) || (encoder && payload[0] > 3)) throw new ProtocolError('Malformed odometry event');
@@ -252,6 +391,7 @@ export class KinisiSession extends Commands {
         this.ready = false;
         clearTimeout(this._heartbeatTimer); this._heartbeatIntervalMs = null;
         this._subscriptionSamples.clear();
+        this._clearTelemetry();
       }
       this._finish(id, error); return;
     }
@@ -286,6 +426,7 @@ export class KinisiSession extends Commands {
     clearTimeout(this._heartbeatTimer); this._heartbeatTimer = null; this._heartbeatIntervalMs = null;
     this._heartbeatPending = false;
     this._subscriptionSamples.clear();
+    this._clearTelemetry();
     clearTimeout(this._frameTimer); this._frameTimer = null;
     for (const id of this._pending.keys()) this._finish(id, error);
     this._buffer = new Uint8Array();

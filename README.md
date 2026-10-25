@@ -30,6 +30,23 @@ For v0.4 accelerometer and gyroscope readings, use `await controller.get_imu(0)`
 or **Sensors → Read IMU**. See [IMU support](docs/protocol-v2.md#imu) for units,
 firmware requirements and sampling behavior.
 
+Protocol 2.6 adds a shared subscription API using the generated Topic enum:
+
+~~~js
+import { Topic } from './src/commands/kinisi_commands.js';
+
+const subscription = await controller.subscribe(
+  { topic: Topic.IMU, index: 0, intervalMs: 100 },
+  sample => console.log(sample.acceleration_z, sample.timestamp_us),
+);
+await subscription.unsubscribe();
+~~~
+
+The web client's Sensors, encoder odometry and platform odometry views provide
+**Start live updates**, an update interval, and **Stop live updates** on supported
+firmware. Leaving the view releases its subscription. Manual reads remain
+available on older firmware. See [telemetry](docs/connection-monitoring.md).
+
 ## Run Controller client
 ```
 npm install
