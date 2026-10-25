@@ -1,6 +1,73 @@
-# Heartbeat and streamed odometry
+# Heartbeat and telemetry subscriptions
 
-SDK 2.1 requires protocol 2.1 firmware. Serial and WebSocket sessions enable a 500 ms watchdog after INIT/READY. PING is sent after 100 ms without outgoing traffic; normal commands and time-sync replies postpone it. Pass `heartbeatTimeoutMs: null` in session options to opt out, or call `set_heartbeat_config(false, 500)` after connecting. Changing the timeout adjusts the idle interval to one fifth of that value.
+The SDK requires at least protocol 2.1 firmware; generic subscriptions require 2.6. Serial and WebSocket sessions enable a 500 ms watchdog after INIT/READY. PING is sent after 100 ms without outgoing traffic; normal commands and time-sync replies postpone it. Pass `heartbeatTimeoutMs: null` in session options to opt out, or call `set_heartbeat_config(false, 500)` after connecting. Changing the timeout adjusts the idle interval to one fifth of that value.
+
+## Generic subscriptions
+
+`Topic` is generated from the shared protocol schema. Use the same method for
+encoder odometry, platform odometry, temperature and IMU measurements:
+
+```js
+import { Topic } from './src/commands/kinisi_session.js';
+
+// The client is connected and heartbeat monitoring is enabled.
+if (client.supportsTopic(Topic.IMU, 0)) {
+  const subscription = await client.subscribe(
+    { topic: Topic.IMU, index: 0, intervalMs: 100 },
+    sample => console.log(sample.timestamp_us, sample.acceleration_x),
+  );
+
+  // Later: stop delivery. Sensor measurement and odometry calculation are separate.
+  await subscription.unsubscribe();
+}
+```
+
+| Topic | Index | Callback sample | Minimum interval |
+| --- | --- | --- | --- |
+| `Topic.ENCODER_ODOMETRY` | Encoder index | `EncoderOdometrySample`: timestamp, clock metadata, angle in radians | Twice the calculation period |
+| `Topic.PLATFORM_ODOMETRY` | 0 | `PlatformOdometrySample`: timestamp, clock metadata, x/y in metres and theta in radians | Twice the calculation period |
+| `Topic.TEMPERATURE` | Sensor index | `TemperatureSample`: timestamp, clock metadata, celsius | 250 ms |
+| `Topic.IMU` | Sensor index | `ImuTelemetrySample`: timestamp, clock metadata, acceleration in m/s² and angular velocity in rad/s | 10 ms |
+
+Intervals are integer milliseconds, at most 3,600,000. The default index is zero.
+Initialize and start odometry before subscribing to it. `supportsTopic()` checks
+the bundled board profile and protocol version; firmware checks runtime state.
+For an unknown board profile it returns false, but an explicit subscription can
+still be sent for firmware validation. There is no automatic fallback to polling
+or legacy commands on older firmware; GET and the legacy methods remain usable.
+
+Each topic/index has one subscription per connection. Subscribing again replaces
+it after the board acknowledges the request. An old handle cannot unsubscribe a
+newer replacement. Unsubscribe is idempotent; `subscription.active` indicates
+whether the handle still owns the subscription. Disconnect, reinitialization and
+heartbeat disable clear subscriptions; applications must subscribe again.
+If a subscribe ACK times out, the SDK cancels that source before reporting the
+timeout. If an unsubscribe ACK times out, it closes the session so the board's
+watchdog can clear the stream and stop motion. A failed replacement with an
+ordinary controller error leaves the previous subscription intact.
+
+Samples are immutable and `timestamp_us` is a BigInt. Odometry timestamps describe
+the original calculation sample. Sensor timestamps describe completion of the
+register read, not the conversion instant; accelerometer and gyroscope samples
+are not synchronized. Delivery is best effort and keeps no measurement history.
+Callbacks can be asynchronous and can issue commands. While a callback runs,
+only the latest waiting sample is retained. Callback failures are recorded in
+`client.lastTelemetryError` without closing the connection. Sensor read errors
+pause delivery until recovery; no stale sample is emitted after a failed read.
+
+The web client's live-update controls use this API. Switching tabs or resources
+unsubscribes from the old stream, including when the subscribe ACK arrives after
+the view has closed. Older firmware keeps its manual read controls.
+
+## Legacy odometry subscriptions
+
+**Retired since protocol 2.6.0; supported throughout 2.x and eligible for removal
+in 3.0.0.** The generated SDK marks `subscribe_odometry()` and
+`unsubscribe_odometry()` as deprecated, and the legacy `getSubscriptionSample()`
+cache helper has the same guidance. Use `subscribe()` with
+`Topic.ENCODER_ODOMETRY` or `Topic.PLATFORM_ODOMETRY`, then
+`subscription.unsubscribe()`. For firmware older than 2.6, the legacy API below
+remains available. GET, START, STOP and RESET methods remain active.
 
 ```js
 await client.initialize_encoder(0, 1425.1, false);

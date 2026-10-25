@@ -1,4 +1,6 @@
 import OdometryTimestamp from '../OdometryTimestamp';
+import TelemetryControl from '../TelemetryControl/TelemetryControl';
+import { Topic } from '../../commands/kinisi_commands';
 import { useSettings } from '../../contexts/SettingsContext';
 // API-v2 actions display controller errors and await command acknowledgements.
 import { useCommandAction } from '../../hooks/useCommandAction';
@@ -7,7 +9,7 @@ import { ControllerContext } from '../../contexts/ControllerContext';
 import './MotorTab.css';
 import '../Common.css';
 
-function MotorTab(){
+function MotorTab({ isActive = true }){
     const { angleUnit } = useSettings();
     const angleScale = angleUnit === 'deg' ? 180 / Math.PI : 1;
     const [commandError, runCommand] = useCommandAction();
@@ -201,6 +203,9 @@ function MotorTab(){
                         <div className="encoder-angle"><output>{encoderOdometry[encoderIndex] ? encoderOdometry[encoderIndex].angle * angleScale : '—'}</output> <span className="encoder-unit">{angleUnit}</span></div>
                         <OdometryTimestamp sample={encoderOdometry[encoderIndex]} />
                     </div>
+                    {isActive && isOdometryStarted[encoderIndex] && <TelemetryControl controller={controller}
+                        topic={Topic.ENCODER_ODOMETRY} index={Number(encoderIndex)}
+                        onSample={sample => setEncoderOdometry(samples => ({ ...samples, [encoderIndex]: sample }))} />}
                 </section>
             </fieldset>
         </div>

@@ -11,12 +11,46 @@ TYPES = {'bool':(1,'Uint8'), 'uint8_t':(1,'Uint8'), 'int8_t':(1,'Int8'),
 # Sensor exports are required by the session even when connected firmware is older.
 SESSION_COMMANDS = {'PING', 'SET_HEARTBEAT_CONFIG', 'SUBSCRIBE_ODOMETRY',
                     'UNSUBSCRIBE_ODOMETRY', 'ENCODER_ODOMETRY_EVENT', 'PLATFORM_ODOMETRY_EVENT',
-                    'GET_TEMPERATURE', 'GET_IMU'}
+                    'GET_TEMPERATURE', 'GET_IMU', 'SUBSCRIBE', 'UNSUBSCRIBE', 'TELEMETRY_EVENT'}
 
 
 def class_name(name):
     """Convert schema object names to the SDK's existing PascalCase convention."""
     return ''.join(word.capitalize() for word in name.split('_'))
+
+
+def validate_retirement(schema):
+    """Reject invalid lifecycle metadata before overwriting generated SDK files."""
+    def version(value):
+        if isinstance(value, str) and re.fullmatch(r'(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)', value):
+            return tuple(map(int, value.split('.')))
+        return None
+
+    current = version(schema.get('version'))
+    commands = {c['command']: c for c in schema.get('commands', [])}
+    for name, command in commands.items():
+        if 'retired' not in command:
+            continue
+        retired = command['retired']
+        if not isinstance(retired, dict) or set(retired) != {'since', 'replacement', 'removal_major'}:
+            raise ValueError(f'{name}: retired must contain since, replacement and removal_major')
+        since = version(retired['since'])
+        if since is None or current is None or since > current:
+            raise ValueError(f'{name}: retired.since must be a protocol version no later than the schema version')
+        removal = retired['removal_major']
+        if type(removal) is not int or removal > 255 or since is None or removal <= since[0]:
+            raise ValueError(f'{name}: retired.removal_major must be a later protocol major (0..255)')
+        replacement = retired['replacement']
+        target = commands.get(replacement) if isinstance(replacement, str) else None
+        if not target or replacement == name or target.get('direction') != command.get('direction') or 'retired' in target:
+            raise ValueError(f'{name}: retired.replacement must name an active message with the same direction')
+
+
+def retirement_notice(command):
+    """Expose protocol retirement as the standard editor deprecation annotation."""
+    retired = command['retired']
+    return (f"Retired since protocol {retired['since']}. Use {retired['replacement']}. "
+            f"Kept for compatibility; eligible for removal in protocol {retired['removal_major']}.0.0.")
 
 
 def generate_js_code(schema, js_version='ES6'):
@@ -27,7 +61,39 @@ def generate_js_code(schema, js_version='ES6'):
     missing = SESSION_COMMANDS - {c.get('command') for c in schema.get('commands', [])}
     if missing:
         raise ValueError('Schema is missing runtime commands: ' + ', '.join(sorted(missing)))
+    validate_retirement(schema)
     objects = {o['name']: o for o in schema['objects']}
+    topics = schema.get('topics', [])
+    ids, names = set(), set()
+    for topic in topics:
+        code, name = topic.get('id'), topic.get('name')
+        if type(code) is not int or not 1 <= code <= 255 or code in ids:
+            raise ValueError('Topic IDs must be unique nonzero uint8 values')
+        if not isinstance(name, str) or not re.fullmatch(r'[A-Z][A-Z0-9_]*', name) or name in names:
+            raise ValueError('Topic names must be unique uppercase identifiers')
+        ids.add(code); names.add(name)
+        obj = objects.get(topic.get('payload_type'))
+        if not obj or any(p['type'] not in TYPES for p in obj['properties']):
+            raise ValueError('Topic payload must reference a fixed-size object')
+        if sum(TYPES[p['type']][0] for p in obj['properties']) > 249:
+            raise ValueError('Topic payload exceeds frame limit')
+        if [(p['name'], p['type']) for p in obj['properties'][:3]] != [
+                ('timestamp_us', 'uint64_t'), ('clock_mode', 'uint8_t'), ('clock_quality', 'uint8_t')]:
+            raise ValueError('Topic payload must start with timestamp and clock metadata')
+        for field, low, high in [('index_max', 0, 255), ('min_interval_ms', 2, 3600000)]:
+            if type(topic.get(field)) is not int or not low <= topic[field] <= high:
+                raise ValueError('Invalid topic ' + field)
+    if not {'ENCODER_ODOMETRY', 'PLATFORM_ODOMETRY', 'TEMPERATURE', 'IMU'} <= names:
+        raise ValueError('Schema is missing runtime topics')
+    for command in schema['commands']:
+        for prop in command.get('properties', []):
+            if 'enum' in prop and (prop['enum'] != 'telemetry_topic' or prop['type'] != 'uint8_t'):
+                raise ValueError('Invalid topic enum reference')
+    event = next(c for c in schema['commands'] if c['command'] == 'TELEMETRY_EVENT')
+    if event.get('topic_payload') != {'discriminator': 'topic_id'} or [
+            (p['name'], p['type'], p.get('enum')) for p in event.get('properties', [])] != [
+            ('topic_id', 'uint8_t', 'telemetry_topic'), ('index', 'uint8_t', None)]:
+        raise ValueError('Invalid telemetry event envelope')
     def size(t):
         return TYPES[t][0] if t in TYPES else sum(size(p['type']) for p in objects[t]['properties'])
     def read(t, offset):
@@ -38,11 +104,13 @@ def generate_js_code(schema, js_version='ES6'):
             value = f'exactBigInt({value})'
         return f'view.set{TYPES[t][1]}({offset}, {value}'+(', true' if size(t)>1 else '')+');'
     lines = ['// Generated from tools/commands.json by tools/sdkgenerator.py. Do not edit.\n',
-             'export const SDK_VERSION = Object.freeze([2, 5, 0]);\n',
+             'export const SDK_VERSION = Object.freeze([2, 6, 0]);\n',
              f"export const PROTOCOL_VERSION = Object.freeze({json.dumps([int(v) for v in schema['version'].split('.')])});\n"]
     for c in schema['commands']:
         if c.get('direction') not in ('client_to_controller','controller_to_client'):
             raise ValueError('Missing or invalid direction: '+c['command'])
+        if 'retired' in c:
+            lines.append(f"/** @deprecated {retirement_notice(c)} */\n")
         lines.append(f"export const {c['command']} = {c['code']};\n")
     lines.append('export const ErrorCode = Object.freeze({\n')
     for e in schema['error_codes']:
@@ -80,12 +148,46 @@ function payloadView(buffer, size) {
         for p in props:
             lines.append('      '+read(p['type'],offset)+',\n'); offset+=size(p['type'])
         lines.append('    );\n  }\n}\n')
+    lines.append('\n/** Stable uint8 telemetry topic enum. */\nexport const Topic = Object.freeze({\n')
+    for topic in topics:
+        lines.append(f"  {topic['name']}: {topic['id']},\n")
+    lines.append('});\nexport const TopicDefinitions = Object.freeze({\n')
+    for topic in topics:
+        lines.append(f"  {topic['id']}: Object.freeze({{ payloadType: {class_name(topic['payload_type'])}, "
+                     f"indexMax: {topic['index_max']}, minIntervalMs: {topic['min_interval_ms']} }}),\n")
+    lines.append('''});
+/** Decode a topic-selected payload. Future unknown topics can be ignored by the session. */
+export function decodeTelemetryEvent(payload) {
+  const data = ArrayBuffer.isView(payload)
+    ? new Uint8Array(payload.buffer, payload.byteOffset, payload.byteLength) : new Uint8Array(payload);
+  if (data.length < 2) throw new Error('Truncated telemetry envelope');
+  const [topic, index] = data;
+  const definition = TopicDefinitions[topic];
+  if (!definition) return null;
+  if (index > definition.indexMax) throw new Error('Invalid telemetry index');
+  const sample = definition.payloadType.decode(data.subarray(2));
+  if (![0, 1].includes(sample.clock_mode) || ![1, 2].includes(sample.clock_quality) ||
+      Object.values(sample).some(value => typeof value === 'number' && !Number.isFinite(value)))
+    throw new Error('Invalid telemetry sample');
+  return { topic, index, sample };
+}
+''')
     lines.append('\n/** Generated user commands; session framing belongs to KinisiSession. */\nexport class Commands {\n  /** Implemented by a transport session. */\n  async _request(_command, _payload, _responseLength) { throw new Error("No protocol session"); }\n')
     for c in schema['commands']:
         if c['direction']!='client_to_controller' or c['command'] in ('INIT','TIME_SYNC_RESPONSE'): continue
         props=c.get('properties',[]); n=sum(size(p['type']) for p in props)
-        lines.append(f'\n  /** {c["description"]} Errors: '+', '.join(c.get('errors',[]))+'. */\n')
+        description = f'\n  /** {c["description"]} Errors: '+', '.join(c.get('errors',[]))+'.'
+        if 'retired' in c:
+            description += f"\n   * @deprecated {retirement_notice(c)}\n   "
+        lines.append(description + ' */\n')
         lines.append('  async '+c['command'].lower()+'('+', '.join(p['name'] for p in props)+') {\n')
+        for p in props:
+            if p.get('enum') == 'telemetry_topic':
+                lines.append(f"    if (!Number.isInteger({p['name']}) || !Object.hasOwn(TopicDefinitions, {p['name']})) throw new RangeError('Invalid topic');\n")
+        if c['command'] in {'SUBSCRIBE', 'UNSUBSCRIBE'}:
+            lines.append("    if (!Number.isInteger(index) || index < 0 || index > TopicDefinitions[topic_id].indexMax) throw new RangeError('Invalid topic index');\n")
+        if c['command'] == 'SUBSCRIBE':
+            lines.append("    if (!Number.isInteger(interval_ms) || interval_ms < TopicDefinitions[topic_id].minIntervalMs || interval_ms > 3600000) throw new RangeError('Invalid subscription interval');\n")
         if c['command'] in {'GET_TEMPERATURE', 'GET_IMU'}:
             lines.append("    if (!Number.isInteger(sensor_index) || sensor_index < 0 || sensor_index > 255) throw new RangeError('sensor_index must be an integer from 0 to 255');\n")
         if c['command'] in {'INITIALIZE_MOTOR_CONTROLLER', 'START_PLATFORM_CONTROLLER'}:

@@ -1,4 +1,6 @@
 import PositionControl from '../PositionControl/PositionControl';
+import TelemetryControl from '../TelemetryControl/TelemetryControl';
+import { Topic } from '../../commands/kinisi_commands';
 import { useSettings, scaleInput } from '../../contexts/SettingsContext';
 import VelocityTuningHelp from '../VelocityTuningHelp';
 import { velocityPidDefaults } from '../../commands/velocity_tuning';
@@ -737,6 +739,8 @@ function PlatformTab({ isActive = true }) {
                             ))}
                         </div>
                         <OdometryTimestamp sample={odometry} />
+                        {isActive && isOdometryInitialized && <TelemetryControl controller={controller}
+                            topic={Topic.PLATFORM_ODOMETRY} onSample={setOdometry} />}
                     </div>
                 </fieldset>
             </div>

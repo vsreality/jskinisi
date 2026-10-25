@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { ErrorCode } from '../../commands/kinisi_commands';
+import { ErrorCode, Topic } from '../../commands/kinisi_commands';
+import TelemetryControl from '../TelemetryControl/TelemetryControl';
 import { supportsBoardSensor } from '../../commands/board_profile';
 
 const axes = ['x', 'y', 'z'];
@@ -15,7 +16,7 @@ function describeError(error) {
   return error?.message || 'Could not read the IMU sensor.';
 }
 
-export default function BoardImu({ controller, sensorIndex = 0 }) {
+export default function BoardImu({ controller, sensorIndex = 0, isActive = true }) {
   const [reading, setReading] = useState(null);
   const current = reading?.controller === controller && reading.sensorIndex === sensorIndex ? reading : null;
 
@@ -50,5 +51,7 @@ export default function BoardImu({ controller, sensorIndex = 0 }) {
       {current?.busy ? 'Reading IMU…' : 'Read IMU'}
     </button>
     {current?.error && <p className="conn-error" role="alert">{current.error}</p>}
+    {isActive && <TelemetryControl controller={controller} topic={Topic.IMU} index={sensorIndex} intervalMs={100}
+      onSample={sample => setReading({ controller, sensorIndex, value: sample, busy: false, error: '' })} />}
   </section>;
 }

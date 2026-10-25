@@ -2,6 +2,7 @@
 """Verify schema compatibility and preserve SDK files when regeneration is rejected."""
 from copy import deepcopy
 import json
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -60,7 +61,7 @@ class GeneratorTests(unittest.TestCase):
 
     def test_new_versions_and_commands_are_generated(self):
         """A future v2 schema produces its new public request and protocol version."""
-        for version in ('2.1.1', '2.2.0', '2.10.0'):
+        for version in ('2.6.1', '2.7.0', '2.10.0'):
             schema = deepcopy(self.schema)
             schema['version'] = version
             schema['commands'].append({'command': 'GET_NEW_VALUE', 'code': '0x60',
@@ -70,6 +71,62 @@ class GeneratorTests(unittest.TestCase):
             self.assertIn('async get_new_value()', generated)
             self.assertIn('export const GET_NEW_VALUE = 0x60;', generated)
             self.assertIn('PROTOCOL_VERSION = Object.freeze(' + json.dumps(list(map(int, version.split('.')))), generated)
+
+    def test_invalid_topics_and_envelopes(self):
+        for field, value in [('id', 0), ('id', True), ('id', 256), ('name', 'bad-name'),
+                             ('payload_type', 'missing'), ('payload_type', 'imu_sample'),
+                             ('index_max', -1), ('min_interval_ms', 0)]:
+            schema = deepcopy(self.schema)
+            schema['topics'][0][field] = value
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                generate_js_code(schema)
+        schema = deepcopy(self.schema)
+        schema['topics'].append(deepcopy(schema['topics'][0]))
+        with self.assertRaises(ValueError):
+            generate_js_code(schema)
+        schema = deepcopy(self.schema)
+        next(c for c in schema['commands'] if c['command'] == 'TELEMETRY_EVENT')['topic_payload'] = {}
+        with self.assertRaises(ValueError):
+            generate_js_code(schema)
+
+    def test_topic_mapping_is_generated_from_schema(self):
+        schema = deepcopy(self.schema)
+        schema['topics'].append({'id': 9, 'name': 'AUXILIARY', 'payload_type': 'temperature_sample',
+                                 'index_max': 7, 'min_interval_ms': 1000})
+        generated = generate_js_code(schema)
+        self.assertIn('AUXILIARY: 9', generated)
+        self.assertIn('9: Object.freeze({ payloadType: TemperatureSample, indexMax: 7, minIntervalMs: 1000 })', generated)
+
+    def test_retirement_annotations_preserve_callable_commands(self):
+        generated = generate_js_code(self.schema)
+        self.assertIn('@deprecated Retired since protocol 2.6.0. Use SUBSCRIBE.', generated)
+        self.assertIn('eligible for removal in protocol 3.0.0.', generated)
+        self.assertRegex(generated, r'@deprecated[^\n]+Use SUBSCRIBE\.[^\n]*\n\s*\*/\n\s*async subscribe_odometry')
+        active = deepcopy(self.schema)
+        for command in active['commands']:
+            command.pop('retired', None)
+        strip_comments = lambda code: re.sub(r'\s+', '', re.sub(r'/\*.*?\*/', '', code, flags=re.S))
+        self.assertEqual(strip_comments(generated), strip_comments(generate_js_code(active)))
+
+    def test_invalid_retirement_preserves_output(self):
+        original = next(c for c in self.schema['commands'] if c['command'] == 'SUBSCRIBE_ODOMETRY')['retired']
+        invalid = [None, True, {}, {**original, 'unknown': 1}]
+        for field, value in [('since', '2.6'), ('since', '2.7.0'), ('since', True),
+                             ('since', '02.6.0'), ('removal_major', 2), ('removal_major', True),
+                             ('removal_major', 256), ('replacement', 'MISSING'),
+                             ('replacement', 'SUBSCRIBE_ODOMETRY'), ('replacement', 'UNSUBSCRIBE_ODOMETRY'),
+                             ('replacement', 'TELEMETRY_EVENT'), ('replacement', [])]:
+            invalid.append({**original, field: value})
+        with tempfile.TemporaryDirectory() as directory:
+            schema_path, output = Path(directory) / 'commands.json', Path(directory) / 'commands.js'
+            output.write_bytes(b'preserved\n')
+            for retired in invalid:
+                schema = deepcopy(self.schema)
+                next(c for c in schema['commands'] if c['command'] == 'SUBSCRIBE_ODOMETRY')['retired'] = retired
+                schema_path.write_text(json.dumps(schema), encoding='utf-8')
+                with self.subTest(retired=retired), self.assertRaises(ValueError):
+                    generate(schema_path, output)
+                self.assertEqual(output.read_bytes(), b'preserved\n')
 
     def test_updater_preserves_schema_and_module(self):
         """A rejected local update leaves both checked-in artifacts untouched."""
