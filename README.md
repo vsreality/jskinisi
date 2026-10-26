@@ -30,7 +30,11 @@ For v0.4 accelerometer and gyroscope readings, use `await controller.get_imu(0)`
 or **Sensors → Read IMU**. See [IMU support](docs/protocol-v2.md#imu) for units,
 firmware requirements and sampling behavior.
 
-Protocol 2.6 adds a shared subscription API using the generated Topic enum:
+For v0.4 motor current, use `await controller.get_motor_current(motorIndex)`
+or **Motor → Motor current → Read current** for the selected motor. Protocol 2.7 is required.
+`controller.supportsMotorCurrent(motorIndex)` checks hardware and firmware support.
+
+Use the shared subscription API with the generated Topic enum:
 
 ~~~js
 import { Topic } from './src/commands/kinisi_commands.js';

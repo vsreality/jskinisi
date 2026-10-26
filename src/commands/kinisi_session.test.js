@@ -7,7 +7,7 @@ import { INIT, READY, TIME_SYNC_REQUEST, TIME_SYNC_RESPONSE, ERROR,
   EncoderOdometrySample, TimeStatus, MotorControllerState,
   PING, SET_HEARTBEAT_CONFIG, ENCODER_ODOMETRY_EVENT, GET_TEMPERATURE, ErrorCode } from './kinisi_commands.js';
 import { Topic, SUBSCRIBE, UNSUBSCRIBE, TELEMETRY_EVENT, TemperatureSample, ImuTelemetrySample,
-  PlatformOdometrySample, SUBSCRIBE_ODOMETRY } from './kinisi_commands.js';
+  PlatformOdometrySample, SUBSCRIBE_ODOMETRY, MotorCurrentSample } from './kinisi_commands.js';
 
 /** Build fixture messages independently of the SDK frame encoder. */
 function packet(command, id, payload = []) {
@@ -343,13 +343,14 @@ describe('generated payload codecs', () => {
 });
 
 describe('Generic telemetry subscriptions', () => {
-  const options = { protocolMinor: 6, boardMinor: 4, heartbeatTimeoutMs: 500 };
+  const options = { protocolMinor: 7, boardMinor: 4, heartbeatTimeoutMs: 500 };
   const imu = stamp => new ImuTelemetrySample(stamp, 0, 1, 1, 2, 3, 4, 5, 6);
   it.each([
     [Topic.ENCODER_ODOMETRY, 0, 100, new EncoderOdometrySample(123n, 0, 1, 2.5)],
     [Topic.PLATFORM_ODOMETRY, 0, 100, new PlatformOdometrySample(123n, 0, 1, 1, 2, 3)],
     [Topic.TEMPERATURE, 0, 1000, new TemperatureSample(123n, 0, 1, -12.5)],
     [Topic.IMU, 0, 20, imu(123n)],
+    ...[0, 1, 2, 3].map(index => [Topic.MOTOR_CURRENT, index, 20, new MotorCurrentSample(123n, 0, 1, index + .25)]),
   ])('encodes enum topic %s and dispatches its typed sample', async (topic, index, intervalMs, sample) => {
     const c = new FakeClient(options); await c.connect();
     const listener = vi.fn();
@@ -385,6 +386,31 @@ describe('Generic telemetry subscriptions', () => {
     await c.set_heartbeat_config(false, 500); count = c.writes.length;
     await expect(c.subscribe({ topic: Topic.IMU, intervalMs: 20 }, vi.fn())).rejects.toThrow('heartbeat');
     expect(c.writes).toHaveLength(count);
+  });
+  it('gates current pulls and subscriptions on protocol 2.7 even for unknown boards', async () => {
+    for (const boardMinor of [4, 99]) {
+      const c = new FakeClient({ ...options, boardMinor, protocolMinor: 6 }); await c.connect();
+      const count = c.writes.length;
+      await expect(c.get_motor_current(0)).rejects.toThrow('protocol 2.7');
+      await expect(c.subscribe({ topic: Topic.MOTOR_CURRENT, intervalMs: 100 }, vi.fn())).rejects.toThrow('protocol 2.7');
+      await expect(c.unsubscribe(Topic.MOTOR_CURRENT, 0)).rejects.toThrow('protocol 2.7');
+      expect(c.writes).toHaveLength(count);
+    }
+    const c = new FakeClient({ ...options, boardMinor: 3, boardPatch: 0 }); await c.connect();
+    const count = c.writes.length;
+    await expect(c.get_motor_current(0)).rejects.toThrow('no current sensor');
+    await expect(c.subscribe({ topic: Topic.MOTOR_CURRENT, intervalMs: 100 }, vi.fn())).rejects.toThrow('does not support');
+    expect(c.writes).toHaveLength(count);
+  });
+  it('delivers a current pull and preserves saturation error identity', async () => {
+    const c = new FakeClient(options); await c.connect();
+    c.handler = d => {
+      const value = new ArrayBuffer(8); new DataView(value).setFloat64(0, d[4] + .125, true);
+      c.push(packet(d[1], d[2] | d[3] << 8, value));
+    };
+    for (let index = 0; index < 4; index++) expect(await c.get_motor_current(index)).toBe(index + .125);
+    c.handler = d => c.push(packet(ERROR, d[2] | d[3] << 8, [d[1], ErrorCode.SAMPLE_OUT_OF_RANGE]));
+    await expect(c.get_motor_current(0)).rejects.toMatchObject({ code: ErrorCode.SAMPLE_OUT_OF_RANGE, command: 0x52 });
   });
   it('replaces a listener without letting an old handle remove the replacement', async () => {
     const c = new FakeClient(options); await c.connect();

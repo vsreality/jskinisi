@@ -34,3 +34,9 @@ export function supportsBoardSensor(info, kind, index = 0) {
     : kind === 'imu' ? supportsImuRead(info) : false;
   return protocolSupported && hasBoardSensor(info, kind, index);
 }
+
+/** Current sensing is indexed by motor, independently of motor initialization. */
+export function supportsMotorCurrent(info, index = 0) {
+  return info?.protocol_major === 2 && info.protocol_minor >= 7 && Number.isInteger(index) &&
+    (getBoardProfile(info)?.motor_features.some(motor => motor.id === index && motor.current_sense) ?? false);
+}

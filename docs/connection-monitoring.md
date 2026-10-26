@@ -28,6 +28,25 @@ if (client.supportsTopic(Topic.IMU, 0)) {
 | `Topic.PLATFORM_ODOMETRY` | 0 | `PlatformOdometrySample`: timestamp, clock metadata, x/y in metres and theta in radians | Twice the calculation period |
 | `Topic.TEMPERATURE` | Sensor index | `TemperatureSample`: timestamp, clock metadata, celsius | 250 ms |
 | `Topic.IMU` | Sensor index | `ImuTelemetrySample`: timestamp, clock metadata, acceleration in m/s² and angular velocity in rad/s | 10 ms |
+| `Topic.MOTOR_CURRENT` | Motor index (0–3) | `MotorCurrentSample`: timestamp, clock metadata, `amps` | 20 ms |
+
+Motor current requires protocol 2.7 and a motor with current sensing. Both the
+pull and subscription return a nonnegative filtered high-side current estimate;
+PWM affects the measurement. It is not signed winding or battery current.
+Reading does not enable the motor. ADC saturation returns `SAMPLE_OUT_OF_RANGE`;
+read failures pause an existing stream until recovery.
+
+```js
+if (controller.supportsMotorCurrent(0)) {
+  console.log(await controller.get_motor_current(0)); // amperes
+  const stream = await controller.subscribe(
+    { topic: Topic.MOTOR_CURRENT, index: 0, intervalMs: 100 },
+    sample => console.log(sample.amps, sample.timestamp_us),
+  );
+  // Keep the handle while receiving samples, then stop it when finished.
+  await stream.unsubscribe();
+}
+```
 
 Intervals are integer milliseconds, at most 3,600,000. The default index is zero.
 Initialize and start odometry before subscribing to it. `supportsTopic()` checks
@@ -58,6 +77,9 @@ pause delivery until recovery; no stale sample is emitted after a failed read.
 The web client's live-update controls use this API. Switching tabs or resources
 unsubscribes from the old stream, including when the subscribe ACK arrives after
 the view has closed. Older firmware keeps its manual read controls.
+
+Motor-current readings and live updates appear in the **Motor** tab for the
+selected motor. Changing the motor clears its reading and stops its stream.
 
 ## Legacy odometry subscriptions
 
