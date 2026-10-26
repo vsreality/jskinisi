@@ -11,7 +11,7 @@ TYPES = {'bool':(1,'Uint8'), 'uint8_t':(1,'Uint8'), 'int8_t':(1,'Int8'),
 # Sensor exports are required by the session even when connected firmware is older.
 SESSION_COMMANDS = {'PING', 'SET_HEARTBEAT_CONFIG', 'SUBSCRIBE_ODOMETRY',
                     'UNSUBSCRIBE_ODOMETRY', 'ENCODER_ODOMETRY_EVENT', 'PLATFORM_ODOMETRY_EVENT',
-                    'GET_TEMPERATURE', 'GET_IMU', 'SUBSCRIBE', 'UNSUBSCRIBE', 'TELEMETRY_EVENT'}
+                    'GET_TEMPERATURE', 'GET_IMU', 'GET_MOTOR_CURRENT', 'SUBSCRIBE', 'UNSUBSCRIBE', 'TELEMETRY_EVENT'}
 
 
 def class_name(name):
@@ -83,7 +83,7 @@ def generate_js_code(schema, js_version='ES6'):
         for field, low, high in [('index_max', 0, 255), ('min_interval_ms', 2, 3600000)]:
             if type(topic.get(field)) is not int or not low <= topic[field] <= high:
                 raise ValueError('Invalid topic ' + field)
-    if not {'ENCODER_ODOMETRY', 'PLATFORM_ODOMETRY', 'TEMPERATURE', 'IMU'} <= names:
+    if not {'ENCODER_ODOMETRY', 'PLATFORM_ODOMETRY', 'TEMPERATURE', 'IMU', 'MOTOR_CURRENT'} <= names:
         raise ValueError('Schema is missing runtime topics')
     for command in schema['commands']:
         for prop in command.get('properties', []):
@@ -169,6 +169,7 @@ export function decodeTelemetryEvent(payload) {
   if (![0, 1].includes(sample.clock_mode) || ![1, 2].includes(sample.clock_quality) ||
       Object.values(sample).some(value => typeof value === 'number' && !Number.isFinite(value)))
     throw new Error('Invalid telemetry sample');
+  if (topic === Topic.MOTOR_CURRENT && sample.amps < 0) throw new Error('Invalid motor current payload');
   return { topic, index, sample };
 }
 ''')
@@ -190,6 +191,8 @@ export function decodeTelemetryEvent(payload) {
             lines.append("    if (!Number.isInteger(interval_ms) || interval_ms < TopicDefinitions[topic_id].minIntervalMs || interval_ms > 3600000) throw new RangeError('Invalid subscription interval');\n")
         if c['command'] in {'GET_TEMPERATURE', 'GET_IMU'}:
             lines.append("    if (!Number.isInteger(sensor_index) || sensor_index < 0 || sensor_index > 255) throw new RangeError('sensor_index must be an integer from 0 to 255');\n")
+        if c['command'] == 'GET_MOTOR_CURRENT':
+            lines.append("    if (!Number.isInteger(motor_index) || motor_index < 0 || motor_index > 3) throw new RangeError('motor_index must be 0..3');\n")
         if c['command'] in {'INITIALIZE_MOTOR_CONTROLLER', 'START_PLATFORM_CONTROLLER'}:
             # These existing APIs also accept numeric strings from UI controls.
             for name in ('kp', 'ki', 'kd', 'integral_limit'):
@@ -225,6 +228,9 @@ export function decodeTelemetryEvent(payload) {
             elif c['command'] == 'GET_TEMPERATURE':
                 lines.append(f'    const view = payloadView(response, {size(t)});\n    const temperature = {read(t,0)};\n')
                 lines.append("    if (!Number.isFinite(temperature)) throw new Error('Invalid temperature payload');\n    return temperature;\n")
+            elif c['command'] == 'GET_MOTOR_CURRENT':
+                lines.append(f'    const view = payloadView(response, {size(t)});\n    const amps = {read(t,0)};\n')
+                lines.append("    if (!Number.isFinite(amps) || amps < 0) throw new Error('Invalid motor current payload');\n    return amps;\n")
             else:
                 lines.append(f'    const view = payloadView(response, {size(t)});\n    return {read(t,0)};\n')
         else: lines.append(f'    await this._request({c["command"]}, payload, 0);\n')

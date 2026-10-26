@@ -1,8 +1,9 @@
 // Generated from tools/commands.json by tools/sdkgenerator.py. Do not edit.
 export const SDK_VERSION = Object.freeze([2, 6, 0]);
-export const PROTOCOL_VERSION = Object.freeze([2, 6, 0]);
+export const PROTOCOL_VERSION = Object.freeze([2, 7, 0]);
 export const GET_TEMPERATURE = 0x50;
 export const GET_IMU = 0x51;
+export const GET_MOTOR_CURRENT = 0x52;
 export const INITIALIZE_MOTOR = 0x01;
 export const SET_MOTOR_SPEED = 0x02;
 export const STOP_MOTOR = 0x03;
@@ -91,6 +92,7 @@ export const ErrorCode = Object.freeze({
   INIT_REQUIRED: 15,
   SENSOR_NOT_AVAILABLE: 16,
   SUBSCRIPTION_LIMIT: 17,
+  SAMPLE_OUT_OF_RANGE: 18,
 });
 export const ErrorDescriptions = Object.freeze({
   1: "The requested protocol version is incompatible with this firmware.",
@@ -98,7 +100,7 @@ export const ErrorDescriptions = Object.freeze({
   3: "The received command ID is not accepted by the controller.",
   4: "The complete message has an invalid header or payload length.",
   5: "The motor belongs to a platform; use the corresponding platform command.",
-  6: "The controller could not execute or encode the operation.",
+  6: "The controller could not execute or encode the operation. During motor initialization, possible causes include missing motor power, a driver communication failure, or a faulty driver.",
   7: "Initial clock setup is incomplete; wait for READY. Uptime mode also supports READY.",
   8: "Initial time sync exhausted its attempts without a valid sample.",
   9: "Odometry is not running; start odometry before requesting a measurement.",
@@ -110,6 +112,7 @@ export const ErrorDescriptions = Object.freeze({
   15: "Send a valid INIT request before performing this connection-dependent operation.",
   16: "The selected sensor is not defined on this board.",
   17: "This connection has no free subscription slots; unsubscribe an existing source first.",
+  18: "The sensor reading is saturated; no valid measurement can be returned.",
 });
 /** Preserve uint64/int64 precision instead of silently accepting rounded Numbers. */
 function exactBigInt(value) {
@@ -529,18 +532,53 @@ export class ImuTelemetrySample {
   }
 }
 
+/** Timestamped filtered motor-current estimate. */
+export class MotorCurrentSample {
+  /** Store one decoded payload. */
+  constructor(timestamp_us, clock_mode, clock_quality, amps) {
+    this.timestamp_us = timestamp_us;
+    this.clock_mode = clock_mode;
+    this.clock_quality = clock_quality;
+    this.amps = amps;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 18; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(MotorCurrentSample.getSize());
+    const view = new DataView(buffer);
+    view.setBigUint64(0, exactBigInt(this.timestamp_us), true);
+    view.setUint8(8, this.clock_mode);
+    view.setUint8(9, this.clock_quality);
+    view.setFloat64(10, this.amps, true);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, MotorCurrentSample.getSize());
+    return new MotorCurrentSample(
+      view.getBigUint64(0, true),
+      view.getUint8(8),
+      view.getUint8(9),
+      view.getFloat64(10, true),
+    );
+  }
+}
+
 /** Stable uint8 telemetry topic enum. */
 export const Topic = Object.freeze({
   ENCODER_ODOMETRY: 1,
   PLATFORM_ODOMETRY: 2,
   TEMPERATURE: 3,
   IMU: 4,
+  MOTOR_CURRENT: 5,
 });
 export const TopicDefinitions = Object.freeze({
   1: Object.freeze({ payloadType: EncoderOdometrySample, indexMax: 3, minIntervalMs: 2 }),
   2: Object.freeze({ payloadType: PlatformOdometrySample, indexMax: 0, minIntervalMs: 2 }),
   3: Object.freeze({ payloadType: TemperatureSample, indexMax: 255, minIntervalMs: 250 }),
   4: Object.freeze({ payloadType: ImuTelemetrySample, indexMax: 255, minIntervalMs: 10 }),
+  5: Object.freeze({ payloadType: MotorCurrentSample, indexMax: 3, minIntervalMs: 20 }),
 });
 /** Decode a topic-selected payload. Future unknown topics can be ignored by the session. */
 export function decodeTelemetryEvent(payload) {
@@ -555,6 +593,7 @@ export function decodeTelemetryEvent(payload) {
   if (![0, 1].includes(sample.clock_mode) || ![1, 2].includes(sample.clock_quality) ||
       Object.values(sample).some(value => typeof value === 'number' && !Number.isFinite(value)))
     throw new Error('Invalid telemetry sample');
+  if (topic === Topic.MOTOR_CURRENT && sample.amps < 0) throw new Error('Invalid motor current payload');
   return { topic, index, sample };
 }
 
@@ -586,6 +625,19 @@ export class Commands {
     const sample = ImuSample.decode(response);
     if (!Object.values(sample).every(Number.isFinite)) throw new Error('Invalid IMU payload');
     return sample;
+  }
+
+  /** Read the filtered motor-current estimate in amperes. The unsigned reading measures driver high-side current; PWM decay intervals and the analog filter affect it. Reading does not enable or initialize the motor. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, SENSOR_NOT_AVAILABLE, SAMPLE_OUT_OF_RANGE, INTERNAL_ERROR. */
+  async get_motor_current(motor_index) {
+    if (!Number.isInteger(motor_index) || motor_index < 0 || motor_index > 3) throw new RangeError('motor_index must be 0..3');
+    const payload = new ArrayBuffer(1);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, motor_index);
+    const response = await this._request(GET_MOTOR_CURRENT, payload, 8);
+    const view = payloadView(response, 8);
+    const amps = view.getFloat64(0, true);
+    if (!Number.isFinite(amps) || amps < 0) throw new Error('Invalid motor current payload');
+    return amps;
   }
 
   /** This command initializes a motor and prepares it for use. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels), so platform wheels are not reconfigured out from under the platform. Stops the motor velocity and position controllers before applying the command. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, INIT_REQUIRED. */
@@ -1179,7 +1231,7 @@ export class Commands {
     await this._request(INITIALIZE_PLATFORM_POSITION_PID_CONTROLLER, payload, 0);
   }
 
-  /** Create or replace this connection's subscription for a topic and resource. Requires READY and enabled heartbeat. Odometry must be running. The interval must meet the topic minimum and, for odometry, be at least twice the calculation period. Failed reads pause delivery until recovery. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, ODOMETRY_NOT_INITIALIZED, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SUBSCRIPTION_LIMIT. */
+  /** Create or replace this connection's subscription for a topic and resource. Requires READY and enabled heartbeat. Odometry must be running. The interval must meet the topic minimum and, for odometry, be at least twice the calculation period. Failed reads pause delivery until recovery. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, ODOMETRY_NOT_INITIALIZED, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SUBSCRIPTION_LIMIT, SAMPLE_OUT_OF_RANGE. */
   async subscribe(topic_id, index, interval_ms) {
     if (!Number.isInteger(topic_id) || !Object.hasOwn(TopicDefinitions, topic_id)) throw new RangeError('Invalid topic');
     if (!Number.isInteger(index) || index < 0 || index > TopicDefinitions[topic_id].indexMax) throw new RangeError('Invalid topic index');

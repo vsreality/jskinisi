@@ -1,5 +1,6 @@
 import OdometryTimestamp from '../OdometryTimestamp';
 import TelemetryControl from '../TelemetryControl/TelemetryControl';
+import MotorCurrent from './MotorCurrent';
 import { Topic } from '../../commands/kinisi_commands';
 import { useSettings } from '../../contexts/SettingsContext';
 // API-v2 actions display controller errors and await command acknowledgements.
@@ -13,7 +14,7 @@ function MotorTab({ isActive = true }){
     const { angleUnit } = useSettings();
     const angleScale = angleUnit === 'deg' ? 180 / Math.PI : 1;
     const [commandError, runCommand] = useCommandAction();
-    const { controller } = useContext(ControllerContext);
+    const { controller, isConnected } = useContext(ControllerContext);
     
     const [motorIndex, setMotorIndex] = useState('0');
     const [isMotorInitialized, setIsMotorInitialized] = useState([false, false, false, false]);
@@ -152,8 +153,10 @@ function MotorTab({ isActive = true }){
                 </div>
             </section>
 
-            {/* Encoder Controls */}
+            {isConnected && <MotorCurrent key={motorIndex} controller={controller}
+                motorIndex={Number(motorIndex)} isActive={isActive} />}
             </fieldset>
+            {/* Encoder Controls */}
             <fieldset className="settings-card encoder-card">
                 <legend>Encoder</legend>
                 <section className="encoder-section" aria-labelledby="encoderSetupTitle">

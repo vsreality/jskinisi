@@ -1,14 +1,14 @@
 // File: kinisi_session.js
 // Shared API-v2 framing, readiness and clock exchange for serial and proxy transports.
 import { Commands, INIT, READY, ERROR, TIME_SYNC_REQUEST, TIME_SYNC_RESPONSE,
-  SDK_VERSION, InitResponse, ErrorCode, ErrorDescriptions, GET_TEMPERATURE, GET_IMU,
+  SDK_VERSION, InitResponse, ErrorCode, ErrorDescriptions, GET_TEMPERATURE, GET_IMU, GET_MOTOR_CURRENT,
   SET_HEARTBEAT_CONFIG, UNSUBSCRIBE_ODOMETRY, ENCODER_ODOMETRY_EVENT, PLATFORM_ODOMETRY_EVENT,
   SUBSCRIBE_ODOMETRY, SUBSCRIBE, UNSUBSCRIBE, TELEMETRY_EVENT, Topic,
   decodeTelemetryEvent, EncoderOdometrySample, PlatformOdometrySample } from './kinisi_commands.js';
 import { POSITION_COMMANDS, supportsPositionControl, POSITION_PID_COMMANDS, supportsPositionPidControl } from './position_control.js';
 import { supportsTemperatureRead } from './temperature.js';
 import { supportsImuRead } from './imu.js';
-import { getBoardProfile, supportsBoardSensor } from './board_profile.js';
+import { getBoardProfile, supportsBoardSensor, supportsMotorCurrent } from './board_profile.js';
 import { supportsTelemetry, supportsTopic } from './telemetry.js';
 
 export { Topic } from './kinisi_commands.js';
@@ -127,6 +127,7 @@ export class KinisiSession extends Commands {
   supportsSensor(kind, index = 0) { return supportsBoardSensor(this.boardInfo, kind, index); }
 
   supportsTopic(topic, index = 0) { return supportsTopic(this.boardInfo, topic, index); }
+  supportsMotorCurrent(index = 0) { return supportsMotorCurrent(this.boardInfo, index); }
 
   /** Serialize changes to one source, including cleanup racing with a replacement. */
   _telemetryOperation(key, operation) {
@@ -219,6 +220,8 @@ export class KinisiSession extends Commands {
     if ([SUBSCRIBE, UNSUBSCRIBE].includes(command)) {
       if (!supportsTelemetry(this.boardInfo)) throw new ProtocolError('Subscriptions require firmware protocol 2.6 or newer');
       const [topic, index] = bytes(payload);
+      if (topic === Topic.MOTOR_CURRENT && this.boardInfo.protocol_minor < 7)
+        throw new ProtocolError('Motor current requires firmware protocol 2.7 or newer');
       if (this.boardProfile && !this.supportsTopic(topic, index))
         throw new ProtocolError('This board does not support the selected telemetry source');
       if (command === SUBSCRIBE && this._heartbeatIntervalMs === null)
@@ -226,6 +229,12 @@ export class KinisiSession extends Commands {
     }
     if (command === GET_IMU && !supportsImuRead(this.boardInfo))
       throw new ProtocolError('IMU readings require firmware protocol 2.5 or newer');
+    if (command === GET_MOTOR_CURRENT) {
+      if (this.boardInfo?.protocol_major !== 2 || this.boardInfo.protocol_minor < 7)
+        throw new ProtocolError('Motor current requires firmware protocol 2.7 or newer');
+      if (this.boardProfile && !this.supportsMotorCurrent(bytes(payload)[0]))
+        throw new ProtocolError('This motor has no current sensor');
+    }
     if (command === GET_TEMPERATURE && !supportsTemperatureRead(this.boardInfo))
       throw new ProtocolError('Temperature readings require firmware protocol 2.4 or newer');
     const sensorKind = command === GET_TEMPERATURE ? 'temperature' : command === GET_IMU ? 'imu' : null;
