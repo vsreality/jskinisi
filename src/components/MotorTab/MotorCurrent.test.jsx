@@ -37,7 +37,7 @@ it('reads the selected motor and stops its stream on motor changes, tab changes 
     expect(controller.get_motor_current).toHaveBeenNthCalledWith(index + 1, index);
     fireEvent.click(screen.getByRole('button', { name: 'Start live updates' }));
     await waitFor(() => expect(controller.subscribe).toHaveBeenCalledWith(
-      { topic: Topic.MOTOR_CURRENT, index, intervalMs: 100 }, expect.any(Function)));
+      { topic: Topic.MOTOR_CURRENT, index, intervalMs: 100, mode: 0 }, expect.any(Function)));
     act(() => callbacks.get(index)({ amps: index + .25 }));
     expect(screen.getByLabelText(`Latest motor ${index} current`)).toHaveTextContent(`${index}.250 A`);
     if (index) {

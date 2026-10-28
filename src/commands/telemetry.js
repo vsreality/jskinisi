@@ -1,5 +1,5 @@
 import { Topic, TopicDefinitions } from './kinisi_commands.js';
-import { getBoardProfile, hasBoardSensor, supportsMotorCurrent } from './board_profile.js';
+import { getBoardProfile, hasBoardSensor, supportsMotorCurrent, supportsMotorFaults } from './board_profile.js';
 
 export function supportsTelemetry(info) {
   return info?.protocol_major === 2 && info.protocol_minor >= 6;
@@ -16,6 +16,7 @@ export function supportsTopic(info, topic, index = 0) {
     case Topic.PLATFORM_ODOMETRY: return true;
     case Topic.TEMPERATURE: return hasBoardSensor(info, 'temperature', index);
     case Topic.IMU: return hasBoardSensor(info, 'imu', index);
+    case Topic.MOTOR_FAULTS: return supportsMotorFaults(info, index);
     case Topic.MOTOR_CURRENT: return supportsMotorCurrent(info, index);
     default: return false;
   }

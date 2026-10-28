@@ -50,10 +50,13 @@ class GeneratorTests(unittest.TestCase):
             schema_path = Path(directory) / 'commands.json'
             output = Path(directory) / 'commands.js'
             output.write_bytes(b'preserved\n')
-            for missing in ({'GET_TEMPERATURE'}, {'GET_IMU'}, {'GET_MOTOR_CURRENT'}, {'GET_TEMPERATURE', 'GET_IMU'}):
+            for missing in ({'GET_TEMPERATURE'}, {'GET_IMU'}, {'GET_MOTOR_CURRENT'}, {'GET_MOTOR_FAULTS'}, {'SUBSCRIBE_CONFIGURED'}, {'GET_MOTOR_CURRENT_LIMIT'}, {'SET_MOTOR_CURRENT_LIMIT'}, {'GET_TEMPERATURE', 'GET_IMU'}):
                 with self.subTest(missing=sorted(missing)):
                     schema = deepcopy(self.schema)
                     schema['commands'] = [c for c in schema['commands'] if c['command'] not in missing]
+                    if 'SUBSCRIBE_CONFIGURED' in missing:
+                        schema.pop('subscription_triggers', None)
+                        schema.pop('subscription_deliveries', None)
                     schema_path.write_text(json.dumps(schema), encoding='utf-8')
                     with self.assertRaisesRegex(ValueError, 'missing runtime commands: ' + ', '.join(sorted(missing))):
                         generate(schema_path, output)
@@ -89,13 +92,25 @@ class GeneratorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             generate_js_code(schema)
 
+    def test_subscription_modes_and_envelope_are_validated(self):
+        for field, value in [('id', 2), ('id', True), ('name', 'UNKNOWN')]:
+            schema = deepcopy(self.schema)
+            schema['subscription_modes'][1][field] = value
+            with self.assertRaises(ValueError):
+                generate_js_code(schema)
+        schema = deepcopy(self.schema)
+        next(c for c in schema['commands'] if c['command'] == 'SUBSCRIBE_WITH_MODE')['properties'].pop()
+        with self.assertRaises(ValueError):
+            generate_js_code(schema)
+        self.assertIn('ON_CHANGE: 1', generate_js_code(self.schema))
+
     def test_topic_mapping_is_generated_from_schema(self):
         schema = deepcopy(self.schema)
         schema['topics'].append({'id': 9, 'name': 'AUXILIARY', 'payload_type': 'temperature_sample',
-                                 'index_max': 7, 'min_interval_ms': 1000})
+                                 'index_max': 7, 'min_interval_ms': 1000, 'event_supported': False})
         generated = generate_js_code(schema)
         self.assertIn('AUXILIARY: 9', generated)
-        self.assertIn('9: Object.freeze({ payloadType: TemperatureSample, indexMax: 7, minIntervalMs: 1000 })', generated)
+        self.assertIn('9: Object.freeze({ payloadType: TemperatureSample, indexMax: 7, minIntervalMs: 1000, eventSupported: false })', generated)
 
     def test_retirement_annotations_preserve_callable_commands(self):
         generated = generate_js_code(self.schema)
@@ -111,7 +126,7 @@ class GeneratorTests(unittest.TestCase):
     def test_invalid_retirement_preserves_output(self):
         original = next(c for c in self.schema['commands'] if c['command'] == 'SUBSCRIBE_ODOMETRY')['retired']
         invalid = [None, True, {}, {**original, 'unknown': 1}]
-        for field, value in [('since', '2.6'), ('since', '2.8.0'), ('since', True),
+        for field, value in [('since', '2.6'), ('since', '2.99.0'), ('since', True),
                              ('since', '02.6.0'), ('removal_major', 2), ('removal_major', True),
                              ('removal_major', 256), ('replacement', 'MISSING'),
                              ('replacement', 'SUBSCRIBE_ODOMETRY'), ('replacement', 'UNSUBSCRIBE_ODOMETRY'),
@@ -153,6 +168,9 @@ class GeneratorTests(unittest.TestCase):
                     schema = deepcopy(self.schema)
                     schema['version'] = version
                     schema['commands'] = [c for c in schema['commands'] if c['command'] not in missing]
+                    if 'SUBSCRIBE_CONFIGURED' in missing:
+                        schema.pop('subscription_triggers', None)
+                        schema.pop('subscription_deliveries', None)
                     source.write_text(json.dumps(schema), encoding='utf-8')
                     result = subprocess.run(
                         [sys.executable, '-B', str(root / 'tools/update-commands.py'), '--schema', str(source)],

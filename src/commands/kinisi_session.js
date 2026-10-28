@@ -1,17 +1,17 @@
 // File: kinisi_session.js
 // Shared API-v2 framing, readiness and clock exchange for serial and proxy transports.
 import { Commands, INIT, READY, ERROR, TIME_SYNC_REQUEST, TIME_SYNC_RESPONSE,
-  SDK_VERSION, InitResponse, ErrorCode, ErrorDescriptions, GET_TEMPERATURE, GET_IMU, GET_MOTOR_CURRENT,
+  SDK_VERSION, InitResponse, ErrorCode, ErrorDescriptions, GET_TEMPERATURE, GET_IMU, GET_MOTOR_CURRENT, GET_MOTOR_FAULTS, CLEAR_MOTOR_FAULTS, GET_MOTOR_CURRENT_LIMIT, SET_MOTOR_CURRENT_LIMIT,
   SET_HEARTBEAT_CONFIG, UNSUBSCRIBE_ODOMETRY, ENCODER_ODOMETRY_EVENT, PLATFORM_ODOMETRY_EVENT,
-  SUBSCRIBE_ODOMETRY, SUBSCRIBE, UNSUBSCRIBE, TELEMETRY_EVENT, Topic,
+  SUBSCRIBE_ODOMETRY, SUBSCRIBE, SUBSCRIBE_WITH_MODE, SUBSCRIBE_CONFIGURED, UNSUBSCRIBE, TELEMETRY_EVENT, Topic, SubscriptionMode, SubscriptionTrigger, SubscriptionDelivery,
   decodeTelemetryEvent, EncoderOdometrySample, PlatformOdometrySample } from './kinisi_commands.js';
 import { POSITION_COMMANDS, supportsPositionControl, POSITION_PID_COMMANDS, supportsPositionPidControl } from './position_control.js';
 import { supportsTemperatureRead } from './temperature.js';
 import { supportsImuRead } from './imu.js';
-import { getBoardProfile, supportsBoardSensor, supportsMotorCurrent } from './board_profile.js';
+import { getBoardProfile, supportsBoardSensor, supportsMotorCurrent, supportsMotorFaults, getMotorCurrentLimitOptions, supportsMotorCurrentLimit } from './board_profile.js';
 import { supportsTelemetry, supportsTopic } from './telemetry.js';
 
-export { Topic } from './kinisi_commands.js';
+export { Topic, SubscriptionMode, SubscriptionTrigger, SubscriptionDelivery } from './kinisi_commands.js';
 
 // Existing controls need 2.1; additive commands are gated separately.
 const MIN_PROTOCOL_VERSION = [2, 1, 0];
@@ -121,12 +121,15 @@ export class KinisiSession extends Commands {
   }
 
   /** Bundled hardware profile selected automatically from INIT identity. */
+  getMotorCurrentLimitOptions(index = 0) { return getMotorCurrentLimitOptions(this.boardInfo, index); }
+  supportsMotorCurrentLimit(index = 0) { return supportsMotorCurrentLimit(this.boardInfo, index); }
   get boardProfile() { return getBoardProfile(this.boardInfo); }
 
   /** Check both hardware presence and firmware support without performing I/O. */
   supportsSensor(kind, index = 0) { return supportsBoardSensor(this.boardInfo, kind, index); }
 
   supportsTopic(topic, index = 0) { return supportsTopic(this.boardInfo, topic, index); }
+  supportsMotorFaults(index = 0) { return supportsMotorFaults(this.boardInfo, index); }
   supportsMotorCurrent(index = 0) { return supportsMotorCurrent(this.boardInfo, index); }
 
   /** Serialize changes to one source, including cleanup racing with a replacement. */
@@ -143,13 +146,25 @@ export class KinisiSession extends Commands {
   }
 
   /** Subscribe using the generated topic enum; one callback per topic/index/session. */
-  async subscribe({ topic, index = 0, intervalMs }, callback) {
+  async subscribe({ topic, index = 0, intervalMs, mode, trigger, delivery, pollIntervalMs, maxSilenceMs }, callback) {
+    const configured = trigger !== undefined || delivery !== undefined || pollIntervalMs !== undefined || maxSilenceMs !== undefined;
+    if (configured && (mode !== undefined || intervalMs !== undefined)) throw new RangeError('Use pollIntervalMs with trigger/delivery settings');
+    if (mode === undefined) mode = SubscriptionMode.PERIODIC;
+    trigger ??= SubscriptionTrigger.PERIODIC;
+    delivery ??= SubscriptionDelivery.ALL;
+    maxSilenceMs ??= 0;
+    if (trigger === SubscriptionTrigger.ON_EVENT) pollIntervalMs ??= 0;
+    if (!Object.values(SubscriptionMode).includes(mode)) throw new RangeError('Invalid subscription mode');
     if (typeof callback !== 'function') throw new TypeError('A sample callback is required');
     const key = topic + ':' + index;
     return this._telemetryOperation(key, async () => {
       const entry = { callback, closing: false, session: this._session };
       this._telemetryCandidates.set(key, entry);
-      try { await super.subscribe(topic, index, intervalMs); }
+      try {
+        if (configured) await super.subscribe_configured(topic, index, pollIntervalMs, trigger, delivery, maxSilenceMs);
+        else if (mode === SubscriptionMode.PERIODIC) await super.subscribe(topic, index, intervalMs);
+        else await super.subscribe_with_mode(topic, index, intervalMs, mode);
+      }
       catch (error) {
         // A lost ACK may still have installed a stream. Cancel that source so
         // a failed subscribe cannot leave an unreachable background subscription.
@@ -217,18 +232,41 @@ export class KinisiSession extends Commands {
   /** Generated commands cannot bypass the INIT/READY gate. */
   async _request(command, payload, responseLength) {
     if (!this.ready) throw new ProtocolError('Controller is not ready; complete INIT first');
-    if ([SUBSCRIBE, UNSUBSCRIBE].includes(command)) {
+    if ([SUBSCRIBE, SUBSCRIBE_WITH_MODE, SUBSCRIBE_CONFIGURED, UNSUBSCRIBE].includes(command)) {
       if (!supportsTelemetry(this.boardInfo)) throw new ProtocolError('Subscriptions require firmware protocol 2.6 or newer');
+      if (command === SUBSCRIBE_CONFIGURED && this.boardInfo.protocol_minor < 12)
+        throw new ProtocolError('Subscription settings require firmware protocol 2.12 or newer');
+      if (command === SUBSCRIBE_WITH_MODE && this.boardInfo.protocol_minor < 9)
+        throw new ProtocolError('Subscription modes require firmware protocol 2.9 or newer');
       const [topic, index] = bytes(payload);
+      if (topic === Topic.MOTOR_FAULTS && this.boardInfo.protocol_minor < 8)
+        throw new ProtocolError('Motor faults require firmware protocol 2.8 or newer');
       if (topic === Topic.MOTOR_CURRENT && this.boardInfo.protocol_minor < 7)
         throw new ProtocolError('Motor current requires firmware protocol 2.7 or newer');
       if (this.boardProfile && !this.supportsTopic(topic, index))
         throw new ProtocolError('This board does not support the selected telemetry source');
-      if (command === SUBSCRIBE && this._heartbeatIntervalMs === null)
+      if ([SUBSCRIBE, SUBSCRIBE_WITH_MODE, SUBSCRIBE_CONFIGURED].includes(command) && this._heartbeatIntervalMs === null)
         throw new ProtocolError('Enable heartbeat monitoring before subscribing');
     }
     if (command === GET_IMU && !supportsImuRead(this.boardInfo))
       throw new ProtocolError('IMU readings require firmware protocol 2.5 or newer');
+    if ([GET_MOTOR_CURRENT_LIMIT, SET_MOTOR_CURRENT_LIMIT].includes(command)) {
+      if (this.boardInfo?.protocol_major !== 2 || this.boardInfo.protocol_minor < 11)
+        throw new ProtocolError('Current-limit setup requires firmware protocol 2.11 or newer');
+      const data = bytes(payload), options = this.getMotorCurrentLimitOptions(data[0]);
+      if (this.boardProfile && !options) throw new ProtocolError('This motor has no configurable current limit');
+      if (command === SET_MOTOR_CURRENT_LIMIT && options &&
+          (!options.supported_thresholds_ma.includes(data[2] | (data[3] << 8)) || (!data[1] && !options.can_disable)))
+        throw new RangeError('Current-limit setting is not allowed by this board');
+    }
+    if (command === CLEAR_MOTOR_FAULTS && this.boardInfo?.protocol_minor < 10)
+      throw new ProtocolError('Clearing motor faults requires firmware protocol 2.10 or newer');
+    if ([GET_MOTOR_FAULTS, CLEAR_MOTOR_FAULTS].includes(command)) {
+      if (this.boardInfo?.protocol_major !== 2 || this.boardInfo.protocol_minor < 8)
+        throw new ProtocolError('Motor faults require firmware protocol 2.8 or newer');
+      if (this.boardProfile && !this.supportsMotorFaults(bytes(payload)[0]))
+        throw new ProtocolError('This motor has no fault reporting');
+    }
     if (command === GET_MOTOR_CURRENT) {
       if (this.boardInfo?.protocol_major !== 2 || this.boardInfo.protocol_minor < 7)
         throw new ProtocolError('Motor current requires firmware protocol 2.7 or newer');
@@ -253,7 +291,7 @@ export class KinisiSession extends Commands {
       this._heartbeatIntervalMs = data[0] ? view.getUint32(1, true) / 5 : null;
       if (!data[0]) { this._subscriptionSamples.clear(); this._clearTelemetry(); }
       this._scheduleHeartbeat(session);
-    } else if (command === SUBSCRIBE) {
+    } else if ([SUBSCRIBE, SUBSCRIBE_WITH_MODE, SUBSCRIBE_CONFIGURED].includes(command)) {
       // Activate at the ACK boundary, before the reader dispatches a coalesced event.
       const key = data[0] + ':' + data[1];
       const entry = this._telemetryCandidates.get(key);

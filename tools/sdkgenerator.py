@@ -11,8 +11,30 @@ TYPES = {'bool':(1,'Uint8'), 'uint8_t':(1,'Uint8'), 'int8_t':(1,'Int8'),
 # Sensor exports are required by the session even when connected firmware is older.
 SESSION_COMMANDS = {'PING', 'SET_HEARTBEAT_CONFIG', 'SUBSCRIBE_ODOMETRY',
                     'UNSUBSCRIBE_ODOMETRY', 'ENCODER_ODOMETRY_EVENT', 'PLATFORM_ODOMETRY_EVENT',
-                    'GET_TEMPERATURE', 'GET_IMU', 'GET_MOTOR_CURRENT', 'SUBSCRIBE', 'UNSUBSCRIBE', 'TELEMETRY_EVENT'}
+                    'GET_TEMPERATURE', 'GET_IMU', 'GET_MOTOR_CURRENT', 'GET_MOTOR_FAULTS', 'CLEAR_MOTOR_FAULTS', 'GET_MOTOR_CURRENT_LIMIT', 'SET_MOTOR_CURRENT_LIMIT', 'SUBSCRIBE', 'SUBSCRIBE_WITH_MODE', 'UNSUBSCRIBE', 'TELEMETRY_EVENT', 'SUBSCRIBE_CONFIGURED'}
 
+
+
+def validate_subscription_settings(schema):
+    commands = {c['command']: c for c in schema.get('commands', [])}
+    if 'SUBSCRIBE_CONFIGURED' not in commands:
+        if schema.get('subscription_triggers') or schema.get('subscription_deliveries'):
+            raise ValueError('Subscription settings need SUBSCRIBE_CONFIGURED')
+        return
+    for key, expected in [('subscription_triggers', [(0, 'PERIODIC'), (1, 'ON_EVENT')]),
+                          ('subscription_deliveries', [(0, 'ALL'), (1, 'ON_CHANGE')])]:
+        values = schema.get(key, [])
+        if [(v.get('id'), v.get('name')) for v in values] != expected or any(type(v.get('id')) is not int for v in values):
+            raise ValueError('Invalid ' + key + ' catalog')
+    props = commands['SUBSCRIBE_CONFIGURED'].get('properties', [])
+    expected = [('topic_id', 'uint8_t', 'telemetry_topic'), ('index', 'uint8_t', None),
+                ('poll_interval_ms', 'uint32_t', None), ('trigger', 'uint8_t', 'subscription_trigger'),
+                ('delivery', 'uint8_t', 'subscription_delivery'), ('max_silence_ms', 'uint32_t', None)]
+    if [(p['name'], p['type'], p.get('enum')) for p in props] != expected:
+        raise ValueError('Invalid SUBSCRIBE_CONFIGURED envelope')
+    for topic in schema.get('topics', []):
+        if type(topic.get('event_supported')) is not bool:
+            raise ValueError('Topic needs boolean event_supported')
 
 def class_name(name):
     """Convert schema object names to the SDK's existing PascalCase convention."""
@@ -62,6 +84,10 @@ def generate_js_code(schema, js_version='ES6'):
     if missing:
         raise ValueError('Schema is missing runtime commands: ' + ', '.join(sorted(missing)))
     validate_retirement(schema)
+    validate_subscription_settings(schema)
+    modes = schema.get('subscription_modes', [])
+    if [(m.get('id'), m.get('name')) for m in modes] != [(0, 'PERIODIC'), (1, 'ON_CHANGE')] or any(type(m.get('id')) is not int for m in modes):
+        raise ValueError('Invalid subscription mode catalog')
     objects = {o['name']: o for o in schema['objects']}
     topics = schema.get('topics', [])
     ids, names = set(), set()
@@ -83,12 +109,17 @@ def generate_js_code(schema, js_version='ES6'):
         for field, low, high in [('index_max', 0, 255), ('min_interval_ms', 2, 3600000)]:
             if type(topic.get(field)) is not int or not low <= topic[field] <= high:
                 raise ValueError('Invalid topic ' + field)
-    if not {'ENCODER_ODOMETRY', 'PLATFORM_ODOMETRY', 'TEMPERATURE', 'IMU', 'MOTOR_CURRENT'} <= names:
+    if not {'ENCODER_ODOMETRY', 'PLATFORM_ODOMETRY', 'TEMPERATURE', 'IMU', 'MOTOR_CURRENT', 'MOTOR_FAULTS'} <= names:
         raise ValueError('Schema is missing runtime topics')
     for command in schema['commands']:
         for prop in command.get('properties', []):
-            if 'enum' in prop and (prop['enum'] != 'telemetry_topic' or prop['type'] != 'uint8_t'):
+            if 'enum' in prop and (prop['enum'] not in ('telemetry_topic', 'subscription_mode', 'subscription_trigger', 'subscription_delivery') or prop['type'] != 'uint8_t'):
                 raise ValueError('Invalid topic enum reference')
+    mode_command = next(c for c in schema['commands'] if c['command'] == 'SUBSCRIBE_WITH_MODE')
+    if [(p['name'], p['type'], p.get('enum')) for p in mode_command.get('properties', [])] != [
+            ('topic_id', 'uint8_t', 'telemetry_topic'), ('index', 'uint8_t', None),
+            ('interval_ms', 'uint32_t', None), ('mode', 'uint8_t', 'subscription_mode')]:
+        raise ValueError('Invalid SUBSCRIBE_WITH_MODE envelope')
     event = next(c for c in schema['commands'] if c['command'] == 'TELEMETRY_EVENT')
     if event.get('topic_payload') != {'discriminator': 'topic_id'} or [
             (p['name'], p['type'], p.get('enum')) for p in event.get('properties', [])] != [
@@ -132,6 +163,15 @@ function payloadView(buffer, size) {
     : new DataView(buffer);
 }
 ''')
+    for key, name in [('subscription_triggers', 'SubscriptionTrigger'), ('subscription_deliveries', 'SubscriptionDelivery')]:
+        lines.append(f'export const {name} = Object.freeze({{\n')
+        for item in schema.get(key, []):
+            lines.append(f"  {item['name']}: {item['id']},\n")
+        lines.append('});\n')
+    lines.append('export const SubscriptionMode = Object.freeze({\n')
+    for mode in schema['subscription_modes']:
+        lines.append(f"  {mode['name']}: {mode['id']},\n")
+    lines.append('});\n')
     for o in objects.values():
         cname=class_name(o['name']); props=o['properties']
         lines.append(f'\n/** {o["description"]} */\nexport class {cname} {{\n')
@@ -143,7 +183,15 @@ function payloadView(buffer, size) {
         for p in props:
             lines.append('    '+write(p['type'],offset,'this.'+p['name'])+'\n'); offset+=size(p['type'])
         lines.append('    return buffer;\n  }\n')
-        lines.append(f'  /** Decode an exact response payload. uint64 values remain bigint. */\n  static decode(buffer) {{\n    const view = payloadView(buffer, {cname}.getSize());\n    return new {cname}(\n')
+        validation = ''
+        if o['name'] == 'motor_current_limit':
+            validation = "    if (view.getUint8(0) > 1 || view.getUint16(1, true) === 0) throw new Error('Invalid current-limit setting');\n"
+        if o['name'] in ('motor_fault_status', 'motor_fault_sample'):
+            offset = 10 if o['name'] == 'motor_fault_sample' else 0
+            offsets = list(range(offset, offset + 10))
+            validation = f"    if ({offsets}.some(offset => view.getUint8(offset) > 1)) throw new Error('Invalid motor fault flags');\n"
+
+        lines.append(f'  /** Decode an exact response payload. uint64 values remain bigint. */\n  static decode(buffer) {{\n    const view = payloadView(buffer, {cname}.getSize());\n{validation}    return new {cname}(\n')
         offset=0
         for p in props:
             lines.append('      '+read(p['type'],offset)+',\n'); offset+=size(p['type'])
@@ -154,7 +202,7 @@ function payloadView(buffer, size) {
     lines.append('});\nexport const TopicDefinitions = Object.freeze({\n')
     for topic in topics:
         lines.append(f"  {topic['id']}: Object.freeze({{ payloadType: {class_name(topic['payload_type'])}, "
-                     f"indexMax: {topic['index_max']}, minIntervalMs: {topic['min_interval_ms']} }}),\n")
+                     f"indexMax: {topic['index_max']}, minIntervalMs: {topic['min_interval_ms']}, eventSupported: {str(topic.get('event_supported', False)).lower()} }}),\n")
     lines.append('''});
 /** Decode a topic-selected payload. Future unknown topics can be ignored by the session. */
 export function decodeTelemetryEvent(payload) {
@@ -183,16 +231,25 @@ export function decodeTelemetryEvent(payload) {
         lines.append(description + ' */\n')
         lines.append('  async '+c['command'].lower()+'('+', '.join(p['name'] for p in props)+') {\n')
         for p in props:
+            if p.get('enum') == 'subscription_mode':
+                lines.append("    if (!Object.values(SubscriptionMode).includes(mode)) throw new RangeError('Invalid subscription mode');\n")
             if p.get('enum') == 'telemetry_topic':
                 lines.append(f"    if (!Number.isInteger({p['name']}) || !Object.hasOwn(TopicDefinitions, {p['name']})) throw new RangeError('Invalid topic');\n")
-        if c['command'] in {'SUBSCRIBE', 'UNSUBSCRIBE'}:
+        if c['command'] in {'SUBSCRIBE', 'SUBSCRIBE_WITH_MODE', 'SUBSCRIBE_CONFIGURED', 'UNSUBSCRIBE'}:
             lines.append("    if (!Number.isInteger(index) || index < 0 || index > TopicDefinitions[topic_id].indexMax) throw new RangeError('Invalid topic index');\n")
-        if c['command'] == 'SUBSCRIBE':
+        if c['command'] in {'SUBSCRIBE', 'SUBSCRIBE_WITH_MODE'}:
             lines.append("    if (!Number.isInteger(interval_ms) || interval_ms < TopicDefinitions[topic_id].minIntervalMs || interval_ms > 3600000) throw new RangeError('Invalid subscription interval');\n")
+        if c['command'] == 'SUBSCRIBE_CONFIGURED':
+            lines.append("    if (!Object.values(SubscriptionTrigger).includes(trigger) || !Object.values(SubscriptionDelivery).includes(delivery)) throw new RangeError('Invalid subscription settings');\n")
+            lines.append("    const definition = TopicDefinitions[topic_id];\n")
+            lines.append("    if (!Number.isInteger(poll_interval_ms) || poll_interval_ms > 3600000 || (trigger === SubscriptionTrigger.ON_EVENT ? poll_interval_ms !== 0 || !definition.eventSupported : poll_interval_ms < definition.minIntervalMs)) throw new RangeError('Invalid polling interval or trigger');\n")
+            lines.append("    if (!Number.isInteger(max_silence_ms) || max_silence_ms < 0 || max_silence_ms > 3600000 || (max_silence_ms !== 0 && (delivery !== SubscriptionDelivery.ON_CHANGE || max_silence_ms < definition.minIntervalMs))) throw new RangeError('Invalid maximum silence');\n")
         if c['command'] in {'GET_TEMPERATURE', 'GET_IMU'}:
             lines.append("    if (!Number.isInteger(sensor_index) || sensor_index < 0 || sensor_index > 255) throw new RangeError('sensor_index must be an integer from 0 to 255');\n")
-        if c['command'] == 'GET_MOTOR_CURRENT':
+        if c['command'] in {'GET_MOTOR_CURRENT', 'GET_MOTOR_FAULTS', 'CLEAR_MOTOR_FAULTS', 'GET_MOTOR_CURRENT_LIMIT', 'SET_MOTOR_CURRENT_LIMIT'}:
             lines.append("    if (!Number.isInteger(motor_index) || motor_index < 0 || motor_index > 3) throw new RangeError('motor_index must be 0..3');\n")
+        if c['command'] == 'SET_MOTOR_CURRENT_LIMIT':
+            lines.append("    if (typeof enabled !== 'boolean' || !Number.isInteger(threshold_ma) || threshold_ma < 1 || threshold_ma > 65535) throw new RangeError('Expected enabled boolean and threshold_ma integer from 1 to 65535');\n")
         if c['command'] in {'INITIALIZE_MOTOR_CONTROLLER', 'START_PLATFORM_CONTROLLER'}:
             # These existing APIs also accept numeric strings from UI controls.
             for name in ('kp', 'ki', 'kd', 'integral_limit'):

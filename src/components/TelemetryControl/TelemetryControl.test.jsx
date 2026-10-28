@@ -23,7 +23,7 @@ describe('Live telemetry controls', () => {
     expect(c.subscribe).not.toHaveBeenCalled();
     start();
     await waitFor(() => expect(screen.getByRole('status', { name: 'Live update status' })).toHaveTextContent('Waiting'));
-    expect(c.subscribe).toHaveBeenCalledWith({ topic: Topic.TEMPERATURE, index: 0, intervalMs: 1000 }, expect.any(Function));
+    expect(c.subscribe).toHaveBeenCalledWith({ topic: Topic.TEMPERATURE, index: 0, intervalMs: 1000, mode: 0 }, expect.any(Function));
     act(() => c.subscribe.mock.calls[0][1]({ celsius: -12.5 }));
     expect(screen.getByLabelText('Latest board temperature')).toHaveTextContent('-12.50 °C');
     expect(c.get_temperature).not.toHaveBeenCalled();
@@ -36,7 +36,7 @@ describe('Live telemetry controls', () => {
     const view = render(<BoardImu controller={c} />);
     start();
     await waitFor(() => expect(screen.getByRole('status', { name: 'Live update status' })).toHaveTextContent('Waiting'));
-    expect(c.subscribe.mock.calls[0][0]).toEqual({ topic: Topic.IMU, index: 0, intervalMs: 100 });
+    expect(c.subscribe.mock.calls[0][0]).toEqual({ topic: Topic.IMU, index: 0, intervalMs: 100, mode: 0 });
     act(() => c.subscribe.mock.calls[0][1]({ acceleration_x: 1, acceleration_y: 2, acceleration_z: 3,
       angular_velocity_x: 4, angular_velocity_y: 5, angular_velocity_z: 6 }));
     expect(screen.getByLabelText('Angular velocity Z')).toHaveTextContent('6.000');
@@ -109,4 +109,16 @@ describe('Live telemetry controls', () => {
     expect(screen.getByRole('status', { name: 'Live update status' })).toHaveTextContent('Updates ended');
     expect(c.get_imu).not.toHaveBeenCalled();
   });
+});
+
+it('exposes independent trigger, delivery, and maximum-silence settings', async () => {
+  const c = controller(); c.boardInfo.protocol_minor = 12;
+  render(<TelemetryControl controller={c} topic={Topic.MOTOR_FAULTS} trigger={1} mode={1} maxSilenceMs={5000} onSample={vi.fn()} />);
+  expect(screen.getByLabelText('Trigger')).toHaveValue('1');
+  expect(screen.getByLabelText('Delivery mode')).toHaveValue('1');
+  expect(screen.queryByLabelText('Polling interval (ms)')).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Maximum silence (ms; 0 disables)')).toHaveValue(5000);
+  start();
+  await waitFor(() => expect(c.subscribe).toHaveBeenCalledWith({ topic: Topic.MOTOR_FAULTS, index: 0, trigger: 1, delivery: 1, pollIntervalMs: 0, maxSilenceMs: 5000 }, expect.any(Function)));
+  expect(screen.getByLabelText('Trigger')).toBeDisabled();
 });

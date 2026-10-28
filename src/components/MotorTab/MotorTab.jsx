@@ -1,11 +1,14 @@
 import OdometryTimestamp from '../OdometryTimestamp';
 import TelemetryControl from '../TelemetryControl/TelemetryControl';
 import MotorCurrent from './MotorCurrent';
+import MotorFaults from './MotorFaults';
+import FaultHistory from './FaultHistory';
+import MotorCurrentLimit from './MotorCurrentLimit';
 import { Topic } from '../../commands/kinisi_commands';
 import { useSettings } from '../../contexts/SettingsContext';
 // API-v2 actions display controller errors and await command acknowledgements.
 import { useCommandAction } from '../../hooks/useCommandAction';
-import { useState, useContext } from 'react';
+import { useState, useContext, useEffect, useRef } from 'react';
 import { ControllerContext } from '../../contexts/ControllerContext';
 import './MotorTab.css';
 import '../Common.css';
@@ -16,8 +19,17 @@ function MotorTab({ isActive = true }){
     const [commandError, runCommand] = useCommandAction();
     const { controller, isConnected } = useContext(ControllerContext);
     
+    const connection = controller?.boardInfo;
+    const scope = useRef(null);
+    const [initializationRevision, setInitializationRevision] = useState(0);
     const [motorIndex, setMotorIndex] = useState('0');
-    const [isMotorInitialized, setIsMotorInitialized] = useState([false, false, false, false]);
+    const [initialization, setInitialization] = useState(null);
+    const isMotorInitialized = isConnected && initialization?.controller === controller && initialization.connection === connection
+        ? initialization.values : [false, false, false, false];
+    const setIsMotorInitialized = update => setInitialization(previous => ({
+        controller, connection,
+        values: update(previous?.controller === controller && previous.connection === connection ? previous.values : [false, false, false, false]),
+    }));
     const [isMotorReversed, setIsMotorReversed] = useState([false, false, false, false]);
     const [motorSpeed, setMotorSpeed] = useState(0);
     const [encoderIndex, setEncoderIndex] = useState('0');
@@ -27,6 +39,11 @@ function MotorTab({ isActive = true }){
     const [isEncoderReversed, setIsEncoderReversed] = useState([false, false, false, false]);
     const [isOdometryStarted, setIsOdometryStarted] = useState([false, false, false, false]);
     const [encoderOdometry, setEncoderOdometry] = useState([null, null, null, null]);
+
+    useEffect(() => {
+        scope.current = { controller, connection };
+        return () => { scope.current = null; };
+    }, [controller, connection, isConnected]);
 
     const handleMotorIndexChange = (event) => {
         setMotorIndex(event.target.value);
@@ -54,8 +71,13 @@ function MotorTab({ isActive = true }){
 
     const initializeMotorFunction = async () => {
         console.log(`Initializing motor ${motorIndex}`);
+        const started = scope.current;
+        // Reinitialization restores driver defaults, including its current limit.
+        setInitializationRevision(value => value + 1);
+        setIsMotorInitialized(values => ({ ...values, [motorIndex]: false }));
         await controller.initialize_motor(motorIndex, isMotorReversed[motorIndex]);
-        setIsMotorInitialized({ ...isMotorInitialized, [motorIndex]: true });
+        if (scope.current !== started) return;
+        setIsMotorInitialized(values => ({ ...values, [motorIndex]: true }));
     }
 
     const initializeEncoderFunction = async () => {
@@ -68,7 +90,7 @@ function MotorTab({ isActive = true }){
     const setMotorSpeedFunction = async () => {
         console.log(`Setting motor ${motorIndex} speed to ${motorSpeed}, reverse: ${isMotorReversed[motorIndex]}`);
 
-        await controller.initialize_motor(motorIndex, isMotorReversed[motorIndex]);
+        if (!isMotorInitialized[motorIndex]) throw new Error('Initialize the motor before applying output.');
         await controller.set_motor_speed(motorIndex, motorSpeed);
     };
 
@@ -153,7 +175,11 @@ function MotorTab({ isActive = true }){
                 </div>
             </section>
 
-            {isConnected && <MotorCurrent key={motorIndex} controller={controller}
+            {isConnected && <MotorCurrent key={`current-${motorIndex}`} controller={controller}
+                motorIndex={Number(motorIndex)} isActive={isActive} />}
+            {isConnected && <MotorCurrentLimit key={`limit-${motorIndex}-${initializationRevision}`} controller={controller}
+                motorIndex={Number(motorIndex)} />}
+            {isConnected && <MotorFaults key={`faults-${motorIndex}`} controller={controller}
                 motorIndex={Number(motorIndex)} isActive={isActive} />}
             </fieldset>
             {/* Encoder Controls */}
@@ -211,6 +237,7 @@ function MotorTab({ isActive = true }){
                         onSample={sample => setEncoderOdometry(samples => ({ ...samples, [encoderIndex]: sample }))} />}
                 </section>
             </fieldset>
+            <FaultHistory />
         </div>
     );
 }

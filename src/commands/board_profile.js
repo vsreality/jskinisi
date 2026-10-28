@@ -40,3 +40,19 @@ export function supportsMotorCurrent(info, index = 0) {
   return info?.protocol_major === 2 && info.protocol_minor >= 7 && Number.isInteger(index) &&
     (getBoardProfile(info)?.motor_features.some(motor => motor.id === index && motor.current_sense) ?? false);
 }
+
+/** Fault reporting is available independently of motor initialization. */
+export function supportsMotorFaults(info, index = 0) {
+  return info?.protocol_major === 2 && info.protocol_minor >= 8 && Number.isInteger(index) &&
+    (getBoardProfile(info)?.motor_features.some(motor => motor.id === index && motor.fault_reporting) ?? false);
+}
+
+/** Hardware options, even when connected firmware predates the command; null if unknown/absent. */
+export function getMotorCurrentLimitOptions(info, index = 0) {
+  if (!Number.isInteger(index) || index < 0) return null;
+  return getBoardProfile(info)?.motor_features.find(m => m.id === index)?.current_limit_options ?? null;
+}
+
+export function supportsMotorCurrentLimit(info, index = 0) {
+  return info?.protocol_major === 2 && info.protocol_minor >= 11 && getMotorCurrentLimitOptions(info, index) !== null;
+}
