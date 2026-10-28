@@ -1,9 +1,10 @@
 // Generated from tools/commands.json by tools/sdkgenerator.py. Do not edit.
 export const SDK_VERSION = Object.freeze([2, 6, 0]);
-export const PROTOCOL_VERSION = Object.freeze([2, 7, 0]);
+export const PROTOCOL_VERSION = Object.freeze([2, 12, 0]);
 export const GET_TEMPERATURE = 0x50;
 export const GET_IMU = 0x51;
 export const GET_MOTOR_CURRENT = 0x52;
+export const GET_MOTOR_FAULTS = 0x53;
 export const INITIALIZE_MOTOR = 0x01;
 export const SET_MOTOR_SPEED = 0x02;
 export const STOP_MOTOR = 0x03;
@@ -74,6 +75,11 @@ export const INITIALIZE_PLATFORM_POSITION_PID_CONTROLLER = 0x4E;
 export const SUBSCRIBE = 0x80;
 export const UNSUBSCRIBE = 0x81;
 export const TELEMETRY_EVENT = 0x82;
+export const SUBSCRIBE_WITH_MODE = 0x83;
+export const CLEAR_MOTOR_FAULTS = 0x54;
+export const GET_MOTOR_CURRENT_LIMIT = 0x55;
+export const SET_MOTOR_CURRENT_LIMIT = 0x56;
+export const SUBSCRIBE_CONFIGURED = 0x84;
 export const ErrorCode = Object.freeze({
   INCOMPATIBLE_PROTOCOL: 1,
   INVALID_ARGUMENT: 2,
@@ -126,6 +132,18 @@ function payloadView(buffer, size) {
     ? new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength)
     : new DataView(buffer);
 }
+export const SubscriptionTrigger = Object.freeze({
+  PERIODIC: 0,
+  ON_EVENT: 1,
+});
+export const SubscriptionDelivery = Object.freeze({
+  ALL: 0,
+  ON_CHANGE: 1,
+});
+export const SubscriptionMode = Object.freeze({
+  PERIODIC: 0,
+  ON_CHANGE: 1,
+});
 
 /** The state of the controller for the specified motor. */
 export class MotorControllerState {
@@ -565,6 +583,147 @@ export class MotorCurrentSample {
   }
 }
 
+/** Motor-driver diagnostic status. Ignore detailed flags when status_valid is false; a clear fault input alone does not establish driver health. */
+export class MotorFaultStatus {
+  /** Store one decoded payload. */
+  constructor(sleep_requested, status_valid, fault_active, overtemperature_warning, undervoltage, charge_pump_undervoltage, overcurrent, overtemperature_shutdown, open_load, current_regulation) {
+    this.sleep_requested = sleep_requested;
+    this.status_valid = status_valid;
+    this.fault_active = fault_active;
+    this.overtemperature_warning = overtemperature_warning;
+    this.undervoltage = undervoltage;
+    this.charge_pump_undervoltage = charge_pump_undervoltage;
+    this.overcurrent = overcurrent;
+    this.overtemperature_shutdown = overtemperature_shutdown;
+    this.open_load = open_load;
+    this.current_regulation = current_regulation;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 10; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(MotorFaultStatus.getSize());
+    const view = new DataView(buffer);
+    view.setUint8(0, this.sleep_requested);
+    view.setUint8(1, this.status_valid);
+    view.setUint8(2, this.fault_active);
+    view.setUint8(3, this.overtemperature_warning);
+    view.setUint8(4, this.undervoltage);
+    view.setUint8(5, this.charge_pump_undervoltage);
+    view.setUint8(6, this.overcurrent);
+    view.setUint8(7, this.overtemperature_shutdown);
+    view.setUint8(8, this.open_load);
+    view.setUint8(9, this.current_regulation);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, MotorFaultStatus.getSize());
+    if ([0, 1, 2, 3, 4, 5, 6, 7, 8, 9].some(offset => view.getUint8(offset) > 1)) throw new Error('Invalid motor fault flags');
+    return new MotorFaultStatus(
+      Boolean(view.getUint8(0)),
+      Boolean(view.getUint8(1)),
+      Boolean(view.getUint8(2)),
+      Boolean(view.getUint8(3)),
+      Boolean(view.getUint8(4)),
+      Boolean(view.getUint8(5)),
+      Boolean(view.getUint8(6)),
+      Boolean(view.getUint8(7)),
+      Boolean(view.getUint8(8)),
+      Boolean(view.getUint8(9)),
+    );
+  }
+}
+
+/** Timestamped motor-driver diagnostic status. Timestamp marks completion of the read; faults can be latched rather than new events. */
+export class MotorFaultSample {
+  /** Store one decoded payload. */
+  constructor(timestamp_us, clock_mode, clock_quality, sleep_requested, status_valid, fault_active, overtemperature_warning, undervoltage, charge_pump_undervoltage, overcurrent, overtemperature_shutdown, open_load, current_regulation) {
+    this.timestamp_us = timestamp_us;
+    this.clock_mode = clock_mode;
+    this.clock_quality = clock_quality;
+    this.sleep_requested = sleep_requested;
+    this.status_valid = status_valid;
+    this.fault_active = fault_active;
+    this.overtemperature_warning = overtemperature_warning;
+    this.undervoltage = undervoltage;
+    this.charge_pump_undervoltage = charge_pump_undervoltage;
+    this.overcurrent = overcurrent;
+    this.overtemperature_shutdown = overtemperature_shutdown;
+    this.open_load = open_load;
+    this.current_regulation = current_regulation;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 20; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(MotorFaultSample.getSize());
+    const view = new DataView(buffer);
+    view.setBigUint64(0, exactBigInt(this.timestamp_us), true);
+    view.setUint8(8, this.clock_mode);
+    view.setUint8(9, this.clock_quality);
+    view.setUint8(10, this.sleep_requested);
+    view.setUint8(11, this.status_valid);
+    view.setUint8(12, this.fault_active);
+    view.setUint8(13, this.overtemperature_warning);
+    view.setUint8(14, this.undervoltage);
+    view.setUint8(15, this.charge_pump_undervoltage);
+    view.setUint8(16, this.overcurrent);
+    view.setUint8(17, this.overtemperature_shutdown);
+    view.setUint8(18, this.open_load);
+    view.setUint8(19, this.current_regulation);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, MotorFaultSample.getSize());
+    if ([10, 11, 12, 13, 14, 15, 16, 17, 18, 19].some(offset => view.getUint8(offset) > 1)) throw new Error('Invalid motor fault flags');
+    return new MotorFaultSample(
+      view.getBigUint64(0, true),
+      view.getUint8(8),
+      view.getUint8(9),
+      Boolean(view.getUint8(10)),
+      Boolean(view.getUint8(11)),
+      Boolean(view.getUint8(12)),
+      Boolean(view.getUint8(13)),
+      Boolean(view.getUint8(14)),
+      Boolean(view.getUint8(15)),
+      Boolean(view.getUint8(16)),
+      Boolean(view.getUint8(17)),
+      Boolean(view.getUint8(18)),
+      Boolean(view.getUint8(19)),
+    );
+  }
+}
+
+/** Applied nominal hardware current-regulation setting. */
+export class MotorCurrentLimit {
+  /** Store one decoded payload. */
+  constructor(enabled, threshold_ma) {
+    this.enabled = enabled;
+    this.threshold_ma = threshold_ma;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 3; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(MotorCurrentLimit.getSize());
+    const view = new DataView(buffer);
+    view.setUint8(0, this.enabled);
+    view.setUint16(1, this.threshold_ma, true);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, MotorCurrentLimit.getSize());
+    if (view.getUint8(0) > 1 || view.getUint16(1, true) === 0) throw new Error('Invalid current-limit setting');
+    return new MotorCurrentLimit(
+      Boolean(view.getUint8(0)),
+      view.getUint16(1, true),
+    );
+  }
+}
+
 /** Stable uint8 telemetry topic enum. */
 export const Topic = Object.freeze({
   ENCODER_ODOMETRY: 1,
@@ -572,13 +731,15 @@ export const Topic = Object.freeze({
   TEMPERATURE: 3,
   IMU: 4,
   MOTOR_CURRENT: 5,
+  MOTOR_FAULTS: 6,
 });
 export const TopicDefinitions = Object.freeze({
-  1: Object.freeze({ payloadType: EncoderOdometrySample, indexMax: 3, minIntervalMs: 2 }),
-  2: Object.freeze({ payloadType: PlatformOdometrySample, indexMax: 0, minIntervalMs: 2 }),
-  3: Object.freeze({ payloadType: TemperatureSample, indexMax: 255, minIntervalMs: 250 }),
-  4: Object.freeze({ payloadType: ImuTelemetrySample, indexMax: 255, minIntervalMs: 10 }),
-  5: Object.freeze({ payloadType: MotorCurrentSample, indexMax: 3, minIntervalMs: 20 }),
+  1: Object.freeze({ payloadType: EncoderOdometrySample, indexMax: 3, minIntervalMs: 2, eventSupported: false }),
+  2: Object.freeze({ payloadType: PlatformOdometrySample, indexMax: 0, minIntervalMs: 2, eventSupported: false }),
+  3: Object.freeze({ payloadType: TemperatureSample, indexMax: 255, minIntervalMs: 250, eventSupported: false }),
+  4: Object.freeze({ payloadType: ImuTelemetrySample, indexMax: 255, minIntervalMs: 10, eventSupported: false }),
+  5: Object.freeze({ payloadType: MotorCurrentSample, indexMax: 3, minIntervalMs: 20, eventSupported: false }),
+  6: Object.freeze({ payloadType: MotorFaultSample, indexMax: 3, minIntervalMs: 100, eventSupported: true }),
 });
 /** Decode a topic-selected payload. Future unknown topics can be ignored by the session. */
 export function decodeTelemetryEvent(payload) {
@@ -638,6 +799,16 @@ export class Commands {
     const amps = view.getFloat64(0, true);
     if (!Number.isFinite(amps) || amps < 0) throw new Error('Invalid motor current payload');
     return amps;
+  }
+
+  /** Read motor-driver fault status without waking, initializing, enabling or clearing the driver. Detailed flags are meaningful only when status_valid is true. An unavailable SPI response cannot distinguish missing motor power from a communication or driver failure. Flags may retain latched faults until explicit motor reinitialization. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, SENSOR_NOT_AVAILABLE. */
+  async get_motor_faults(motor_index) {
+    if (!Number.isInteger(motor_index) || motor_index < 0 || motor_index > 3) throw new RangeError('motor_index must be 0..3');
+    const payload = new ArrayBuffer(1);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, motor_index);
+    const response = await this._request(GET_MOTOR_FAULTS, payload, 10);
+    return MotorFaultStatus.decode(response);
   }
 
   /** This command initializes a motor and prepares it for use. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels), so platform wheels are not reconfigured out from under the platform. Stops the motor velocity and position controllers before applying the command. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, INIT_REQUIRED. */
@@ -1253,5 +1424,72 @@ export class Commands {
     requestView.setUint8(0, topic_id);
     requestView.setUint8(1, index);
     await this._request(UNSUBSCRIBE, payload, 0);
+  }
+
+  /** Create or replace this connection's subscription with a delivery mode. Requires READY and enabled heartbeat. The interval sets the sampling cadence and must meet the topic minimum; odometry also requires twice the calculation period. ON_CHANGE sends an initial snapshot and changed values, excluding timestamp and clock metadata. Failed reads pause delivery; recovery sends a fresh snapshot. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, ODOMETRY_NOT_INITIALIZED, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SUBSCRIPTION_LIMIT, SAMPLE_OUT_OF_RANGE. */
+  async subscribe_with_mode(topic_id, index, interval_ms, mode) {
+    if (!Number.isInteger(topic_id) || !Object.hasOwn(TopicDefinitions, topic_id)) throw new RangeError('Invalid topic');
+    if (!Object.values(SubscriptionMode).includes(mode)) throw new RangeError('Invalid subscription mode');
+    if (!Number.isInteger(index) || index < 0 || index > TopicDefinitions[topic_id].indexMax) throw new RangeError('Invalid topic index');
+    if (!Number.isInteger(interval_ms) || interval_ms < TopicDefinitions[topic_id].minIntervalMs || interval_ms > 3600000) throw new RangeError('Invalid subscription interval');
+    const payload = new ArrayBuffer(7);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, topic_id);
+    requestView.setUint8(1, index);
+    requestView.setUint32(2, interval_ms, true);
+    requestView.setUint8(6, mode);
+    await this._request(SUBSCRIBE_WITH_MODE, payload, 0);
+  }
+
+  /** Stop the initialized motor and its controller, clear latched driver faults, and return fresh diagnostics. Requires a ready connection. The motor remains stopped. Active conditions can remain reported. Platform-owned motors are rejected. Driver configuration is preserved; sleeping drivers are not woken. A failed clear or unreadable verification returns an error. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, SENSOR_NOT_AVAILABLE, MOTOR_OWNED, MOTOR_NOT_INITIALIZED, INTERNAL_ERROR, CLOCK_NOT_READY. */
+  async clear_motor_faults(motor_index) {
+    if (!Number.isInteger(motor_index) || motor_index < 0 || motor_index > 3) throw new RangeError('motor_index must be 0..3');
+    const payload = new ArrayBuffer(1);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, motor_index);
+    const response = await this._request(CLEAR_MOTOR_FAULTS, payload, 10);
+    return MotorFaultStatus.decode(response);
+  }
+
+  /** Read the applied hardware current-regulation setting in milliamps. Requires a ready connection and an initialized, awake motor driver. Does not change motor state. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, MOTOR_NOT_INITIALIZED, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
+  async get_motor_current_limit(motor_index) {
+    if (!Number.isInteger(motor_index) || motor_index < 0 || motor_index > 3) throw new RangeError('motor_index must be 0..3');
+    const payload = new ArrayBuffer(1);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, motor_index);
+    const response = await this._request(GET_MOTOR_CURRENT_LIMIT, payload, 3);
+    return MotorCurrentLimit.decode(response);
+  }
+
+  /** Stop the motor and its controller, apply and verify hardware current regulation, and return the applied setting. Requires a ready connection and an initialized, awake driver. Only board-supported thresholds are accepted. Platform-owned motors are rejected. The motor stays stopped. Settings are volatile; motor reinitialization applies board defaults. Driver power loss requires reinitialization. Overcurrent protection is unchanged. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, MOTOR_NOT_INITIALIZED, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, MOTOR_OWNED. */
+  async set_motor_current_limit(motor_index, enabled, threshold_ma) {
+    if (!Number.isInteger(motor_index) || motor_index < 0 || motor_index > 3) throw new RangeError('motor_index must be 0..3');
+    if (typeof enabled !== 'boolean' || !Number.isInteger(threshold_ma) || threshold_ma < 1 || threshold_ma > 65535) throw new RangeError('Expected enabled boolean and threshold_ma integer from 1 to 65535');
+    const payload = new ArrayBuffer(4);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, motor_index);
+    requestView.setUint8(1, enabled);
+    requestView.setUint16(2, threshold_ma, true);
+    const response = await this._request(SET_MOTOR_CURRENT_LIMIT, payload, 3);
+    return MotorCurrentLimit.decode(response);
+  }
+
+  /** Create or replace a subscription with independent trigger and delivery settings. Send an initial snapshot. PERIODIC uses poll_interval_ms; ON_EVENT requires zero polling interval and an event-capable source. ON_CHANGE suppresses unchanged values, excluding timestamp and clock metadata; max_silence_ms requests fresh refreshes, or zero disables refreshes. Delivery is best effort and requires READY and heartbeat. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, ODOMETRY_NOT_INITIALIZED, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SUBSCRIPTION_LIMIT, SAMPLE_OUT_OF_RANGE. */
+  async subscribe_configured(topic_id, index, poll_interval_ms, trigger, delivery, max_silence_ms) {
+    if (!Number.isInteger(topic_id) || !Object.hasOwn(TopicDefinitions, topic_id)) throw new RangeError('Invalid topic');
+    if (!Number.isInteger(index) || index < 0 || index > TopicDefinitions[topic_id].indexMax) throw new RangeError('Invalid topic index');
+    if (!Object.values(SubscriptionTrigger).includes(trigger) || !Object.values(SubscriptionDelivery).includes(delivery)) throw new RangeError('Invalid subscription settings');
+    const definition = TopicDefinitions[topic_id];
+    if (!Number.isInteger(poll_interval_ms) || poll_interval_ms > 3600000 || (trigger === SubscriptionTrigger.ON_EVENT ? poll_interval_ms !== 0 || !definition.eventSupported : poll_interval_ms < definition.minIntervalMs)) throw new RangeError('Invalid polling interval or trigger');
+    if (!Number.isInteger(max_silence_ms) || max_silence_ms < 0 || max_silence_ms > 3600000 || (max_silence_ms !== 0 && (delivery !== SubscriptionDelivery.ON_CHANGE || max_silence_ms < definition.minIntervalMs))) throw new RangeError('Invalid maximum silence');
+    const payload = new ArrayBuffer(12);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, topic_id);
+    requestView.setUint8(1, index);
+    requestView.setUint32(2, poll_interval_ms, true);
+    requestView.setUint8(6, trigger);
+    requestView.setUint8(7, delivery);
+    requestView.setUint32(8, max_silence_ms, true);
+    await this._request(SUBSCRIBE_CONFIGURED, payload, 0);
   }
 }

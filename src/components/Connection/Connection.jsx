@@ -1,6 +1,7 @@
 import { useState, useContext } from 'react';
 import { ControllerContext } from '../../contexts/ControllerContext';
 import ConnectionPanel from './ConnectionPanel';
+import FaultHistory from '../MotorTab/FaultHistory';
 import './ConnectionPanel.css';
 
 // The Connection section. Shows the transport chooser while disconnected and
@@ -51,6 +52,7 @@ function Connection() {
                 onConnect={onConnected}
                 onDisconnect={() => setIsConnected(false)}
             />
+            <FaultHistory hideWhenEmpty />
             </>
         );
     }

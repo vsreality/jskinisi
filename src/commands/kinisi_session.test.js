@@ -1,3 +1,4 @@
+import { SUBSCRIBE_CONFIGURED, SubscriptionTrigger, SubscriptionDelivery } from './kinisi_commands.js';
 // File: kinisi_session.test.js
 // Exercise real v2 session framing with controllable byte streams and independent replies.
 import { describe, it, expect, afterEach, vi } from 'vitest';
@@ -6,8 +7,8 @@ import { INIT, READY, TIME_SYNC_REQUEST, TIME_SYNC_RESPONSE, ERROR,
   GET_ENCODER_VALUE, GET_ENCODER_ODOMETRY, GET_TIME_STATUS, InitResponse,
   EncoderOdometrySample, TimeStatus, MotorControllerState,
   PING, SET_HEARTBEAT_CONFIG, ENCODER_ODOMETRY_EVENT, GET_TEMPERATURE, ErrorCode } from './kinisi_commands.js';
-import { Topic, SUBSCRIBE, UNSUBSCRIBE, TELEMETRY_EVENT, TemperatureSample, ImuTelemetrySample,
-  PlatformOdometrySample, SUBSCRIBE_ODOMETRY, MotorCurrentSample } from './kinisi_commands.js';
+import { Topic, SubscriptionMode, SUBSCRIBE_WITH_MODE, SUBSCRIBE, UNSUBSCRIBE, TELEMETRY_EVENT, TemperatureSample, ImuTelemetrySample,
+  PlatformOdometrySample, SUBSCRIBE_ODOMETRY, MotorCurrentSample, MotorFaultSample } from './kinisi_commands.js';
 
 /** Build fixture messages independently of the SDK frame encoder. */
 function packet(command, id, payload = []) {
@@ -522,4 +523,80 @@ describe('Generic telemetry subscriptions', () => {
     if (kind === 'length') { frame = frame.slice(0, -1); frame[0]--; }
     c.push(frame); await flush(); expect(c.ready).toBe(false);
   });
+});
+
+
+it('delivers four motor fault streams and drops events after unsubscribe', async () => {
+  const c = new FakeClient({ protocolMinor: 8, boardMinor: 4, heartbeatTimeoutMs: 10000 });
+  await c.connect();
+  c.handler = r => c.push(packet(r[1], r[2] | r[3] << 8));
+  const callbacks = [vi.fn(), vi.fn(), vi.fn(), vi.fn()], handles = [];
+  for (let index = 0; index < 4; ++index) handles.push(await c.subscribe({ topic: Topic.MOTOR_FAULTS, index, intervalMs: 100 }, callbacks[index]));
+  for (let index = 0; index < 4; ++index) c.push(telemetry(Topic.MOTOR_FAULTS, index,
+    new MotorFaultSample(2n ** 55n + 7n, 0, 1, false, true, false, false, false, false, index === 2, false, false, false)));
+  await flush();
+  for (let index = 0; index < 4; ++index) expect(callbacks[index]).toHaveBeenCalledWith(expect.objectContaining({ status_valid: true, overcurrent: index === 2 }));
+  for (const handle of handles) await handle.unsubscribe();
+  c.push(telemetry(Topic.MOTOR_FAULTS, 0, new MotorFaultSample(9n, 0, 1, false, false, false, false, false, false, false, false, false, false)));
+  await flush();
+  expect(callbacks[0]).toHaveBeenCalledTimes(1);
+});
+
+
+it('uses the mode-aware wire request and activates at the ACK before an immediate snapshot', async () => {
+  const c = new FakeClient({ protocolMinor: 9, boardMinor: 4 });
+  await c.connect(); await c.set_heartbeat_config(true, 500);
+  const listener = vi.fn();
+  const snapshot = new MotorFaultSample(2n ** 55n + 7n, 0, 1, false, true, false, false, false, false, false, false, false, false);
+  c.handler = data => {
+    const ack = packet(data[1], data[2] | data[3] << 8);
+    c.push(data[1] === SUBSCRIBE_WITH_MODE ? new Uint8Array([...ack, ...telemetry(Topic.MOTOR_FAULTS, 0, snapshot)]) : ack);
+  };
+  const handle = await c.subscribe({ topic: Topic.MOTOR_FAULTS, intervalMs: 100, mode: SubscriptionMode.ON_CHANGE }, listener);
+  await flush();
+  const request = c.writes.find(frame => frame[1] === SUBSCRIBE_WITH_MODE);
+  expect(Array.from(request.slice(4))).toEqual([Topic.MOTOR_FAULTS, 0, 100, 0, 0, 0, 1]);
+  expect(listener).toHaveBeenCalledExactlyOnceWith(snapshot);
+  expect(handle.active).toBe(true);
+  const replacement = await c.subscribe({ topic: Topic.MOTOR_FAULTS, intervalMs: 100 }, vi.fn());
+  expect(c.writes.at(-1)[1]).toBe(SUBSCRIBE);
+  const count = c.writes.length;
+  await handle.unsubscribe(); expect(c.writes).toHaveLength(count);
+  expect(handle.active).toBe(false); expect(replacement.active).toBe(true);
+  await replacement.unsubscribe(); expect(replacement.active).toBe(false);
+});
+
+it('rejects unsupported modes before I/O while preserving periodic subscriptions on older firmware', async () => {
+  const c = new FakeClient({ protocolMinor: 8, boardMinor: 4 });
+  await c.connect(); await c.set_heartbeat_config(true, 500);
+  const count = c.writes.length;
+  for (const mode of [2, -1, true, '1', null])
+    await expect(c.subscribe({ topic: Topic.MOTOR_FAULTS, intervalMs: 100, mode }, vi.fn())).rejects.toThrow('mode');
+  await expect(c.subscribe({ topic: Topic.MOTOR_FAULTS, intervalMs: 100, mode: SubscriptionMode.ON_CHANGE }, vi.fn())).rejects.toThrow('2.9');
+  expect(c.writes).toHaveLength(count);
+  const handle = await c.subscribe({ topic: Topic.MOTOR_FAULTS, intervalMs: 100, mode: SubscriptionMode.PERIODIC }, vi.fn());
+  expect(c.writes.at(-1)[1]).toBe(SUBSCRIBE); await handle.unsubscribe();
+});
+
+it('encodes configured subscriptions, receives the initial event at ACK, and gates older peers', async () => {
+  const c = new FakeClient({ protocolMinor: 12, boardMinor: 4 });
+  await c.connect(); await c.set_heartbeat_config(true, 500);
+  const listener = vi.fn();
+  const snapshot = new MotorFaultSample(55n, 0, 1, false, true, false, false, false, false, false, false, false, false);
+  c.handler = data => {
+    const ack = packet(data[1], data[2] | data[3] << 8);
+    c.push(data[1] === SUBSCRIBE_CONFIGURED ? new Uint8Array([...ack, ...telemetry(Topic.MOTOR_FAULTS, 0, snapshot)]) : ack);
+  };
+  const options = { topic: Topic.MOTOR_FAULTS, trigger: SubscriptionTrigger.ON_EVENT, delivery: SubscriptionDelivery.ON_CHANGE, maxSilenceMs: 5000 };
+  const handle = await c.subscribe(options, listener); await flush();
+  expect(Array.from(c.writes.find(f => f[1] === SUBSCRIBE_CONFIGURED).slice(4))).toEqual([6, 0, 0, 0, 0, 0, 1, 1, 136, 19, 0, 0]);
+  expect(listener).toHaveBeenCalledExactlyOnceWith(snapshot); expect(handle.active).toBe(true);
+  const count = c.writes.length;
+  for (const invalid of [{ pollIntervalMs: 100 }, { topic: Topic.TEMPERATURE }, { delivery: SubscriptionDelivery.ALL }, { maxSilenceMs: 99 }, { intervalMs: 100 }])
+    await expect(c.subscribe({ ...options, ...invalid }, listener)).rejects.toThrow();
+  expect(c.writes).toHaveLength(count);
+  c.boardInfo.protocol_minor = 11;
+  await expect(c.subscribe(options, listener)).rejects.toThrow('2.12');
+  expect(c.writes).toHaveLength(count);
+  await handle.unsubscribe(); expect(handle.active).toBe(false);
 });

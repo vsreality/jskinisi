@@ -6,6 +6,7 @@ import MotorTab from './components/MotorTab/MotorTab'
 import PlatformTab from './components/PlatfirmTab/PlatfirmTab'
 import GPIOTab from './components/GPIOTab/GPIOTab';
 import ControllerProvider from './contexts/ControllerProvider';
+import FaultHistoryProvider from './contexts/FaultHistoryProvider';
 import MotorControllerTab from './components/MotorControllerTab/MotorControllerTab';
 import SettingsProvider from './contexts/SettingsProvider';
 import Settings from './components/Settings/Settings';
@@ -31,7 +32,7 @@ function GitHubIcon() {
 function App() {
 
   return (
-    <SettingsProvider><ControllerProvider>
+    <SettingsProvider><ControllerProvider><FaultHistoryProvider>
     <div className="App">
       <header className="app-header">
         <span className="app-title">Kinisi motor controller</span>
@@ -85,7 +86,7 @@ function App() {
         {new Date().getFullYear()} VsReality
       </div>
     </footer>
-    </ControllerProvider></SettingsProvider>
+    </FaultHistoryProvider></ControllerProvider></SettingsProvider>
   );
 }
 

@@ -243,3 +243,34 @@ The Vitest suite tests fragmented/coalesced frames, READY gating, sync while idl
 response reordering, ID wraparound, errors, timeouts, typed codecs, browser stream
 cleanup, proxy opcodes, and UI command failures. These fixtures do not simulate
 physical motor or encoder behavior.
+
+## Motor current limits
+
+Current-limit configuration requires protocol 2.11 and fitted hardware. The public
+profile supplies numeric `supported_thresholds_ma` and `can_disable`; options are
+hardware metadata, while the support helper also checks firmware availability.
+Unknown/unsupported motors have no options. Values use integer milliamps and SDKs
+reject settings outside the known profile before sending. Firmware validates them
+independently. No board-specific enum is required.
+
+```js
+const options = controller.getMotorCurrentLimitOptions(0);
+if (controller.supportsMotorCurrentLimit(0)) {
+  await controller.initialize_motor(0, false);
+  const applied = await controller.set_motor_current_limit(0, true, 5400);
+  const actual = await controller.get_motor_current_limit(0);
+  console.log(options.supported_thresholds_ma, applied, actual);
+}
+```
+
+Both GET and SET require an initialized, awake motor. SET stops the motor and its
+controller, verifies the applied setting, and leaves the motor stopped even on
+I/O failure. Platform-owned motors reject SET; release ownership first. GET does
+not change motor state. Settings are volatile: motor initialization reapplies
+board defaults, and driver power loss requires reinitialization. Disabling current
+regulation leaves overcurrent protection unchanged.
+
+An unknown board profile does not advertise support; explicit requests with a
+compatible protocol can still reach firmware. No custom profiles are loaded.
+See [firmware current-limit behavior](https://github.com/szolotykh/kinisi-motor-controller-firmware/blob/main/docs/motor-current-limit.md)
+for errors, persistence, register behavior, and wire sizes.
