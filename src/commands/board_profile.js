@@ -56,3 +56,8 @@ export function getMotorCurrentLimitOptions(info, index = 0) {
 export function supportsMotorCurrentLimit(info, index = 0) {
   return info?.protocol_major === 2 && info.protocol_minor >= 11 && getMotorCurrentLimitOptions(info, index) !== null;
 }
+
+export function getPwmFrequencyOptions(info) { return getBoardProfile(info)?.pwm_frequency ?? null; }
+export function supportsPwmFrequency(info) {
+  return info?.protocol_major === 2 && info.protocol_minor >= 13 && getPwmFrequencyOptions(info) !== null;
+}

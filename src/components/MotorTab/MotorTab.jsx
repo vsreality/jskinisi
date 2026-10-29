@@ -4,6 +4,7 @@ import MotorCurrent from './MotorCurrent';
 import MotorFaults from './MotorFaults';
 import FaultHistory from './FaultHistory';
 import MotorCurrentLimit from './MotorCurrentLimit';
+import PwmFrequency from './PwmFrequency';
 import { Topic } from '../../commands/kinisi_commands';
 import { useSettings } from '../../contexts/SettingsContext';
 // API-v2 actions display controller errors and await command acknowledgements.
@@ -175,6 +176,7 @@ function MotorTab({ isActive = true }){
                 </div>
             </section>
 
+            {isConnected && <PwmFrequency controller={controller} />}
             {isConnected && <MotorCurrent key={`current-${motorIndex}`} controller={controller}
                 motorIndex={Number(motorIndex)} isActive={isActive} />}
             {isConnected && <MotorCurrentLimit key={`limit-${motorIndex}-${initializationRevision}`} controller={controller}

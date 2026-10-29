@@ -1,6 +1,6 @@
 // Generated from tools/commands.json by tools/sdkgenerator.py. Do not edit.
 export const SDK_VERSION = Object.freeze([2, 6, 0]);
-export const PROTOCOL_VERSION = Object.freeze([2, 12, 0]);
+export const PROTOCOL_VERSION = Object.freeze([2, 13, 0]);
 export const GET_TEMPERATURE = 0x50;
 export const GET_IMU = 0x51;
 export const GET_MOTOR_CURRENT = 0x52;
@@ -80,6 +80,8 @@ export const CLEAR_MOTOR_FAULTS = 0x54;
 export const GET_MOTOR_CURRENT_LIMIT = 0x55;
 export const SET_MOTOR_CURRENT_LIMIT = 0x56;
 export const SUBSCRIBE_CONFIGURED = 0x84;
+export const GET_PWM_FREQUENCY = 0x57;
+export const SET_PWM_FREQUENCY = 0x58;
 export const ErrorCode = Object.freeze({
   INCOMPATIBLE_PROTOCOL: 1,
   INVALID_ARGUMENT: 2,
@@ -139,6 +141,13 @@ export const SubscriptionTrigger = Object.freeze({
 export const SubscriptionDelivery = Object.freeze({
   ALL: 0,
   ON_CHANGE: 1,
+});
+export const PwmFrequency = Object.freeze({
+  KHZ_10: 10000,
+  KHZ_20: 20000,
+  KHZ_25: 25000,
+  KHZ_50: 50000,
+  KHZ_100: 100000,
 });
 export const SubscriptionMode = Object.freeze({
   PERIODIC: 0,
@@ -1491,5 +1500,24 @@ export class Commands {
     requestView.setUint8(7, delivery);
     requestView.setUint32(8, max_silence_ms, true);
     await this._request(SUBSCRIBE_CONFIGURED, payload, 0);
+  }
+
+  /** Read the board-wide motor PWM frequency in hertz. Does not initialize motors or change outputs. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, INTERNAL_ERROR. */
+  async get_pwm_frequency() {
+    const payload = new ArrayBuffer(0);
+    const response = await this._request(GET_PWM_FREQUENCY, payload, 4);
+    const view = payloadView(response, 4);
+    return view.getUint32(0, true);
+  }
+
+  /** Stop all motors and motor/platform controllers, then set the board-wide PWM frequency. All motors remain stopped. The setting survives motor initialization and connection changes; reboot restores the board default. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, INTERNAL_ERROR. */
+  async set_pwm_frequency(frequency_hz) {
+    if (!Object.values(PwmFrequency).includes(frequency_hz)) throw new RangeError('Invalid PWM frequency');
+    const payload = new ArrayBuffer(4);
+    const requestView = new DataView(payload);
+    requestView.setUint32(0, frequency_hz, true);
+    const response = await this._request(SET_PWM_FREQUENCY, payload, 4);
+    const view = payloadView(response, 4);
+    return view.getUint32(0, true);
   }
 }

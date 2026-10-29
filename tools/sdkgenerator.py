@@ -11,8 +11,24 @@ TYPES = {'bool':(1,'Uint8'), 'uint8_t':(1,'Uint8'), 'int8_t':(1,'Int8'),
 # Sensor exports are required by the session even when connected firmware is older.
 SESSION_COMMANDS = {'PING', 'SET_HEARTBEAT_CONFIG', 'SUBSCRIBE_ODOMETRY',
                     'UNSUBSCRIBE_ODOMETRY', 'ENCODER_ODOMETRY_EVENT', 'PLATFORM_ODOMETRY_EVENT',
-                    'GET_TEMPERATURE', 'GET_IMU', 'GET_MOTOR_CURRENT', 'GET_MOTOR_FAULTS', 'CLEAR_MOTOR_FAULTS', 'GET_MOTOR_CURRENT_LIMIT', 'SET_MOTOR_CURRENT_LIMIT', 'SUBSCRIBE', 'SUBSCRIBE_WITH_MODE', 'UNSUBSCRIBE', 'TELEMETRY_EVENT', 'SUBSCRIBE_CONFIGURED'}
+                    'GET_TEMPERATURE', 'GET_IMU', 'GET_MOTOR_CURRENT', 'GET_MOTOR_FAULTS', 'CLEAR_MOTOR_FAULTS', 'GET_PWM_FREQUENCY', 'SET_PWM_FREQUENCY', 'GET_MOTOR_CURRENT_LIMIT', 'SET_MOTOR_CURRENT_LIMIT', 'SUBSCRIBE', 'SUBSCRIBE_WITH_MODE', 'UNSUBSCRIBE', 'TELEMETRY_EVENT', 'SUBSCRIBE_CONFIGURED'}
 
+
+
+
+def validate_pwm_frequency(schema):
+    values = schema.get('pwm_frequencies', [])
+    expected = [(v, 'KHZ_' + str(v // 1000)) for v in (10000, 20000, 25000, 50000, 100000)]
+    if [(v.get('id'), v.get('name')) for v in values] != expected or any(type(v.get('id')) is not int for v in values):
+        raise ValueError('Invalid PWM frequency catalog')
+    commands = {c['command']: c for c in schema.get('commands', [])}
+    for name in ('GET_PWM_FREQUENCY', 'SET_PWM_FREQUENCY'):
+        command = commands.get(name, {})
+        properties = [(p['name'], p['type'], p.get('enum')) for p in command.get('properties', [])]
+        expected_props = [] if name.startswith('GET') else [('frequency_hz', 'uint32_t', 'pwm_frequency')]
+        if (not command or command.get('direction') != 'client_to_controller' or properties != expected_props or
+                command.get('response', {}).get('type') != 'uint32_t'):
+            raise ValueError('Invalid ' + name + ' envelope')
 
 
 def validate_subscription_settings(schema):
@@ -84,6 +100,7 @@ def generate_js_code(schema, js_version='ES6'):
     if missing:
         raise ValueError('Schema is missing runtime commands: ' + ', '.join(sorted(missing)))
     validate_retirement(schema)
+    validate_pwm_frequency(schema)
     validate_subscription_settings(schema)
     modes = schema.get('subscription_modes', [])
     if [(m.get('id'), m.get('name')) for m in modes] != [(0, 'PERIODIC'), (1, 'ON_CHANGE')] or any(type(m.get('id')) is not int for m in modes):
@@ -113,6 +130,9 @@ def generate_js_code(schema, js_version='ES6'):
         raise ValueError('Schema is missing runtime topics')
     for command in schema['commands']:
         for prop in command.get('properties', []):
+            if prop.get('enum') == 'pwm_frequency':
+                if prop['type'] != 'uint32_t': raise ValueError('PWM frequency requires uint32_t')
+                continue
             if 'enum' in prop and (prop['enum'] not in ('telemetry_topic', 'subscription_mode', 'subscription_trigger', 'subscription_delivery') or prop['type'] != 'uint8_t'):
                 raise ValueError('Invalid topic enum reference')
     mode_command = next(c for c in schema['commands'] if c['command'] == 'SUBSCRIBE_WITH_MODE')
@@ -163,7 +183,7 @@ function payloadView(buffer, size) {
     : new DataView(buffer);
 }
 ''')
-    for key, name in [('subscription_triggers', 'SubscriptionTrigger'), ('subscription_deliveries', 'SubscriptionDelivery')]:
+    for key, name in [('subscription_triggers', 'SubscriptionTrigger'), ('subscription_deliveries', 'SubscriptionDelivery'), ('pwm_frequencies', 'PwmFrequency')]:
         lines.append(f'export const {name} = Object.freeze({{\n')
         for item in schema.get(key, []):
             lines.append(f"  {item['name']}: {item['id']},\n")
@@ -231,6 +251,8 @@ export function decodeTelemetryEvent(payload) {
         lines.append(description + ' */\n')
         lines.append('  async '+c['command'].lower()+'('+', '.join(p['name'] for p in props)+') {\n')
         for p in props:
+            if p.get('enum') == 'pwm_frequency':
+                lines.append("    if (!Object.values(PwmFrequency).includes(frequency_hz)) throw new RangeError('Invalid PWM frequency');\n")
             if p.get('enum') == 'subscription_mode':
                 lines.append("    if (!Object.values(SubscriptionMode).includes(mode)) throw new RangeError('Invalid subscription mode');\n")
             if p.get('enum') == 'telemetry_topic':
