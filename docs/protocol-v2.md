@@ -274,3 +274,36 @@ An unknown board profile does not advertise support; explicit requests with a
 compatible protocol can still reach firmware. No custom profiles are loaded.
 See [firmware current-limit behavior](https://github.com/szolotykh/kinisi-motor-controller-firmware/blob/main/docs/motor-current-limit.md)
 for errors, persistence, register behavior, and wire sizes.
+
+
+## Motor PWM frequency
+
+PWM frequency is one setting for all motors. It requires protocol 2.13 and a ready
+connection; motors need not be initialized. Supported enum values are `KHZ_10`,
+`KHZ_20`, `KHZ_25`, `KHZ_50`, and `KHZ_100`, represented in hertz on the wire.
+Use the selected board profile's `pwm_frequency.supported_hz` to populate choices.
+The default is available as `pwm_frequency.default_hz`.
+
+Applying a frequency stops every motor and motor/platform controller and leaves
+them stopped. It preserves duty-cycle resolution, motor direction configuration,
+and driver current-limit settings. Restart motion explicitly. The selected frequency
+survives motor initialization and disconnect/reconnect; reboot restores the default.
+GET reads the board's active frequency selection without changing outputs.
+Unsupported values are rejected; they are never silently rounded.
+
+```js
+import { PwmFrequency } from './src/commands/kinisi_session.js';
+
+if (controller.supportsPwmFrequency()) {
+  const options = controller.getPwmFrequencyOptions();
+  const appliedHz = await controller.set_pwm_frequency(PwmFrequency.KHZ_25);
+  const currentHz = await controller.get_pwm_frequency();
+}
+```
+
+The Motor tab has a **PWM frequency - all motors** control. Read the board setting,
+choose a supported frequency, and apply it. The displayed setting is cleared after
+a failed request or a new connection.
+
+Unknown boards have no advertised options; explicit commands on compatible firmware
+still reach the board for validation. Older firmware is rejected locally before I/O.

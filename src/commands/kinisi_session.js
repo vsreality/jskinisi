@@ -1,17 +1,17 @@
 // File: kinisi_session.js
 // Shared API-v2 framing, readiness and clock exchange for serial and proxy transports.
 import { Commands, INIT, READY, ERROR, TIME_SYNC_REQUEST, TIME_SYNC_RESPONSE,
-  SDK_VERSION, InitResponse, ErrorCode, ErrorDescriptions, GET_TEMPERATURE, GET_IMU, GET_MOTOR_CURRENT, GET_MOTOR_FAULTS, CLEAR_MOTOR_FAULTS, GET_MOTOR_CURRENT_LIMIT, SET_MOTOR_CURRENT_LIMIT,
+  SDK_VERSION, InitResponse, ErrorCode, ErrorDescriptions, GET_TEMPERATURE, GET_IMU, GET_MOTOR_CURRENT, GET_MOTOR_FAULTS, CLEAR_MOTOR_FAULTS, GET_PWM_FREQUENCY, SET_PWM_FREQUENCY, GET_MOTOR_CURRENT_LIMIT, SET_MOTOR_CURRENT_LIMIT,
   SET_HEARTBEAT_CONFIG, UNSUBSCRIBE_ODOMETRY, ENCODER_ODOMETRY_EVENT, PLATFORM_ODOMETRY_EVENT,
   SUBSCRIBE_ODOMETRY, SUBSCRIBE, SUBSCRIBE_WITH_MODE, SUBSCRIBE_CONFIGURED, UNSUBSCRIBE, TELEMETRY_EVENT, Topic, SubscriptionMode, SubscriptionTrigger, SubscriptionDelivery,
   decodeTelemetryEvent, EncoderOdometrySample, PlatformOdometrySample } from './kinisi_commands.js';
 import { POSITION_COMMANDS, supportsPositionControl, POSITION_PID_COMMANDS, supportsPositionPidControl } from './position_control.js';
 import { supportsTemperatureRead } from './temperature.js';
 import { supportsImuRead } from './imu.js';
-import { getBoardProfile, supportsBoardSensor, supportsMotorCurrent, supportsMotorFaults, getMotorCurrentLimitOptions, supportsMotorCurrentLimit } from './board_profile.js';
+import { getBoardProfile, supportsBoardSensor, supportsMotorCurrent, supportsMotorFaults, getMotorCurrentLimitOptions, supportsMotorCurrentLimit, getPwmFrequencyOptions, supportsPwmFrequency } from './board_profile.js';
 import { supportsTelemetry, supportsTopic } from './telemetry.js';
 
-export { Topic, SubscriptionMode, SubscriptionTrigger, SubscriptionDelivery } from './kinisi_commands.js';
+export { PwmFrequency, Topic, SubscriptionMode, SubscriptionTrigger, SubscriptionDelivery } from './kinisi_commands.js';
 
 // Existing controls need 2.1; additive commands are gated separately.
 const MIN_PROTOCOL_VERSION = [2, 1, 0];
@@ -121,6 +121,8 @@ export class KinisiSession extends Commands {
   }
 
   /** Bundled hardware profile selected automatically from INIT identity. */
+  getPwmFrequencyOptions() { return getPwmFrequencyOptions(this.boardInfo); }
+  supportsPwmFrequency() { return supportsPwmFrequency(this.boardInfo); }
   getMotorCurrentLimitOptions(index = 0) { return getMotorCurrentLimitOptions(this.boardInfo, index); }
   supportsMotorCurrentLimit(index = 0) { return supportsMotorCurrentLimit(this.boardInfo, index); }
   get boardProfile() { return getBoardProfile(this.boardInfo); }
@@ -250,6 +252,17 @@ export class KinisiSession extends Commands {
     }
     if (command === GET_IMU && !supportsImuRead(this.boardInfo))
       throw new ProtocolError('IMU readings require firmware protocol 2.5 or newer');
+    if ([GET_PWM_FREQUENCY, SET_PWM_FREQUENCY].includes(command)) {
+      if (this.boardInfo?.protocol_major !== 2 || this.boardInfo.protocol_minor < 13)
+        throw new ProtocolError('PWM frequency configuration requires firmware protocol 2.13 or newer');
+      const options = this.getPwmFrequencyOptions();
+      if (this.boardProfile && !options) throw new ProtocolError('This board has no configurable PWM frequency');
+      if (command === SET_PWM_FREQUENCY && options) {
+        const data = bytes(payload);
+        const frequency = new DataView(data.buffer, data.byteOffset, data.byteLength).getUint32(0, true);
+        if (!options.supported_hz.includes(frequency)) throw new RangeError('PWM frequency is not allowed by this board');
+      }
+    }
     if ([GET_MOTOR_CURRENT_LIMIT, SET_MOTOR_CURRENT_LIMIT].includes(command)) {
       if (this.boardInfo?.protocol_major !== 2 || this.boardInfo.protocol_minor < 11)
         throw new ProtocolError('Current-limit setup requires firmware protocol 2.11 or newer');

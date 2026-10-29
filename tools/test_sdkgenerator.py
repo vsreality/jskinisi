@@ -23,6 +23,16 @@ class GeneratorTests(unittest.TestCase):
         """Load the complete schema rather than a reduced codec fixture."""
         self.schema = json.loads((ROOT / 'tools/commands.json').read_text(encoding='utf-8'))
 
+    def test_pwm_catalog_and_layout(self):
+        for mutate in (
+                lambda s: s.pop('pwm_frequencies'),
+                lambda s: s['pwm_frequencies'][0].update(id=True),
+                lambda s: s['pwm_frequencies'][0].update(name='BAD'),
+                lambda s: next(c for c in s['commands'] if c['command'] == 'SET_PWM_FREQUENCY')['properties'][0].update(type='uint16_t')):
+            schema = deepcopy(self.schema)
+            mutate(schema)
+            with self.assertRaises(ValueError): generate_js_code(schema)
+
     def test_current_schema_matches_shipped_code(self):
         """The current schema produces identical runtime definitions."""
         actual = (ROOT / 'src/commands/kinisi_commands.js').read_text(encoding='utf-8')
@@ -50,7 +60,7 @@ class GeneratorTests(unittest.TestCase):
             schema_path = Path(directory) / 'commands.json'
             output = Path(directory) / 'commands.js'
             output.write_bytes(b'preserved\n')
-            for missing in ({'GET_TEMPERATURE'}, {'GET_IMU'}, {'GET_MOTOR_CURRENT'}, {'GET_MOTOR_FAULTS'}, {'SUBSCRIBE_CONFIGURED'}, {'GET_MOTOR_CURRENT_LIMIT'}, {'SET_MOTOR_CURRENT_LIMIT'}, {'GET_TEMPERATURE', 'GET_IMU'}):
+            for missing in ({'GET_PWM_FREQUENCY'}, {'SET_PWM_FREQUENCY'}, {'GET_TEMPERATURE'}, {'GET_IMU'}, {'GET_MOTOR_CURRENT'}, {'GET_MOTOR_FAULTS'}, {'SUBSCRIBE_CONFIGURED'}, {'GET_MOTOR_CURRENT_LIMIT'}, {'SET_MOTOR_CURRENT_LIMIT'}, {'GET_TEMPERATURE', 'GET_IMU'}):
                 with self.subTest(missing=sorted(missing)):
                     schema = deepcopy(self.schema)
                     schema['commands'] = [c for c in schema['commands'] if c['command'] not in missing]
