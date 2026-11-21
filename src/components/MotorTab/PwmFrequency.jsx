@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { getPwmFrequencyOptions, supportsPwmFrequency } from '../../commands/board_profile';
+import { getPwmFrequencyOptions, supportsPwmFrequency, supportsConfigurationPersistence } from '../../commands/board_profile';
 
 export default function PwmFrequency({ controller }) {
   const [state, setState] = useState(null);
@@ -21,7 +21,9 @@ export default function PwmFrequency({ controller }) {
   return <section className="control-section" aria-labelledby="pwmFrequencyTitle">
     <h3 id="pwmFrequencyTitle">PWM frequency — all motors</h3>
     {!supportsPwmFrequency(connection) ? <p className="section-help">Update the board firmware to configure PWM frequency.</p> : <>
-      <p className="section-help">Applying a frequency stops all motors and controllers. Reboot restores {options.default_hz / 1000} kHz.</p>
+      <p className="section-help">Applying a frequency stops all motors and controllers. {supportsConfigurationPersistence(connection)
+        ? 'Use Platform → Save configuration to retain the applied frequency at startup; otherwise the last saved setup or board default is restored.'
+        : `Reboot restores ${options.default_hz / 1000} kHz.`}</p>
       <p><output aria-label="Applied PWM frequency" aria-live="polite">{current?.value ? `${current.value / 1000} kHz` : 'No verified setting'}</output></p>
       <button type="button" className="k-button" disabled={current?.busy} onClick={() => update(false)}>Read PWM frequency</button>
       {current?.value && <>

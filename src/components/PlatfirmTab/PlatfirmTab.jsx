@@ -1,4 +1,5 @@
 import PositionControl from '../PositionControl/PositionControl';
+import ConfigurationSave from './ConfigurationSave';
 import TelemetryControl from '../TelemetryControl/TelemetryControl';
 import { Topic } from '../../commands/kinisi_commands';
 import { useSettings, scaleInput } from '../../contexts/SettingsContext';
@@ -20,6 +21,11 @@ function PlatformTab({ isActive = true }) {
     const pidDefaults = velocityPidDefaults(controller?.boardInfo);
 
     const [isPlatformInitialized, setIsPlatformInitialized] = useState(false);
+    const [configurationBusy, setConfigurationBusy] = useState(false);
+    const [configurationGeneration, setConfigurationGeneration] = useState(0);
+    const [encoderSetup, setEncoderSetup] = useState(null);
+    const platformEncodersReady = isConnected && encoderSetup?.controller === controller &&
+        encoderSetup.connection === controller?.boardInfo && encoderSetup.ready;
 
     // States for platform type and settings
     const [platformType, setPlatformType] = useState('omni');
@@ -86,6 +92,30 @@ function PlatformTab({ isActive = true }) {
     // Global loop frequencies (Hz, 1-1000)
     const [controllerFrequency, setControllerFrequency] = useState('10');
     const [odometryFrequency, setOdometryFrequency] = useState('50');
+
+    const loadRunningSetup = useCallback(setup => {
+        setIsPlatformInitialized(Boolean(setup));
+        const ready = Boolean(setup && setup.encoders.slice(0, setup.channelCount)
+            .every(encoder => encoder.resolution > 0));
+        setEncoderSetup({ controller, connection: controller?.boardInfo, ready });
+        if (!ready) {
+            setIsControllerInitialized(false);
+            setIsOdometryInitialized(false);
+        }
+        if (!setup) return;
+        const { platform, wheelDiameter, trackOrLength, widthOrRadius, encoders, motorReversed } = setup;
+        setPlatformType(platform);
+        setIsReversed(previous => ({ ...previous, [platform]: motorReversed }));
+        setIsEncoderReversed(previous => ({ ...previous, [platform]: encoders.map(encoder => encoder.reversed) }));
+        setEncoderResolution(String(encoders[0].resolution));
+        if (platform === 'mecanum') {
+            setMecanumWheelDiameter(wheelDiameter); setMecanumLength(trackOrLength); setMecanumWidth(widthOrRadius);
+        } else if (platform === 'omni') {
+            setOmniWheelDiameter(wheelDiameter); setOmniRadius(widthOrRadius);
+        } else {
+            setDifferentialWheelDiameter(wheelDiameter); setDifferentialWheelBase(trackOrLength);
+        }
+    }, [controller]);
 
     // Handlers for changes in form elements
     const handlePlatformTypeChange = (event) => {
@@ -288,6 +318,8 @@ function PlatformTab({ isActive = true }) {
         }
 
         setIsPlatformInitialized(true);
+        setEncoderSetup({ controller, connection: controller?.boardInfo, ready: Number(encoderResolution) > 0 });
+        setConfigurationGeneration(value => value + 1);
         setIsControllerInitialized(false);
         setIsOdometryInitialized(false);
         setOdometry(null);
@@ -438,6 +470,7 @@ function PlatformTab({ isActive = true }) {
             <div className="platform-setup-grid">
                 <section className="panel-card platform-hardware">
                 <h2>Platform setup</h2>
+                <fieldset className="platform-fields" disabled={configurationBusy}>
                 <label htmlFor="platformSelector">Platform:</label>
                 <select id="platformSelector" value={platformType} onChange={handlePlatformTypeChange}>
                     <option value="mecanum">Mecanum Platform</option>
@@ -588,6 +621,9 @@ function PlatformTab({ isActive = true }) {
                     </div>
                 )}
 
+                </fieldset>
+                <ConfigurationSave key={configurationGeneration} controller={controller} isConnected={isConnected}
+                    onLoaded={loadRunningSetup} onBusy={setConfigurationBusy} />
                 </section>
                 <section className="panel-card platform-manual">
                     <h2>Manual driving</h2>
@@ -719,7 +755,7 @@ function PlatformTab({ isActive = true }) {
                             </span>
                         </div>
                         <div className="platform-odometry-actions">
-                            <button className='k-button' onClick={() => runCommand(handleOdometryStart)} disabled={!isPlatformInitialized || isOdometryInitialized}>Start odometry</button>
+                            <button className='k-button' onClick={() => runCommand(handleOdometryStart)} disabled={!isPlatformInitialized || !platformEncodersReady || isOdometryInitialized}>Start odometry</button>
                             <button className='k-button k-button-danger' onClick={() => runCommand(handleOdometryStop)} disabled={!isPlatformInitialized || !isOdometryInitialized}>Stop odometry</button>
                             <button className='k-button' onClick={() => runCommand(handleOdometryReset)} disabled={!isPlatformInitialized || !isOdometryInitialized}>Reset odometry</button>
                             <button className='k-button' onClick={() => runCommand(handleGetOdometry)} disabled={!isPlatformInitialized || !isOdometryInitialized}>Get odometry</button>
@@ -749,6 +785,7 @@ function PlatformTab({ isActive = true }) {
             <fieldset className="settings-card platform-velocity">
                 <legend>1. Velocity control</legend>
                 <p className="section-help">Tune wheel speed tracking first. Position control uses these settings for every wheel.</p>
+                {isPlatformInitialized && !platformEncodersReady && <p role="status">Velocity control, position control and odometry require an initialized encoder on every platform wheel. Apply a positive encoder resolution with Initialize, or configure the missing encoders and Read running setup. Open-loop driving and Save remain available.</p>}
                 <section className="control-section">
                     <h3>Loop frequency</h3>
                     <label htmlFor="controllerFrequency">Frequency (Hz, 1–1000)</label>
@@ -761,7 +798,7 @@ function PlatformTab({ isActive = true }) {
                 <section className="control-section">
                     <h3>PID tuning</h3>
                     <VelocityTuningHelp boardInfo={controller?.boardInfo} ki={ki} integralLimit={integralLimit} />
-                    <fieldset className="platform-fields" disabled={!isPlatformInitialized}>
+                    <fieldset className="platform-fields" disabled={!isPlatformInitialized || !platformEncodersReady}>
                         <div className="form-grid">
                             <label htmlFor="kp">Velocity Kp<input type="number" id="kp" step="any" value={kp} onChange={handleKpChange}/></label>
                             <label htmlFor="ki">Velocity Ki<input type="number" id="ki" step="any" value={ki} onChange={handleKiChange}/></label>
@@ -773,7 +810,7 @@ function PlatformTab({ isActive = true }) {
                 </section>
                 <section className="control-section">
                     <h3>Velocity target</h3>
-                    <fieldset className="platform-fields" disabled={!isPlatformInitialized || !isControllerInitialized}>
+                    <fieldset className="platform-fields" disabled={!isPlatformInitialized || !platformEncodersReady || !isControllerInitialized}>
                         <div className="form-grid">
                             <label htmlFor="platformVelocityTargetX">X (m/s)<input type="number" id="platformVelocityTargetX" step={0.1} value={velocityTarget.x} onChange={handleVelocityTargetChange('x')}/></label>
                             <label htmlFor="platformVelocityTargetY">Y (m/s)<input type="number" id="platformVelocityTargetY" step={0.1} value={velocityTarget.y} onChange={handleVelocityTargetChange('y')}/></label>
@@ -788,7 +825,7 @@ function PlatformTab({ isActive = true }) {
             </fieldset>
             <div className="platform-position">
                 <PositionControl platform key={`${positionGeneration}-${isConnected}-${keyboardControlEnabled}`}
-                    velocityReady={isControllerInitialized} keyboardEnabled={keyboardControlEnabled}
+                    velocityReady={isControllerInitialized && platformEncodersReady} keyboardEnabled={keyboardControlEnabled}
                     onOdometryChange={sample => { setIsOdometryInitialized(true); setOdometry(sample); }} />
             </div>
             </div>

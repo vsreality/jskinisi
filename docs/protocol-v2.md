@@ -287,7 +287,8 @@ The default is available as `pwm_frequency.default_hz`.
 Applying a frequency stops every motor and motor/platform controller and leaves
 them stopped. It preserves duty-cycle resolution, motor direction configuration,
 and driver current-limit settings. Restart motion explicitly. The selected frequency
-survives motor initialization and disconnect/reconnect; reboot restores the default.
+survives motor initialization and disconnect/reconnect. Reboot restores the default,
+unless v0.4 firmware restores an explicitly saved configuration (protocol 2.14+).
 GET reads the board's active frequency selection without changing outputs.
 Unsupported values are rejected; they are never silently rounded.
 
@@ -307,3 +308,65 @@ a failed request or a new connection.
 
 Unknown boards have no advertised options; explicit commands on compatible firmware
 still reach the board for validation. Older firmware is rejected locally before I/O.
+
+## Save and restore board configuration
+
+Configuration persistence requires a ready connection, protocol 2.14 or newer
+within major 2, and the exact bundled Kinisi v0.4 (`model: 1`, revision `0.4.0`)
+profile. `controller.supportsConfigurationPersistence()` checks all three. Unlike
+some read-only sensor commands, explicit persistence commands are also rejected
+locally for unknown board identities; the SDK never guesses storage support.
+
+```js
+import { ConfigurationField } from './src/commands/configuration.js';
+
+if (controller.supportsConfigurationPersistence()) {
+  // Configure the platform/encoders/directions and apply PWM frequency first.
+  await controller.save_configuration(); // resolves only after the board's ACK
+  const platformType = await controller.get_configuration_field(
+    ConfigurationField.PLATFORM_TYPE, 0);
+  const encoderResolution = await controller.get_configuration_field(
+    ConfigurationField.ENCODER_RESOLUTION, 0);
+}
+```
+
+Save stores the running platform geometry, encoder configuration, motor and
+encoder directions, and board-wide PWM frequency in onboard FRAM. It saves the
+applied board state, not browser settings, form edits, motion targets, odometry
+origin or PID-controller state. Driver current-limit settings remain subject to
+their startup defaults. A successful ACK confirms a durable, verified save;
+controller errors and connection timeouts reject the promise. After a timeout,
+the save outcome is unknown: reconnect and explicitly save again before relying
+on it. A subsequent boot restores valid saved setup with outputs stopped.
+
+The Platform page reads the running setup when opened on a supported, ready
+board. It fills the platform form without sending initialization, save or motion
+commands. This also makes restored setup usable after reconnecting. Velocity,
+position and odometry controls still need their own explicit initialization.
+**Read running setup** refreshes the form and discards unapplied edits; it does
+not prove that the same values are saved in FRAM. If active encoders use different
+resolutions, the common form field shows channel 0 and the page explains that
+Initialize would apply it to every platform encoder. Save preserves the running
+per-channel values.
+
+Use **Save configuration** after applying the intended platform/encoder/direction
+and PWM settings. The button waits for acknowledgement, prevents duplicate clicks,
+and reports storage, missing-platform and connection failures. No automatic save
+or reinitialization occurs on connection, page navigation or form edits.
+
+`get_configuration_field(field, index)` returns a scalar number. Platform type
+is 0 (unconfigured), 1 (differential), 2 (omni), or 3 (mecanum). Fields 1–3 use
+index 0 and report wheel diameter, track/length, and width/radius in meters for
+every platform. Readback preserves the values passed to initialization: a 90 mm
+omni wheel uses `0.09` meters. Fields 4–6 report each channel's encoder resolution, encoder-reversed
+flag and motor-reversed flag; flags are 0 or 1. Use `get_pwm_frequency()` for the
+running switching frequency. `readRunningConfiguration(controller)` from
+`configuration.js` reads a validated snapshot including all four channel slots.
+An encoder resolution of zero denotes an uninitialized encoder and is valid for
+open-loop platform setup; it does not prevent saving. Separately configured
+channels outside the active platform are included in the readback. Velocity and
+position control and odometry stay unavailable until every platform wheel has an
+initialized encoder. Applying Initialize clears the previous save confirmation
+and refreshes running setup; save again to persist the new applied configuration.
+The individual scalar requests are not an atomic transaction, so avoid changing
+setup concurrently from another client while reading.
