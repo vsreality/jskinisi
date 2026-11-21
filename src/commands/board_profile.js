@@ -61,3 +61,10 @@ export function getPwmFrequencyOptions(info) { return getBoardProfile(info)?.pwm
 export function supportsPwmFrequency(info) {
   return info?.protocol_major === 2 && info.protocol_minor >= 13 && getPwmFrequencyOptions(info) !== null;
 }
+
+/** Persistence is implemented only for the exact v0.4 hardware profile. */
+export function supportsConfigurationPersistence(info) {
+  const board = getBoardProfile(info)?.board;
+  return info?.protocol_major === 2 && Number.isInteger(info.protocol_minor) && info.protocol_minor >= 14 &&
+    board?.model === 1 && board.revision === '0.4.0';
+}

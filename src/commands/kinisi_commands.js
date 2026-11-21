@@ -1,6 +1,6 @@
 // Generated from tools/commands.json by tools/sdkgenerator.py. Do not edit.
 export const SDK_VERSION = Object.freeze([2, 6, 0]);
-export const PROTOCOL_VERSION = Object.freeze([2, 13, 0]);
+export const PROTOCOL_VERSION = Object.freeze([2, 14, 0]);
 export const GET_TEMPERATURE = 0x50;
 export const GET_IMU = 0x51;
 export const GET_MOTOR_CURRENT = 0x52;
@@ -82,6 +82,8 @@ export const SET_MOTOR_CURRENT_LIMIT = 0x56;
 export const SUBSCRIBE_CONFIGURED = 0x84;
 export const GET_PWM_FREQUENCY = 0x57;
 export const SET_PWM_FREQUENCY = 0x58;
+export const SAVE_CONFIGURATION = 0x59;
+export const GET_CONFIGURATION_FIELD = 0x5A;
 export const ErrorCode = Object.freeze({
   INCOMPATIBLE_PROTOCOL: 1,
   INVALID_ARGUMENT: 2,
@@ -1103,7 +1105,7 @@ export class Commands {
     await this._request(SET_PLATFORM_VELOCITY, payload, 0);
   }
 
-  /** This command sets the controller for the platform. Firmware 2.3.1 uses direct P+I+D PWM output with saturation anti-windup; retune gains from earlier builds. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, PLATFORM_NOT_INITIALIZED, INIT_REQUIRED. */
+  /** This command sets the controller for the platform. Firmware 2.3.1 uses direct P+I+D PWM output with saturation anti-windup; retune gains from earlier builds. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, ENCODER_NOT_INITIALIZED, PLATFORM_NOT_INITIALIZED, INIT_REQUIRED. */
   async start_platform_controller(kp, ki, kd, integral_limit) {
     if (!['number', 'string'].includes(typeof kp) || String(kp).trim() === '' || !Number.isFinite(Number(kp)) || Number(kp) < 0) throw new RangeError('kp must be finite and nonnegative');
     if (!['number', 'string'].includes(typeof ki) || String(ki).trim() === '' || !Number.isFinite(Number(ki)) || Number(ki) < 0) throw new RangeError('ki must be finite and nonnegative');
@@ -1142,7 +1144,7 @@ export class Commands {
     await this._request(STOP_PLATFORM_CONTROLLER, payload, 0);
   }
 
-  /** This command starts the odometry calculation for the platform. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CLOCK_NOT_READY, PLATFORM_NOT_INITIALIZED. */
+  /** This command starts the odometry calculation for the platform. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CLOCK_NOT_READY, ENCODER_NOT_INITIALIZED, PLATFORM_NOT_INITIALIZED. */
   async start_platform_odometry() {
     const payload = new ArrayBuffer(0);
     await this._request(START_PLATFORM_ODOMETRY, payload, 0);
@@ -1510,7 +1512,7 @@ export class Commands {
     return view.getUint32(0, true);
   }
 
-  /** Stop all motors and motor/platform controllers, then set the board-wide PWM frequency. All motors remain stopped. The setting survives motor initialization and connection changes; reboot restores the board default. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, INTERNAL_ERROR. */
+  /** Stop all motors and motor/platform controllers, then set the board-wide PWM frequency. All motors remain stopped. The setting survives motor initialization and connection changes. At boot the board uses its default unless it restores an explicitly saved v0.4 configuration. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, INTERNAL_ERROR. */
   async set_pwm_frequency(frequency_hz) {
     if (!Object.values(PwmFrequency).includes(frequency_hz)) throw new RangeError('Invalid PWM frequency');
     const payload = new ArrayBuffer(4);
@@ -1519,5 +1521,22 @@ export class Commands {
     const response = await this._request(SET_PWM_FREQUENCY, payload, 4);
     const view = payloadView(response, 4);
     return view.getUint32(0, true);
+  }
+
+  /** Save the complete running platform setup and motor PWM frequency to onboard FRAM. Available on v0.4 with protocol 2.14 or later. ACK confirms a durable save. A subsequent boot restores the setup with outputs stopped. Errors: INVALID_LENGTH, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, PLATFORM_NOT_INITIALIZED, INVALID_ARGUMENT, INTERNAL_ERROR. */
+  async save_configuration() {
+    const payload = new ArrayBuffer(0);
+    await this._request(SAVE_CONFIGURATION, payload, 0);
+  }
+
+  /** Read one field of the running v0.4 configuration. Use GET_PWM_FREQUENCY to read the board-wide switching frequency. Errors: INVALID_LENGTH, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INVALID_ARGUMENT, PLATFORM_NOT_INITIALIZED. */
+  async get_configuration_field(field, index) {
+    const payload = new ArrayBuffer(2);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, field);
+    requestView.setUint8(1, index);
+    const response = await this._request(GET_CONFIGURATION_FIELD, payload, 8);
+    const view = payloadView(response, 8);
+    return view.getFloat64(0, true);
   }
 }
