@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="412" viewBox="0 0 440 412" role="img" aria-labelledby="title description">
+  <title id="title">Three-wheel omni layout</title>
+  <desc id="description">W0 is front-right, W1 front-left and W2 rear. The positive rolling arrows run tangent counterclockwise around the origin. Platform radius runs from the origin to the center of each wheel. The wheel centers are equally spaced by 120 degrees.</desc>
+  <rect x="0" y="0" width="440" height="412" rx="0" fill="white" stroke="none" stroke-width="1.6" />
+  <g font-family="Arial, Helvetica, sans-serif">
+    <text x="16" y="24" font-size="16" fill="#243746" text-anchor="start" font-weight="700">Top view</text>
+    <line x1="280" y1="19" x2="304" y2="19" stroke="#087451" stroke-width="2.7" />
+    <polygon points="304,19 295,15 295,23" fill="#087451" />
+    <text x="313" y="24" font-size="15" fill="#087451" text-anchor="start" font-weight="400">Positive roll</text>
+    <circle cx="220" cy="160" r="88" fill="#f6f9fa" stroke="#acbdc6" stroke-width="1.5" />
+    <line x1="220" y1="54" x2="220" y2="248" stroke="#71828c" stroke-width="1" stroke-dasharray="5 4" />
+    <line x1="220" y1="160" x2="143.79" y2="116" stroke="#71828c" stroke-width="1" stroke-dasharray="5 4" />
+    <line x1="220" y1="160" x2="296.21" y2="116" stroke="#71828c" stroke-width="1" stroke-dasharray="5 4" />
+    <g transform="translate(296.21 116) rotate(-30)">
+      <rect x="-9" y="-29.333333333333332" width="18" height="58.666666666666664" rx="5" fill="#d9e2e6" stroke="#243746" stroke-width="2" />
+      <line x1="-7" y1="0" x2="7" y2="0" stroke="#71828c" stroke-width="1.4" />
+      <line x1="0" y1="-23.33" x2="0" y2="-44.33" stroke="#087451" stroke-width="2.7" />
+      <polygon points="0,-44.33 -4,-35.33 4,-35.33" fill="#087451" />
+    </g>
+    <g transform="translate(143.79 116) rotate(-150)">
+      <rect x="-9" y="-29.333333333333332" width="18" height="58.666666666666664" rx="5" fill="#d9e2e6" stroke="#243746" stroke-width="2" />
+      <line x1="-7" y1="0" x2="7" y2="0" stroke="#71828c" stroke-width="1.4" />
+      <line x1="0" y1="-23.33" x2="0" y2="-44.33" stroke="#087451" stroke-width="2.7" />
+      <polygon points="0,-44.33 -4,-35.33 4,-35.33" fill="#087451" />
+    </g>
+    <g transform="translate(220 248) rotate(90)">
+      <rect x="-9" y="-29.333333333333332" width="18" height="58.666666666666664" rx="5" fill="#d9e2e6" stroke="#243746" stroke-width="2" />
+      <line x1="-7" y1="0" x2="7" y2="0" stroke="#71828c" stroke-width="1.4" />
+      <line x1="0" y1="-23.33" x2="0" y2="-44.33" stroke="#087451" stroke-width="2.7" />
+      <polygon points="0,-44.33 -4,-35.33 4,-35.33" fill="#087451" />
+    </g>
+    <text x="325" y="119" font-size="17" fill="#243746" text-anchor="start" font-weight="700">W0</text>
+    <text x="113" y="119" font-size="17" fill="#243746" text-anchor="end" font-weight="700">W1</text>
+    <text x="220" y="277" font-size="17" fill="#243746" text-anchor="middle" font-weight="700">W2</text>
+    <line x1="220" y1="160" x2="296.21" y2="116" stroke="#165988" stroke-width="1.65" />
+    <polygon points="296.21,116 288.65,116.9 291.65,122.1" fill="#165988" />
+    <polygon points="220,160 227.56,159.1 224.56,153.9" fill="#165988" />
+    <text x="240" y="176" font-size="14" fill="#165988" text-anchor="start" font-weight="600">R · Radius</text>
+    <text x="240" y="194" font-size="15" fill="#165988" text-anchor="start" font-weight="600">0.15 m</text>
+    <circle cx="220" cy="160" r="4" fill="white" stroke="#243746" stroke-width="1.8" />
+    <circle cx="220" cy="160" r="1.3" fill="#243746" stroke="none" stroke-width="1.5" />
+    <text x="210" y="177" font-size="14" fill="#243746" text-anchor="end" font-weight="400">O</text>
+    <line x1="16" y1="297" x2="424" y2="297" stroke="#c9d5da" stroke-width="1" />
+    <text x="16" y="321" font-size="15" fill="#243746" text-anchor="start" font-weight="700">D · Wheel diameter · side view</text>
+    <text x="282" y="321" font-size="15" fill="#243746" text-anchor="start" font-weight="700">Body frame</text>
+    <circle cx="54" cy="365" r="23" fill="#edf2f4" stroke="#243746" stroke-width="1.7" />
+    <circle cx="54" cy="365" r="3" fill="white" stroke="#243746" stroke-width="1.3" />
+    <line x1="54" y1="342" x2="88" y2="342" stroke="#165988" stroke-width="1" stroke-dasharray="3 3" />
+    <line x1="54" y1="388" x2="88" y2="388" stroke="#165988" stroke-width="1" stroke-dasharray="3 3" />
+    <line x1="85" y1="342" x2="85" y2="388" stroke="#165988" stroke-width="1.65" />
+    <polygon points="85,388 88,381 82,381" fill="#165988" />
+    <polygon points="85,342 82,349 88,349" fill="#165988" />
+    <text x="92" y="370" font-size="15" fill="#165988" text-anchor="start" font-weight="600">0.10 m</text>
+    <line x1="385" y1="388" x2="385" y2="339" stroke="#243746" stroke-width="1.7" />
+    <polygon points="385,339 382,346 388,346" fill="#243746" />
+    <line x1="385" y1="388" x2="324" y2="388" stroke="#243746" stroke-width="1.7" />
+    <polygon points="324,388 331,391 331,385" fill="#243746" />
+    <path d="M 385 361 A 27 27 0 0 0 358 388" fill="none" stroke="#243746" stroke-width="1.6" />
+    <polygon points="358,388 361,381 355,381" fill="#243746" />
+    <circle cx="385" cy="388" r="4" fill="white" stroke="#243746" stroke-width="1.8" />
+    <circle cx="385" cy="388" r="1.3" fill="#243746" stroke="none" stroke-width="1.5" />
+    <text x="393" y="347" font-size="14" fill="#243746" text-anchor="start" font-weight="700">+X</text>
+    <text x="316" y="393" font-size="14" fill="#243746" text-anchor="end" font-weight="700">+Y</text>
+    <text x="356" y="358" font-size="13" fill="#243746" text-anchor="end" font-weight="400">+yaw</text>
+  </g>
+</svg>

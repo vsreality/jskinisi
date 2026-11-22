@@ -1,5 +1,6 @@
 import PositionControl from '../PositionControl/PositionControl';
 import ConfigurationSave from './ConfigurationSave';
+import PlatformLayout from './PlatformLayout';
 import FusionExperiment from './FusionExperiment';
 import TelemetryControl from '../TelemetryControl/TelemetryControl';
 import { Topic } from '../../commands/kinisi_commands';
@@ -488,10 +489,11 @@ function PlatformTab({ isActive = true }) {
                             {Array.from({ length: 4 }).map((_, index) => (
                                 <React.Fragment key={index}>
                                     <span className='span-check'>
-                                        <label className="checkbox-label" htmlFor={`mecanumPlatformIsReverse${index}`}>{index} </label>
+                                        <label className="checkbox-label" htmlFor={`mecanumPlatformIsReverse${index}`}>M{index}</label>
                                         <input
                                             type="checkbox"
                                             className='k-check'
+                                            aria-label={`Reverse motor M${index}`}
                                             id={`mecanumPlatformIsReverse${index}`} 
                                             checked={isReversed.mecanum[index]} 
                                             onChange={handleReverseChange('mecanum', index)}
@@ -505,10 +507,11 @@ function PlatformTab({ isActive = true }) {
                             {Array.from({ length: 4 }).map((_, index) => (
                                 <React.Fragment key={index}>
                                     <span className='span-check'>
-                                        <label className="checkbox-label" htmlFor={`mecanumPlatformEncoderReverse${index}`}>{index} </label>
+                                        <label className="checkbox-label" htmlFor={`mecanumPlatformEncoderReverse${index}`}>E{index}</label>
                                         <input
                                             type="checkbox"
                                             className='k-check'
+                                            aria-label={`Reverse encoder E${index}`}
                                             id={`mecanumPlatformEncoderReverse${index}`}
                                             checked={isEncoderReversed.mecanum[index]}
                                             onChange={handleEncoderReverseChange('mecanum', index)}
@@ -537,10 +540,11 @@ function PlatformTab({ isActive = true }) {
                             {Array.from({ length: 3 }).map((_, index) => (
                                 <React.Fragment key={index}>
                                     <span className='span-check'>
-                                        <label className="checkbox-label" htmlFor={`omniPlatformIsReverse${index}`}>{index} </label>
+                                        <label className="checkbox-label" htmlFor={`omniPlatformIsReverse${index}`}>M{index}</label>
                                         <input 
                                             type="checkbox"
                                             className='k-check'
+                                            aria-label={`Reverse motor M${index}`}
                                             id={`omniPlatformIsReverse${index}`} 
                                             checked={isReversed.omni[index]} 
                                             onChange={handleReverseChange('omni', index)}
@@ -554,10 +558,11 @@ function PlatformTab({ isActive = true }) {
                             {Array.from({ length: 3 }).map((_, index) => (
                                 <React.Fragment key={index}>
                                     <span className='span-check'>
-                                        <label className="checkbox-label" htmlFor={`omniPlatformEncoderReverse${index}`}>{index} </label>
+                                        <label className="checkbox-label" htmlFor={`omniPlatformEncoderReverse${index}`}>E{index}</label>
                                         <input
                                             type="checkbox"
                                             className='k-check'
+                                            aria-label={`Reverse encoder E${index}`}
                                             id={`omniPlatformEncoderReverse${index}`}
                                             checked={isEncoderReversed.omni[index]}
                                             onChange={handleEncoderReverseChange('omni', index)}
@@ -584,10 +589,11 @@ function PlatformTab({ isActive = true }) {
                             {Array.from({ length: 2 }).map((_, index) => (
                                 <React.Fragment key={index}>
                                     <span className='span-check'>
-                                        <label className="checkbox-label" htmlFor={`differentialPlatformIsReverse${index}`}>{index} </label>
+                                        <label className="checkbox-label" htmlFor={`differentialPlatformIsReverse${index}`}>M{index}</label>
                                         <input
                                             type="checkbox"
                                             className='k-check'
+                                            aria-label={`Reverse motor M${index}`}
                                             id={`differentialPlatformIsReverse${index}`}
                                             checked={isReversed.differential[index]}
                                             onChange={handleReverseChange('differential', index)}
@@ -601,10 +607,11 @@ function PlatformTab({ isActive = true }) {
                             {Array.from({ length: 2 }).map((_, index) => (
                                 <React.Fragment key={index}>
                                     <span className='span-check'>
-                                        <label className="checkbox-label" htmlFor={`differentialPlatformEncoderReverse${index}`}>{index} </label>
+                                        <label className="checkbox-label" htmlFor={`differentialPlatformEncoderReverse${index}`}>E{index}</label>
                                         <input
                                             type="checkbox"
                                             className='k-check'
+                                            aria-label={`Reverse encoder E${index}`}
                                             id={`differentialPlatformEncoderReverse${index}`}
                                             checked={isEncoderReversed.differential[index]}
                                             onChange={handleEncoderReverseChange('differential', index)}
@@ -627,6 +634,7 @@ function PlatformTab({ isActive = true }) {
                 <ConfigurationSave key={configurationGeneration} controller={controller} isConnected={isConnected}
                     onLoaded={loadRunningSetup} onBusy={setConfigurationBusy} />
                 </section>
+                <PlatformLayout key={platformType} platformType={platformType} />
                 <section className="panel-card platform-manual">
                     <h2>Manual driving</h2>
                     <p className="section-help">Set PWM output directly, or enable keyboard driving below.</p>

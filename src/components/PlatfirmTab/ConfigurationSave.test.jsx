@@ -15,6 +15,44 @@ const client = () => ({ boardInfo, ready: true,
   initialize_differential_platform: vi.fn(), start_platform_controller: vi.fn() });
 const click = name => fireEvent.click(screen.getByRole('button', { name }));
 
+it('previews a custom layout while preserving the running preset, draft and available controls', async () => {
+  const c = client();
+  render(<SettingsProvider><ControllerContext.Provider value={{ controller: c, isConnected: true }}><PlatformTab /></ControllerContext.Provider></SettingsProvider>);
+  await screen.findByText(/Running differential setup loaded/);
+  const preset = screen.getByLabelText('Platform:');
+  const wheelBase = screen.getByLabelText('Wheel base (meters)');
+  fireEvent.change(wheelBase, { target: { value: '0.8' } });
+  const preview = screen.getByRole('button', { name: 'Custom layout preview' });
+  const calls = () => Object.values(c).filter(vi.isMockFunction).map(fn => fn.mock.calls.length);
+  const initialCalls = calls();
+
+  fireEvent.click(preview);
+  expect(preview).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByRole('img', { name: /Custom chassis/ })).toHaveAttribute('src', expect.stringContaining('custom.svg'));
+  expect(screen.getByText(/W2 has no motor/)).toHaveTextContent('Encoder E2 counts positive along +Y');
+  expect(preset).toHaveValue('differential');
+  expect(preset.options).toHaveLength(3);
+  expect(wheelBase).toHaveValue(0.8);
+  expect(screen.getByRole('button', { name: 'Start odometry' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Initialize velocity controller' })).toBeEnabled();
+  fireEvent.click(preview);
+  expect(preview).toHaveAttribute('aria-pressed', 'false');
+  expect(screen.getByRole('heading', { name: 'Differential layout' })).toBeVisible();
+  expect(calls()).toEqual(initialCalls);
+});
+
+it('shows the selected preset drawing and field example, including after leaving a custom preview', () => {
+  render(<SettingsProvider><ControllerContext.Provider value={{ controller: null, isConnected: false }}><PlatformTab /></ControllerContext.Provider></SettingsProvider>);
+  const selector = screen.getByLabelText('Platform:');
+  for (const [preset, field] of [['omni', 'R · Platform radius'], ['differential', 'B · Wheel base'], ['mecanum', 'L · Platform length']]) {
+    fireEvent.change(selector, { target: { value: preset } });
+    const region = screen.getByRole('region', { name: new RegExp(preset + ' layout', 'i') });
+    expect(region).toHaveTextContent(field);
+    expect(screen.getByRole('img', { name: new RegExp(preset + ' chassis', 'i') })).toHaveAttribute('src', expect.stringContaining(preset + '.svg'));
+    fireEvent.click(screen.getByRole('button', { name: 'Custom layout preview' }));
+  }
+});
+
 it('loads applied setup on opening Platform without initialization and saves only on explicit click', async () => {
   const c = client();
   render(<SettingsProvider><ControllerContext.Provider value={{ controller: c, isConnected: true }}><PlatformTab /></ControllerContext.Provider></SettingsProvider>);
