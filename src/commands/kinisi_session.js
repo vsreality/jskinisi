@@ -1,6 +1,7 @@
 // File: kinisi_session.js
 // Shared API-v2 framing, readiness and clock exchange for serial and proxy transports.
 import { Commands, INIT, READY, ERROR, TIME_SYNC_REQUEST, TIME_SYNC_RESPONSE,
+  SET_FUSION_EXPERIMENT, GET_FUSION_STATUS, GET_FUSION_VECTOR, GET_FUSION_CONFIGURATION,
   SDK_VERSION, InitResponse, ErrorCode, ErrorDescriptions, GET_TEMPERATURE, GET_IMU, GET_MOTOR_CURRENT, GET_MOTOR_FAULTS, CLEAR_MOTOR_FAULTS, GET_PWM_FREQUENCY, SET_PWM_FREQUENCY, GET_MOTOR_CURRENT_LIMIT, SET_MOTOR_CURRENT_LIMIT, SAVE_CONFIGURATION, GET_CONFIGURATION_FIELD, SET_DRIVER_SLEEP, GET_DRIVER_SLEEP, SET_BOARD_IDLE, GET_BOARD_IDLE,
   SET_HEARTBEAT_CONFIG, UNSUBSCRIBE_ODOMETRY, ENCODER_ODOMETRY_EVENT, PLATFORM_ODOMETRY_EVENT,
   SUBSCRIBE_ODOMETRY, SUBSCRIBE, SUBSCRIBE_WITH_MODE, SUBSCRIBE_CONFIGURED, UNSUBSCRIBE, TELEMETRY_EVENT, Topic, SubscriptionMode, SubscriptionTrigger, SubscriptionDelivery,
@@ -8,7 +9,7 @@ import { Commands, INIT, READY, ERROR, TIME_SYNC_REQUEST, TIME_SYNC_RESPONSE,
 import { POSITION_COMMANDS, supportsPositionControl, POSITION_PID_COMMANDS, supportsPositionPidControl } from './position_control.js';
 import { supportsTemperatureRead } from './temperature.js';
 import { supportsImuRead } from './imu.js';
-import { getBoardProfile, supportsBoardSensor, supportsMotorCurrent, supportsMotorFaults, getMotorCurrentLimitOptions, supportsMotorCurrentLimit, getPwmFrequencyOptions, supportsPwmFrequency, supportsConfigurationPersistence, supportsDriverSleep, supportsBoardIdle } from './board_profile.js';
+import { getBoardProfile, supportsBoardSensor, supportsMotorCurrent, supportsMotorFaults, getMotorCurrentLimitOptions, supportsMotorCurrentLimit, getPwmFrequencyOptions, supportsPwmFrequency, supportsConfigurationPersistence, supportsDriverSleep, supportsBoardIdle, supportsFusionExperiment } from './board_profile.js';
 import { supportsTelemetry, supportsTopic } from './telemetry.js';
 
 export { PwmFrequency, Topic, SubscriptionMode, SubscriptionTrigger, SubscriptionDelivery } from './kinisi_commands.js';
@@ -265,8 +266,12 @@ export class KinisiSession extends Commands {
   }
 
   /** Generated commands cannot bypass the INIT/READY gate. */
+  supportsFusionExperiment() { return this.ready && supportsFusionExperiment(this.boardInfo); }
+
   async _request(command, payload, responseLength) {
     if (!this.ready) throw new ProtocolError('Controller is not ready; complete INIT first');
+    if ([SET_FUSION_EXPERIMENT, GET_FUSION_STATUS, GET_FUSION_VECTOR, GET_FUSION_CONFIGURATION].includes(command) && !this.supportsFusionExperiment())
+      throw new ProtocolError('Fusion experiment requires READY, exact v0.4.0 capability and protocol 2.19+');
     if ([SET_BOARD_IDLE, GET_BOARD_IDLE].includes(command) && !this.supportsBoardIdle())
       throw new ProtocolError('Board idle requires a known supported board and compatible firmware: v0.3/Nano protocol 2.18+, or v0.4 protocol 2.16+');
     if ([SET_DRIVER_SLEEP, GET_DRIVER_SLEEP].includes(command) && !this.supportsDriverSleep())

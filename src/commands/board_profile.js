@@ -92,3 +92,11 @@ export function supportsBoardIdle(info) {
   return minimum !== undefined && info?.protocol_major === 2 && Number.isInteger(info.protocol_minor) &&
     info.protocol_minor >= minimum && info.protocol_minor <= 255 && profile.power?.board_idle === true;
 }
+
+/** Narrow volatile experiment; legacy encoder control remains the default. */
+export function supportsFusionExperiment(info) {
+  const profile = getBoardProfile(info);
+  return profile?.board.model === 1 && profile.board.revision === '0.4.0' &&
+    profile.capabilities?.fusion_experiment === true && info?.protocol_major === 2 &&
+    Number.isInteger(info.protocol_minor) && info.protocol_minor >= 19 && info.protocol_minor <= 255;
+}

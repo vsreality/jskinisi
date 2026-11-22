@@ -478,3 +478,9 @@ sensor reads remain available as snapshots. SDK idle readback, transition attemp
 and `BOARD_IDLE` errors clear cached legacy odometry and queued latest samples without
 unsubscribing. External idle changes become visible on the next shared state read;
 the existing no-recent-samples checks continue to apply between reads.
+
+## Encoder and IMU experiment
+
+Exact v0.4.0 boards with protocol 2.19 can opt into the volatile comparison
+experiment. Legacy encoder control remains the default. See [mounting, health,
+compact diagnostics and examples](fusion-experiment.md).

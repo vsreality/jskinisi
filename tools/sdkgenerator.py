@@ -34,7 +34,30 @@ def validate_driver_sleep(schema):
         raise ValueError('Invalid board idle envelope')
 
 
+
+FUSION_CATALOGS = [
+    ('fusion_modes', 'FusionMode', 'FUSION_MODE', ['LEGACY_ENCODER', 'ENCODER_CORRECTION', 'FUSED']),
+    ('fusion_health', 'FusionHealth', 'FUSION_HEALTH', ['DISABLED', 'WAITING', 'HEALTHY', 'FAULT']),
+    ('fusion_faults', 'FusionFault', 'FUSION_FAULT', ['NONE', 'MOUNT_INVALID', 'ENCODER_UNAVAILABLE', 'IMU_UNAVAILABLE', 'STALE', 'TIMESTAMP', 'SATURATION', 'BIAS_NOT_READY', 'DISCONTINUITY', 'INHIBITED']),
+    ('fusion_flags', 'FusionFlag', 'FUSION_FLAG', ['ESTIMATE_VALID', 'BIAS_READY', 'FRESH_TARGET_REQUIRED', 'CORRECTION_ACTIVE']),
+    ('fusion_vectors', 'FusionVectorKind', 'FUSION_VECTOR', ['ENCODER_POSE', 'ENCODER_TWIST', 'FUSED_POSE', 'FUSED_TWIST', 'BIAS']),
+]
+
+def validate_fusion(schema):
+    commands = {c['command'] for c in schema.get('commands', [])}
+    required = {'SET_FUSION_EXPERIMENT', 'GET_FUSION_STATUS', 'GET_FUSION_VECTOR', 'GET_FUSION_CONFIGURATION'}
+    if not commands & required and not any(key in schema for key, *_ in FUSION_CATALOGS):
+        return
+    if not required <= commands:
+        raise ValueError('Incomplete fusion command family')
+    for key, _, _, names in FUSION_CATALOGS:
+        ids = [1, 2, 4, 8] if key == 'fusion_flags' else list(range(len(names)))
+        values = schema.get(key, [])
+        if [(v.get('id'), v.get('name')) for v in values] != list(zip(ids, names)) or any(type(v.get('id')) is not int for v in values):
+            raise ValueError('Invalid ' + key + ' catalog')
+
 def validate_pwm_frequency(schema):
+    validate_fusion(schema)
     values = schema.get('pwm_frequencies', [])
     expected = [(v, 'KHZ_' + str(v // 1000)) for v in (10000, 20000, 25000, 50000, 100000)]
     if [(v.get('id'), v.get('name')) for v in values] != expected or any(type(v.get('id')) is not int for v in values):
@@ -202,7 +225,7 @@ function payloadView(buffer, size) {
     : new DataView(buffer);
 }
 ''')
-    for key, name in [('subscription_triggers', 'SubscriptionTrigger'), ('subscription_deliveries', 'SubscriptionDelivery'), ('pwm_frequencies', 'PwmFrequency')]:
+    for key, name in [('subscription_triggers', 'SubscriptionTrigger'), ('subscription_deliveries', 'SubscriptionDelivery'), ('pwm_frequencies', 'PwmFrequency')] + [(key, name) for key, name, _, _ in FUSION_CATALOGS]:
         lines.append(f'export const {name} = Object.freeze({{\n')
         for item in schema.get(key, []):
             lines.append(f"  {item['name']}: {item['id']},\n")
@@ -293,6 +316,11 @@ export function decodeTelemetryEvent(payload) {
             lines.append("    if (typeof enabled !== 'boolean' || !Number.isInteger(threshold_ma) || threshold_ma < 1 || threshold_ma > 65535) throw new RangeError('Expected enabled boolean and threshold_ma integer from 1 to 65535');\n")
         if c['command'] == 'SET_DRIVER_SLEEP':
             lines.append("    if (sleeping !== 0 && sleeping !== 1) throw new RangeError('sleeping must be 0 (awake) or 1 (asleep)');\n")
+        if c['command'] == 'SET_FUSION_EXPERIMENT':
+            lines.append("    if (!Number.isInteger(mode) || mode < 0 || mode > 2) throw new RangeError('Invalid fusion experiment mode');\n")
+            lines.append("    if (typeof mounting_yaw_rad !== 'number' || !Number.isFinite(mounting_yaw_rad) || Math.abs(mounting_yaw_rad) > Math.PI) throw new RangeError('Mounting yaw must be finite radians within [-pi, pi]');\n")
+        if c['command'] == 'GET_FUSION_VECTOR':
+            lines.append("    if (!Number.isInteger(kind) || kind < 0 || kind > 4) throw new RangeError('Invalid fusion vector kind');\n")
         if c['command'] == 'SET_BOARD_IDLE':
             lines.append("    if (idle !== 0 && idle !== 1) throw new RangeError('idle must be 0 (active) or 1 (idle)');\n")
         if c['command'] in {'INITIALIZE_MOTOR_CONTROLLER', 'START_PLATFORM_CONTROLLER'}:
@@ -323,7 +351,16 @@ export function decodeTelemetryEvent(payload) {
         if r:
             t=r['name'] if r['type']=='object' else r['type']
             lines.append(f'    const response = await this._request({c["command"]}, payload, {size(t)});\n')
-            if c['command'] == 'GET_IMU':
+            if c['command'].startswith('GET_FUSION_'):
+                lines.append(f'    const sample = {class_name(t)}.decode(response);\n')
+                if c['command'] == 'GET_FUSION_STATUS':
+                    lines.append("    if (sample.mode > 2 || sample.health > 3 || sample.fault > 9 || sample.flags > 15) throw new Error('Invalid fusion status');\n")
+                elif c['command'] == 'GET_FUSION_CONFIGURATION':
+                    lines.append("    if (sample.mode > 2 || !Number.isFinite(sample.mounting_yaw_rad) || Math.abs(sample.mounting_yaw_rad) > Math.PI) throw new Error('Invalid fusion configuration');\n")
+                else:
+                    lines.append("    if (![sample.x, sample.y, sample.z].every(Number.isFinite)) throw new Error('Invalid fusion vector');\n")
+                lines.append('    return sample;\n')
+            elif c['command'] == 'GET_IMU':
                 lines.append(f'    const sample = {class_name(t)}.decode(response);\n')
                 lines.append("    if (!Object.values(sample).every(Number.isFinite)) throw new Error('Invalid IMU payload');\n    return sample;\n")
             elif t in objects: lines.append(f'    return {class_name(t)}.decode(response);\n')

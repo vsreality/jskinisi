@@ -30,7 +30,10 @@ def validate(bundle):
     identities = set()
     for profile in bundle['boards']:
         fields(profile, ('board', 'resources', 'motor_features', 'sensors') +
-               tuple(key for key in ('pwm_frequency', 'power') if key in profile), 'board profile')
+               tuple(key for key in ('pwm_frequency', 'power', 'capabilities') if key in profile), 'board profile')
+        if 'capabilities' in profile:
+            fields(profile['capabilities'], ('fusion_experiment',), 'capabilities')
+            require(type(profile['capabilities']['fusion_experiment']) is bool, 'Invalid fusion capability')
         if 'power' in profile:
             fields(profile['power'], ('driver_sleep',) + (('board_idle',) if 'board_idle' in profile['power'] else ()), 'power')
             require(type(profile['power']['driver_sleep']) is bool, 'Invalid driver sleep capability')

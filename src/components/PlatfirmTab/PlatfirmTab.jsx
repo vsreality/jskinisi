@@ -1,5 +1,6 @@
 import PositionControl from '../PositionControl/PositionControl';
 import ConfigurationSave from './ConfigurationSave';
+import FusionExperiment from './FusionExperiment';
 import TelemetryControl from '../TelemetryControl/TelemetryControl';
 import { Topic } from '../../commands/kinisi_commands';
 import { useSettings, scaleInput } from '../../contexts/SettingsContext';
@@ -467,6 +468,7 @@ function PlatformTab({ isActive = true }) {
     return (
         <div id="tabPlatform" className="platform-tab page-layout">
             {commandError && <p className="conn-error" role="alert">{commandError}</p>}
+            <FusionExperiment controller={controller} isConnected={isConnected} isActive={isActive} />
             <div className="platform-setup-grid">
                 <section className="panel-card platform-hardware">
                 <h2>Platform setup</h2>

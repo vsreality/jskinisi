@@ -1,6 +1,6 @@
 // Generated from tools/commands.json by tools/sdkgenerator.py. Do not edit.
 export const SDK_VERSION = Object.freeze([2, 6, 0]);
-export const PROTOCOL_VERSION = Object.freeze([2, 18, 0]);
+export const PROTOCOL_VERSION = Object.freeze([2, 19, 0]);
 export const GET_TEMPERATURE = 0x50;
 export const GET_IMU = 0x51;
 export const GET_MOTOR_CURRENT = 0x52;
@@ -88,6 +88,10 @@ export const SET_DRIVER_SLEEP = 0x5B;
 export const GET_DRIVER_SLEEP = 0x5C;
 export const SET_BOARD_IDLE = 0x5D;
 export const GET_BOARD_IDLE = 0x5E;
+export const SET_FUSION_EXPERIMENT = 0x5f;
+export const GET_FUSION_STATUS = 0x60;
+export const GET_FUSION_VECTOR = 0x61;
+export const GET_FUSION_CONFIGURATION = 0x62;
 export const ErrorCode = Object.freeze({
   INCOMPATIBLE_PROTOCOL: 1,
   INVALID_ARGUMENT: 2,
@@ -158,6 +162,42 @@ export const PwmFrequency = Object.freeze({
   KHZ_25: 25000,
   KHZ_50: 50000,
   KHZ_100: 100000,
+});
+export const FusionMode = Object.freeze({
+  LEGACY_ENCODER: 0,
+  ENCODER_CORRECTION: 1,
+  FUSED: 2,
+});
+export const FusionHealth = Object.freeze({
+  DISABLED: 0,
+  WAITING: 1,
+  HEALTHY: 2,
+  FAULT: 3,
+});
+export const FusionFault = Object.freeze({
+  NONE: 0,
+  MOUNT_INVALID: 1,
+  ENCODER_UNAVAILABLE: 2,
+  IMU_UNAVAILABLE: 3,
+  STALE: 4,
+  TIMESTAMP: 5,
+  SATURATION: 6,
+  BIAS_NOT_READY: 7,
+  DISCONTINUITY: 8,
+  INHIBITED: 9,
+});
+export const FusionFlag = Object.freeze({
+  ESTIMATE_VALID: 1,
+  BIAS_READY: 2,
+  FRESH_TARGET_REQUIRED: 4,
+  CORRECTION_ACTIVE: 8,
+});
+export const FusionVectorKind = Object.freeze({
+  ENCODER_POSE: 0,
+  ENCODER_TWIST: 1,
+  FUSED_POSE: 2,
+  FUSED_TWIST: 3,
+  BIAS: 4,
 });
 export const SubscriptionMode = Object.freeze({
   PERIODIC: 0,
@@ -743,6 +783,114 @@ export class MotorCurrentLimit {
   }
 }
 
+/** Volatile v0.4 fusion experiment diagnostics; see command descriptions. */
+export class FusionStatus {
+  /** Store one decoded payload. */
+  constructor(mode, health, fault, flags, sequence, timestamp_us, accel_age_us, gyro_age_us, encoder_age_us) {
+    this.mode = mode;
+    this.health = health;
+    this.fault = fault;
+    this.flags = flags;
+    this.sequence = sequence;
+    this.timestamp_us = timestamp_us;
+    this.accel_age_us = accel_age_us;
+    this.gyro_age_us = gyro_age_us;
+    this.encoder_age_us = encoder_age_us;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 28; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(FusionStatus.getSize());
+    const view = new DataView(buffer);
+    view.setUint8(0, this.mode);
+    view.setUint8(1, this.health);
+    view.setUint8(2, this.fault);
+    view.setUint8(3, this.flags);
+    view.setUint32(4, this.sequence, true);
+    view.setBigUint64(8, exactBigInt(this.timestamp_us), true);
+    view.setUint32(16, this.accel_age_us, true);
+    view.setUint32(20, this.gyro_age_us, true);
+    view.setUint32(24, this.encoder_age_us, true);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, FusionStatus.getSize());
+    return new FusionStatus(
+      view.getUint8(0),
+      view.getUint8(1),
+      view.getUint8(2),
+      view.getUint8(3),
+      view.getUint32(4, true),
+      view.getBigUint64(8, true),
+      view.getUint32(16, true),
+      view.getUint32(20, true),
+      view.getUint32(24, true),
+    );
+  }
+}
+
+/** Volatile v0.4 fusion experiment diagnostics; see command descriptions. */
+export class FusionVector {
+  /** Store one decoded payload. */
+  constructor(sequence, x, y, z) {
+    this.sequence = sequence;
+    this.x = x;
+    this.y = y;
+    this.z = z;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 28; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(FusionVector.getSize());
+    const view = new DataView(buffer);
+    view.setUint32(0, this.sequence, true);
+    view.setFloat64(4, this.x, true);
+    view.setFloat64(12, this.y, true);
+    view.setFloat64(20, this.z, true);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, FusionVector.getSize());
+    return new FusionVector(
+      view.getUint32(0, true),
+      view.getFloat64(4, true),
+      view.getFloat64(12, true),
+      view.getFloat64(20, true),
+    );
+  }
+}
+
+/** Volatile v0.4 fusion experiment diagnostics; see command descriptions. */
+export class FusionConfiguration {
+  /** Store one decoded payload. */
+  constructor(mode, mounting_yaw_rad) {
+    this.mode = mode;
+    this.mounting_yaw_rad = mounting_yaw_rad;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 9; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(FusionConfiguration.getSize());
+    const view = new DataView(buffer);
+    view.setUint8(0, this.mode);
+    view.setFloat64(1, this.mounting_yaw_rad, true);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, FusionConfiguration.getSize());
+    return new FusionConfiguration(
+      view.getUint8(0),
+      view.getFloat64(1, true),
+    );
+  }
+}
+
 /** Stable uint8 telemetry topic enum. */
 export const Topic = Object.freeze({
   ENCODER_ODOMETRY: 1,
@@ -1129,7 +1277,7 @@ export class Commands {
     await this._request(START_PLATFORM_CONTROLLER, payload, 0);
   }
 
-  /** This command set the target velocity for the platform in meters per second. Cancels platform position control; initialize it again before another pose target. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, PLATFORM_NOT_INITIALIZED, CONTROLLER_NOT_INITIALIZED, INIT_REQUIRED. */
+  /** This command set the target velocity for the platform in meters per second. Cancels platform position control; initialize it again before another pose target. With an active fusion experiment, rejects invalid or stale feedback and targets fenced by an earlier fault with SAMPLE_NOT_AVAILABLE; both experimental modes require 100 ms of observed unchanged configured counters for initial rest arming. Once armed, ordinary target updates remain accepted while moving. Wait for healthy feedback and submit a fresh target; stopped cold configuration can ACK while still WAITING. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, PLATFORM_NOT_INITIALIZED, CONTROLLER_NOT_INITIALIZED, INIT_REQUIRED, SAMPLE_NOT_AVAILABLE. */
   async set_platform_target_velocity(x, y, t) {
     const payload = new ArrayBuffer(24);
     const requestView = new DataView(payload);
@@ -1584,5 +1732,46 @@ export class Commands {
     const idle = view.getUint8(0);
     if (idle !== 0 && idle !== 1) throw new Error('Invalid board idle state');
     return idle;
+  }
+
+  /** Configure the volatile v0.4 experiment only while motion is stopped and all commanded targets and motor outputs are zero; initialized controllers with idle zero targets are allowed. Mode 0 retains the legacy encoder path (boot default), 1 uses encoder feedback with the common chassis correction, and 2 uses fused feedback with that same correction. No IMU-only mode. For modes 1/2 the caller declares a rigid, level board with component side up, IMU at the chassis reference point, and mounting_yaw_rad as the angle of board +X expressed in chassis XY, counterclockwise about chassis +Z. Sensor-to-board axes are (-x,-y,+z); chassis axes are forward/left/up. Reject nonfinite or out-of-range yaw, any observed configured encoder movement in the preceding 100 ms, or a counter change since a fresh sample. Stopped cold setup may ACK in WAITING; ACK does not establish readiness. Both experimental modes require 100 ms of observed unchanged configured counters for initial rest arming before accepting a motion target; once armed, ordinary target updates remain accepted while moving; fused bias calibration may run within that window. Reconfiguration cancels old targets. Sources may requalify automatically after an ordinary sensor fault, but healthy inputs and a fresh target are required before control resumes. Does not save to FRAM or start motion. Requires READY, exact v0.4.0 fusion capability and protocol 2.19. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, BOARD_IDLE, DRIVERS_ASLEEP, PLATFORM_NOT_INITIALIZED. */
+  async set_fusion_experiment(mode, mounting_yaw_rad) {
+    if (!Number.isInteger(mode) || mode < 0 || mode > 2) throw new RangeError('Invalid fusion experiment mode');
+    if (typeof mounting_yaw_rad !== 'number' || !Number.isFinite(mounting_yaw_rad) || Math.abs(mounting_yaw_rad) > Math.PI) throw new RangeError('Mounting yaw must be finite radians within [-pi, pi]');
+    const payload = new ArrayBuffer(9);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, mode);
+    requestView.setFloat64(1, mounting_yaw_rad, true);
+    await this._request(SET_FUSION_EXPERIMENT, payload, 0);
+  }
+
+  /** Read experiment mode, health, fault, flags and timestamped sample ages without setting targets or changing configuration. A read may enforce an expired feedback deadline, clear the live target and coast. Health/fault/flag values use the FusionHealth/FusionFault/FusionFlag catalogs. Timestamp uses the monotonic board clock; unavailable ages are UINT32_MAX. The physical IMU producer waits 2 ms between passes, without guaranteeing a 2 ms acquisition cadence, and pairs only acquisition windows entirely preceding the encoder timestamp: each window is at most 5 ms wide, worst-case accel/gyro skew at most 15 ms, and age at most 35 ms. These are software acceptance limits, not a physical timing qualification. ESTIMATE_VALID describes the selected experiment estimate, not physical accuracy. Requires READY, exact v0.4.0 fusion capability and protocol 2.19. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
+  async get_fusion_status() {
+    const payload = new ArrayBuffer(0);
+    const response = await this._request(GET_FUSION_STATUS, payload, 28);
+    const sample = FusionStatus.decode(response);
+    if (sample.mode > 2 || sample.health > 3 || sample.fault > 9 || sample.flags > 15) throw new Error('Invalid fusion status');
+    return sample;
+  }
+
+  /** Read one compact experiment vector: 0 encoder pose (relative x,y,yaw), 1 encoder body twist (vx,vy,yaw rate), 2 fused pose, 3 fused body twist, 4 estimated bias (ax,ay,gyro z). Units are metres, seconds and radians. On outage recovery, the last fused-from-encoder world transform is reapplied to the current encoder pose. Returns SAMPLE_NOT_AVAILABLE when the requested estimate is invalid. Match sequence with GET_FUSION_STATUS to associate timestamp/health; different sequences are different snapshots. At most 28 payload bytes so the framed reply fits Arduino Wire32. Does not reset state or start motion. Requires READY, exact v0.4.0 fusion capability and protocol 2.19. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SAMPLE_NOT_AVAILABLE. */
+  async get_fusion_vector(kind) {
+    if (!Number.isInteger(kind) || kind < 0 || kind > 4) throw new RangeError('Invalid fusion vector kind');
+    const payload = new ArrayBuffer(1);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, kind);
+    const response = await this._request(GET_FUSION_VECTOR, payload, 28);
+    const sample = FusionVector.decode(response);
+    if (![sample.x, sample.y, sample.z].every(Number.isFinite)) throw new Error('Invalid fusion vector');
+    return sample;
+  }
+
+  /** Read the volatile experiment mode and declared mounting yaw without changing state. Reset selects legacy encoder mode; SAVE_CONFIGURATION does not persist this experiment. Requires READY, exact v0.4.0 fusion capability and protocol 2.19. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
+  async get_fusion_configuration() {
+    const payload = new ArrayBuffer(0);
+    const response = await this._request(GET_FUSION_CONFIGURATION, payload, 9);
+    const sample = FusionConfiguration.decode(response);
+    if (sample.mode > 2 || !Number.isFinite(sample.mounting_yaw_rad) || Math.abs(sample.mounting_yaw_rad) > Math.PI) throw new Error('Invalid fusion configuration');
+    return sample;
   }
 }
