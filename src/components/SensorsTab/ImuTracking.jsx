@@ -48,7 +48,7 @@ export default function ImuTracking({ controller, isConnected, isActive = true }
       if (op.current.id !== id) return;
       const remaining = Math.max(0, configuration.window_us - status.elapsed_us) / 1000;
       const lifetime = status.state === ImuTrackingState.TRACKING ? Math.min(1500, remaining) : 1500;
-      setResult({ controller, connection, status, configuration, vectors, expiresAt: readAt + lifetime });
+      setResult({ controller, connection, status, configuration, vectors, readAt, expiresAt: readAt + lifetime });
       setNow(performance.now());
     } catch (error) {
       const message = acknowledged ? 'Action acknowledged. Read diagnostics again to check the result.' :
@@ -74,12 +74,13 @@ export default function ImuTracking({ controller, isConnected, isActive = true }
     const timer = setTimeout(() => setNow(performance.now()), Math.max(0, Math.ceil(deadline - performance.now())));
     return () => clearTimeout(timer);
   }, [deadline, isActive]);
-  const fresh = isActive && now < deadline;
-  const usable = fresh && current?.status?.state === ImuTrackingState.TRACKING && (current.status.flags & ImuTrackingFlag.ESTIMATE_VALID);
+  const fresh = isActive && now - current?.readAt < 1500;
+  const sourceValid = current?.status?.state === ImuTrackingState.TRACKING && (current.status.flags & ImuTrackingFlag.ESTIMATE_VALID);
+  const usable = fresh && sourceValid && now < deadline;
   if (!available) return <section className="panel-card"><h2>IMU-only relative tracking</h2><p>Requires a ready v0.4.0 controller with protocol 2.20 and IMU tracking support.</p></section>;
   return <section className="panel-card board-imu" aria-labelledby="imuTrackingTitle">
     <h2 id="imuTrackingTitle">IMU-only relative tracking</h2>
-    <p>Short-window relative sensing, independent of encoders and platform setup. It never commands motion or selects control feedback. Drift grows over time; this is not absolute localization.</p>
+    <p>The one-second window begins at the first qualified estimate, even if the chassis stays still. The IMU estimates relative displacement and velocity. Starting this diagnostic leaves the selected control feedback unchanged.</p>
     <p>Start, reset and recalibrate each discard bias and pose and perform full cold calibration at a new origin. Remain truly stationary during calibration. IMU checks cannot distinguish rest from constant velocity. Faults and expiry require an explicit restart.</p>
     <label htmlFor="imuTrackingYaw">Sensor +X angle in chassis XY (radians, −π to π)</label>
     <input id="imuTrackingYaw" type="number" step="any" value={yaw} onChange={event => { setYaw(event.target.value); setConfirmed(null); }} />
@@ -94,7 +95,7 @@ export default function ImuTracking({ controller, isConnected, isActive = true }
     {current?.busy && <p role="status">Reading tracking state…</p>}
     {current?.error && <p role="alert">{current.error}</p>}
     {current?.status && <>
-      <p>{usable ? 'Tracking snapshot available' : 'Snapshot is not a current valid tracking estimate'}. {fresh ? 'Recently read' : 'Cached snapshot; read again'}. Software validity does not establish physical accuracy.</p>
+      <p>{usable ? 'Tracking snapshot available' : sourceValid ? 'The board reported a valid estimate at this source timestamp. Historical sample.' : 'No valid estimate in this status'}. {fresh ? 'Recently read' : 'Cached snapshot; read again'}. Software validity does not establish physical accuracy.</p>
       <dl>
         <dt>State / fault</dt><dd>{label(ImuTrackingState, current.status.state)} / {label(ImuTrackingFault, current.status.fault)}</dd>
         <dt>Flags</dt><dd>{Object.entries(ImuTrackingFlag).filter(([,bit]) => current.status.flags & bit).map(([name]) => name).join(', ') || 'None'}</dd>

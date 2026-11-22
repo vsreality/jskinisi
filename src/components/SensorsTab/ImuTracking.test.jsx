@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 import ImuTracking from './ImuTracking';
 const info={board_model:1,board_major:0,board_minor:4,board_patch:0,protocol_major:2,protocol_minor:20};
 function client(){return {boardInfo:{...info},ready:true,
- get_imu_tracking_configuration:vi.fn(async()=>({mounting_yaw_rad:Math.PI,window_us:5000000})),
+ get_imu_tracking_configuration:vi.fn(async()=>({mounting_yaw_rad:Math.PI,window_us:1000000})),
  get_imu_tracking_status:vi.fn(async()=>({state:2,fault:0,flags:3,reserved:0,sequence:42,timestamp_us:2n**60n+7n,elapsed_us:500,accel_age_us:10,gyro_age_us:20})),
  get_imu_tracking_vector:vi.fn(async kind=>({sequence:kind===2?43:42,x:1,y:2,z:3})),set_imu_tracking:vi.fn(async()=>{})};}
 const click=name=>fireEvent.click(screen.getByRole('button',{name}));
@@ -26,7 +26,7 @@ describe('IMU tracking panel',()=>{
  it('fences old reconnect replies and never reapplies a declaration',async()=>{
   const c=client();let finish;c.get_imu_tracking_configuration.mockImplementationOnce(()=>new Promise(r=>{finish=r;}));
   const view=render(<ImuTracking controller={c} isConnected/>);view.rerender(<ImuTracking controller={c} isConnected={false}/>);c.boardInfo={...info};view.rerender(<ImuTracking controller={c} isConnected/>);
-  await screen.findByText(/Sequence 42/);await act(async()=>finish({mounting_yaw_rad:0,window_us:999}));expect(screen.getByText(/500 \/ 5000000/)).toBeInTheDocument();expect(c.set_imu_tracking).not.toHaveBeenCalled();
+  await screen.findByText(/Sequence 42/);await act(async()=>finish({mounting_yaw_rad:0,window_us:999}));expect(screen.getByText(/500 \/ 1000000/)).toBeInTheDocument();expect(c.set_imu_tracking).not.toHaveBeenCalled();
  });
  it('marks cached or hidden snapshots and polls only diagnostics',async()=>{
   const c=client();const view=render(<ImuTracking controller={c} isConnected/>);await screen.findByText(/Sequence 42/);
@@ -43,6 +43,16 @@ describe('IMU tracking panel',()=>{
   expect(screen.queryByText(/matches tracking snapshot/)).not.toBeInTheDocument();
  });
  it('performs no I/O for unsupported firmware',()=>{const c=client();c.boardInfo.protocol_minor=19;render(<ImuTracking controller={c} isConnected/>);expect(c.get_imu_tracking_status).not.toHaveBeenCalled();expect(screen.queryByRole('button')).not.toBeInTheDocument();});
+ it('uses the readback horizon and retains last source timestamp on expiry',async()=>{
+  const c=client();c.get_imu_tracking_status.mockResolvedValueOnce({state:2,fault:0,flags:3,sequence:99,timestamp_us:990000n,elapsed_us:1000000,accel_age_us:10000,gyro_age_us:10000});
+  render(<ImuTracking controller={c} isConnected/>);await screen.findByText(/Sequence 99/);
+  expect(screen.getByText(/1000000 \/ 1000000/)).toBeInTheDocument();
+  expect(screen.getByText(/valid estimate at this source timestamp/)).toHaveTextContent('Recently read');
+  c.get_imu_tracking_status.mockResolvedValueOnce({state:4,fault:7,flags:12,sequence:100,timestamp_us:990000n,elapsed_us:1000000,accel_age_us:20000,gyro_age_us:20000});
+  c.get_imu_tracking_vector.mockRejectedValue(new Error('SAMPLE_NOT_AVAILABLE'));click('Read tracking diagnostics');
+  await screen.findByText('EXPIRED / WINDOW_EXPIRED');expect(screen.getByText(/Sequence 100/)).toHaveTextContent('990000');
+  expect(screen.queryByText(/Tracking snapshot available/)).not.toBeInTheDocument();expect(c.set_imu_tracking).not.toHaveBeenCalled();
+ });
  it('keeps the action ACK when the following read fails',async()=>{
   const c=client();render(<ImuTracking controller={c} isConnected/>);await screen.findByText(/Sequence 42/);
   c.get_imu_tracking_status.mockRejectedValueOnce(new Error('transport timeout'));
@@ -51,7 +61,7 @@ describe('IMU tracking panel',()=>{
   click('Read tracking diagnostics');await screen.findByText(/Sequence 42/);
   expect(c.set_imu_tracking).toHaveBeenCalledExactlyOnceWith(2,1,Math.PI);
  });
- it.each([[1600,500],[15,4990000]])('ages the requested status while vector reads are pending',async(delay,elapsed)=>{
+ it.each([[1600,500],[15,990000]])('ages the requested status while vector reads are pending',async(delay,elapsed)=>{
   let clock=100, release;
   const time=vi.spyOn(performance,'now').mockImplementation(()=>clock);
   try {
@@ -62,7 +72,7 @@ describe('IMU tracking panel',()=>{
    await waitFor(()=>expect(release).toBeTypeOf('function'));
    clock+=delay;
    await act(async()=>release({sequence:42,x:0,y:0,z:0}));
-   expect(screen.getByText(/Cached snapshot/)).toBeInTheDocument();
+   expect(screen.getByText(/valid estimate at this source timestamp/)).toHaveTextContent(delay >= 1500 ? 'Cached snapshot' : 'Recently read');
    expect(screen.queryByText(/Tracking snapshot available/)).not.toBeInTheDocument();
   } finally {time.mockRestore();}
  });
