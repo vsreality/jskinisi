@@ -270,7 +270,7 @@ export class KinisiSession extends Commands {
     if ([SET_BOARD_IDLE, GET_BOARD_IDLE].includes(command) && !this.supportsBoardIdle())
       throw new ProtocolError('Board idle requires a known supported board and firmware protocol 2.16 or newer');
     if ([SET_DRIVER_SLEEP, GET_DRIVER_SLEEP].includes(command) && !this.supportsDriverSleep())
-      throw new ProtocolError('Driver sleep requires a known supported board and firmware protocol 2.15 or newer');
+      throw new ProtocolError('Driver sleep requires a known supported board and compatible firmware: v0.3/Nano protocol 2.17+, or v0.4 protocol 2.15+');
     if ([SAVE_CONFIGURATION, GET_CONFIGURATION_FIELD].includes(command) && !this.supportsConfigurationPersistence())
       throw new ProtocolError('Configuration persistence requires a known v0.4 board and firmware protocol 2.14 or newer');
     if ([SUBSCRIBE, SUBSCRIBE_WITH_MODE, SUBSCRIBE_CONFIGURED, UNSUBSCRIBE].includes(command)) {

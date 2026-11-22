@@ -1,9 +1,11 @@
 import { useContext } from 'react';
 import { BoardPowerContext } from '../../contexts/BoardPowerContext';
 import BoardPowerProvider from '../../contexts/BoardPowerProvider';
+import { getDriverSleepKind } from '../../commands/board_profile';
 
 function PowerControls() {
-  const { available, driverSupported, idleSupported, current, update } = useContext(BoardPowerContext);
+  const { controller, available, driverSupported, idleSupported, current, update } = useContext(BoardPowerContext);
+  const inputLow = getDriverSleepKind(controller?.boardInfo) === 'input_low';
   const driversBlocked = current?.busy || (idleSupported && current?.idle !== 0);
   return <>
     <section className="control-section" aria-labelledby="boardIdleTitle">
@@ -23,11 +25,15 @@ function PowerControls() {
     </section>
     <section className="control-section" aria-labelledby="driverSleepTitle">
       <h3 id="driverSleepTitle">Driver sleep — all motors</h3>
-      {!driverSupported ? <p className="section-help">Manual driver sleep requires a supported v0.4 board and firmware protocol 2.15 or newer.</p>
+      {!driverSupported ? <p className="section-help">Manual driver sleep requires a supported v0.3.0 or Nano v0.3.1 board with protocol 2.17 or newer, or v0.4 with protocol 2.15 or newer.</p>
         : !available ? <p>Connect and wait for the controller to be ready.</p> : <>
-          <p className="section-help">Sleep stops motion and controllers on every connection. Wake checks the retained driver settings and leaves outputs stopped. Restart controllers and send fresh motion commands when ready.</p>
+          <p className="section-help">{inputLow
+            ? 'Sleep stops motion and controllers on every connection, blocks motor commands and holds both DRV8870 inputs low so the motors coast. Wake clears the software inhibit; both inputs stay low until a fresh drive request. Restart controllers and send fresh motion commands when ready.'
+            : 'Sleep stops motion and controllers on every connection. Wake checks the retained driver settings and leaves outputs stopped. Restart controllers and send fresh motion commands when ready.'}</p>
+          {inputLow && <p className="section-help">DRV8870 has no sleep-state readback. Its sleep entry can take up to 1.5 ms with both inputs low. On the first fresh drive, the silicon needs a qualifying high input of at least 5 μs, followed by 50 μs for wake. A cleared inhibit does not confirm that the silicon is awake.</p>}
           <p><output aria-label="Driver sleep state" aria-live="polite">{current?.sleeping === 1
-            ? 'Asleep — motor commands inhibited' : current?.sleeping === 0 ? 'Awake — board-wide inhibit cleared' : 'State not verified'}</output></p>
+            ? inputLow ? 'Inhibited — motor commands blocked' : 'Asleep — motor commands inhibited'
+            : current?.sleeping === 0 ? inputLow ? 'Inhibit cleared — fresh drive allowed' : 'Awake — board-wide inhibit cleared' : 'State not verified'}</output></p>
           <p className="section-help">This is the board-wide inhibit, not the power state of each individual driver. Power states are not saved with configuration and clear at boot. One shared read refreshes them every 2 seconds while connected.</p>
           {idleSupported && current?.idle !== 0 && <p>Wake board before changing driver sleep. If board state is unknown, read it first.</p>}
           <div className="action-row">

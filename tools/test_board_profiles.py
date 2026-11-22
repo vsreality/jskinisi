@@ -21,7 +21,7 @@ class ProfileTests(unittest.TestCase):
 
     def test_shipped_output_matches_all_profiles(self):
         self.assertEqual(updater.generate(self.bundle), (ROOT / 'src/commands/board_profiles.js').read_text(encoding='utf-8'))
-        self.assertEqual(len(self.bundle['boards']), 4)
+        self.assertEqual(len(self.bundle['boards']), 5)
 
     def test_rejects_incompatible_or_private_profile_data(self):
         for mutate in (
@@ -30,7 +30,7 @@ class ProfileTests(unittest.TestCase):
             lambda b: b['boards'][0]['resources'].update(motors=True),
             lambda b: b['boards'][0]['board'].update(build_define='MP_V1'),
             lambda b: b['boards'][0]['sensors']['temperature'].append({'id': 0, 'pin': 'PA8'}),
-            lambda b: b['boards'][3]['sensors']['imu'][0].update(id=1),
+            lambda b: next(p for p in b['boards'] if p['board']['revision'] == '0.4.0')['sensors']['imu'][0].update(id=1),
             lambda b: b['boards'][3]['motor_features'][0].update(current_limit='yes'),
             lambda b: b['boards'][3].update(power={'driver_sleep': 1}),
             lambda b: b['boards'][3].update(power={'driver_sleep': True, 'sleep_pin': 'PA0'}),
@@ -39,9 +39,14 @@ class ProfileTests(unittest.TestCase):
             bundle = deepcopy(self.bundle); mutate(bundle)
             with self.assertRaises(ValueError): updater.generate(bundle)
 
-    def test_driver_sleep_is_explicit_and_only_on_v4(self):
-        self.assertEqual([p['power']['driver_sleep'] for p in self.bundle['boards']], [False, False, False, True])
-        self.assertEqual([p['power']['board_idle'] for p in self.bundle['boards']], [False, False, False, True])
+    def test_power_capabilities_are_explicit_for_exact_profiles(self):
+        self.assertEqual({p['board']['revision']: p['power'] for p in self.bundle['boards']}, {
+            '0.1.0': {'driver_sleep': False, 'board_idle': False},
+            '0.2.0': {'driver_sleep': False, 'board_idle': False},
+            '0.3.0': {'driver_sleep': True, 'board_idle': False},
+            '0.3.1': {'driver_sleep': True, 'board_idle': False},
+            '0.4.0': {'driver_sleep': True, 'board_idle': True},
+        })
         legacy = deepcopy(self.bundle)
         for profile in legacy['boards']: profile.pop('power')
         updater.validate(legacy)  # Older bundles remain readable; no inferred capability.

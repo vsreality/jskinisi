@@ -25,6 +25,16 @@ describe('bundled board profiles', () => {
     expect(supportsBoardSensor(info(4, 5), 'imu')).toBe(true);
     expect(supportsBoardSensor({ ...info(), protocol_major: 3 }, 'imu')).toBe(false);
   });
+  it('selects Nano by its own exact identity without inheriting v0.4 features', () => {
+    const nano = { ...info(3, 17), board_patch: 1 };
+    const profile = getBoardProfile(nano);
+    expect(profile.board).toEqual({ model: 1, revision: '0.3.1' });
+    expect(profile.resources).toEqual({ motors: 4, encoders: 4, gpio: 10, status_leds: 1 });
+    expect(profile.power).toEqual({ driver_sleep: true, board_idle: false });
+    expect(profile.sensors).toEqual({ temperature: [], imu: [] });
+    expect(hasBoardSensor(nano, 'temperature')).toBe(false);
+    expect(getBoardProfile({ ...nano, board_patch: 2 })).toBeNull();
+  });
   it('returns no profile for unknown or malformed identities without a fallback', () => {
     for (const value of [null, {}, { ...info(), board_model: 2 }, info(99),
       { ...info(), board_patch: 1 }, { ...info(), board_minor: '4' },

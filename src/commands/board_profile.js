@@ -69,10 +69,20 @@ export function supportsConfigurationPersistence(info) {
     board?.model === 1 && board.revision === '0.4.0';
 }
 
-/** Driver sleep requires an explicitly advertised board capability. */
+/** The inhibit has different hardware behavior on the exact supported boards. */
+export function getDriverSleepKind(info) {
+  const profile = getBoardProfile(info);
+  if (profile?.power?.driver_sleep !== true || profile.board.model !== 1) return null;
+  if (['0.3.0', '0.3.1'].includes(profile.board.revision)) return 'input_low';
+  if (profile.board.revision === '0.4.0') return 'sleep_pin';
+  return null;
+}
+
+/** The same commands became available on DRV8870 boards in protocol 2.17. */
 export function supportsDriverSleep(info) {
-  return info?.protocol_major === 2 && Number.isInteger(info.protocol_minor) && info.protocol_minor >= 15 &&
-    getBoardProfile(info)?.power?.driver_sleep === true;
+  const kind = getDriverSleepKind(info);
+  return kind !== null && info?.protocol_major === 2 && Number.isInteger(info.protocol_minor) &&
+    info.protocol_minor >= (kind === 'input_low' ? 17 : 15) && info.protocol_minor <= 255;
 }
 
 export function supportsBoardIdle(info) {

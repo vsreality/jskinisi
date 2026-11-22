@@ -116,3 +116,54 @@ it('keeps board-wide control available without initializing individually owned m
   expect(screen.getByRole('button', { name: 'Sleep drivers' })).toBeEnabled();
   expect(c.initialize_motor).not.toHaveBeenCalled();
 });
+
+it.each([0, 1])('shows truthful DRV8870 inhibit, explicit release and reconnect for v0.3.%s', async board_patch => {
+  const c = client();
+  c.boardInfo = { ...boardInfo, board_minor: 3, board_patch, protocol_minor: 17 };
+  c.get_board_idle = vi.fn(); c.set_board_idle = vi.fn();
+  const view = render(<DriverSleep controller={c} isConnected />);
+  await screen.findByText('Inhibit cleared — fresh drive allowed');
+  expect(screen.getByText(/both inputs stay low until a fresh drive/)).toBeInTheDocument();
+  expect(screen.getByText(/no sleep-state readback/)).toHaveTextContent('1.5 ms');
+  expect(screen.getByText(/no sleep-state readback/)).toHaveTextContent('5 μs');
+  expect(screen.getByText(/no sleep-state readback/)).toHaveTextContent('50 μs');
+  expect(screen.queryByText(/Wake checks the retained driver settings/)).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Wake board' })).not.toBeInTheDocument();
+  expect(c.get_board_idle).not.toHaveBeenCalled();
+  c.get_driver_sleep.mockResolvedValue(1);
+  click('Sleep drivers');
+  await screen.findByText('Inhibited — motor commands blocked');
+  expect(c.set_driver_sleep).toHaveBeenCalledExactlyOnceWith(1);
+  view.rerender(<DriverSleep controller={c} isConnected={false} />);
+  c.boardInfo = { ...c.boardInfo };
+  view.rerender(<DriverSleep controller={c} isConnected />);
+  await screen.findByText('Inhibited — motor commands blocked');
+  expect(c.set_driver_sleep).toHaveBeenCalledTimes(1);
+  c.set_driver_sleep.mockRejectedValueOnce(new Error('Timed out'));
+  click('Wake drivers');
+  await waitFor(() => expect(state()).toHaveTextContent('State not verified'));
+  expect(screen.getByRole('alert')).toHaveTextContent('state is not confirmed');
+  c.get_driver_sleep.mockResolvedValue(0);
+  click('Wake drivers');
+  await screen.findByText('Inhibit cleared — fresh drive allowed');
+  expect(c.set_driver_sleep.mock.calls).toEqual([[1], [0], [0]]);
+  expect(c.set_board_idle).not.toHaveBeenCalled();
+  // A second transport can inhibit without any implicit local wake.
+  c.get_driver_sleep.mockResolvedValue(1);
+  click('Read driver state');
+  await screen.findByText('Inhibited — motor commands blocked');
+  expect(c.set_driver_sleep).toHaveBeenCalledTimes(3);
+});
+
+it.each([
+  { board_minor: 3, board_patch: 0, protocol_minor: 16 },
+  { board_minor: 3, board_patch: 1, protocol_minor: 16 },
+  { board_minor: 2, protocol_minor: 17 },
+  { board_minor: 3, board_patch: 2, protocol_minor: 17 },
+  { board_minor: 3, board_model: 2, protocol_minor: 17 },
+])('does not expose legacy sleep for an unsupported revision or firmware %j', override => {
+  const c = client(); c.boardInfo = { ...boardInfo, ...override };
+  render(<DriverSleep controller={c} isConnected />);
+  expect(screen.queryByRole('button', { name: 'Sleep drivers' })).not.toBeInTheDocument();
+  expect(c.get_driver_sleep).not.toHaveBeenCalled();
+});

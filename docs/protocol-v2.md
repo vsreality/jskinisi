@@ -373,9 +373,10 @@ setup concurrently from another client while reading.
 
 ## Manual driver sleep
 
-Driver sleep requires READY, protocol 2.15 or newer within major version 2,
-and the exact bundled board profile advertising `power.driver_sleep: true`
-(currently v0.4). Unknown hardware and earlier firmware are rejected before I/O.
+Driver sleep requires READY and an exact bundled board profile advertising
+`power.driver_sleep: true`. Model 1 v0.3.0 and Nano v0.3.1 require protocol 2.17
+or newer within major version 2; v0.4.0 retains support from protocol 2.15.
+v0.1, v0.2, unknown hardware and earlier firmware are rejected before I/O.
 
 ```js
 if (controller.supportsDriverSleep()) {
@@ -386,15 +387,26 @@ if (controller.supportsDriverSleep()) {
 ```
 
 `set_driver_sleep` accepts only numeric `0` or `1`. Sleep stops motion and
-controllers across connections. Wake verifies retained settings on previously
-initialized channels; it does not resume targets or restart controllers. A failed
-wake leaves the board-wide inhibit active and may be retried after checking motor
-power and driver faults. Repeating the current state is a no-op. Motion requests
+controllers across connections. Wake does not resume targets or restart controllers.
+On v0.4 it verifies retained settings on previously initialized channels; a failed
+wake leaves the inhibit active and may be retried after checking motor power and
+driver faults. Repeating a confirmed state is safe. Motion requests
 while inhibited fail with typed `ControllerError` code `ErrorCode.DRIVERS_ASLEEP`
 (19); ordinary telemetry and subscriptions retain their session behavior.
 
 `get_driver_sleep` reports the board-wide inhibit, not each driver's individual
 power state: an uninitialized driver may still be asleep when it returns zero.
+On v0.3.0 and Nano v0.3.1, the DRV8870 implementation holds both inputs low,
+coasting the motors and preventing further drive commands. Sleep entry takes up
+to 1.5 ms according to the chip timing specification. Explicit wake clears only
+the software inhibit: both inputs remain low until a fresh drive request.
+On that first drive, a qualifying high input must last at least 5 μs, followed by
+50 μs for the chip to wake. The command ACK and `get_driver_sleep() == 0` do not
+confirm physical wake, a drive response time, or measured power savings. These
+boards have no sleep pin or SPI sleep-state verification. PWM, direction and
+initialization settings remain available, and normal telemetry/session behavior
+continues while inhibited.
+
 The inhibit survives reconnects but clears at boot. Save configuration does not
 persist it; saved platform/encoder/direction/PWM setup is unchanged by this API.
 
@@ -409,8 +421,9 @@ change the state after any read; use **Read driver state** for a fresh snapshot.
 ## Communication-preserving board idle
 
 Board idle requires READY, compatible protocol 2.16 or later, and an exact known
-profile advertising `power.board_idle: true`. Driver sleep remains usable on
-protocol 2.15 boards; those boards receive no board-idle requests.
+profile advertising `power.board_idle: true` (v0.4.0). v0.3/Nano driver sleep
+does not imply board idle. v0.4 driver sleep remains usable with protocol 2.15;
+those connections receive no board-idle requests.
 
 ```js
 if (controller.supportsBoardIdle()) {

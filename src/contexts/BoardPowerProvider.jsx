@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { BoardPowerContext } from './BoardPowerContext';
-import { supportsBoardIdle, supportsDriverSleep } from '../commands/board_profile';
+import { getDriverSleepKind, supportsBoardIdle, supportsDriverSleep } from '../commands/board_profile';
 import { ErrorCode } from '../commands/kinisi_commands';
 
 /** One read-only polling loop shared by power controls and telemetry freshness. */
@@ -46,7 +46,9 @@ export default function BoardPowerProvider({ controller, isConnected, isActive =
         : kind === 'board' && error.code === ErrorCode.INTERNAL_ERROR
           ? 'Board transition failed; idle and motion inhibition remain active. Check motor power and driver faults, then explicitly retry.'
           : kind === 'driver' && requested === 0 && error.code === ErrorCode.INTERNAL_ERROR
-            ? 'Wake failed; the drivers remain inhibited. Check motor power and driver faults, then retry Wake drivers.'
+            ? getDriverSleepKind(connection) === 'input_low'
+              ? 'Wake failed; the software inhibit remains active. Check motor power and wiring, read driver state, then retry Wake drivers.'
+              : 'Wake failed; the drivers remain inhibited. Check motor power and driver faults, then retry Wake drivers.'
             : kind ? 'The requested state is not confirmed. Read power state, then retry if needed.'
               : 'Could not read power state. Check the connection and read again.';
       setState(previous => ({ controller, connection, idle: null, sleeping: null, busy: false,
