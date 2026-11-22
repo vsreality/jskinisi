@@ -68,3 +68,9 @@ export function supportsConfigurationPersistence(info) {
   return info?.protocol_major === 2 && Number.isInteger(info.protocol_minor) && info.protocol_minor >= 14 &&
     board?.model === 1 && board.revision === '0.4.0';
 }
+
+/** Driver sleep requires an explicitly advertised board capability. */
+export function supportsDriverSleep(info) {
+  return info?.protocol_major === 2 && Number.isInteger(info.protocol_minor) && info.protocol_minor >= 15 &&
+    getBoardProfile(info)?.power?.driver_sleep === true;
+}
