@@ -1,6 +1,6 @@
 // Generated from tools/commands.json by tools/sdkgenerator.py. Do not edit.
 export const SDK_VERSION = Object.freeze([2, 6, 0]);
-export const PROTOCOL_VERSION = Object.freeze([2, 15, 0]);
+export const PROTOCOL_VERSION = Object.freeze([2, 16, 0]);
 export const GET_TEMPERATURE = 0x50;
 export const GET_IMU = 0x51;
 export const GET_MOTOR_CURRENT = 0x52;
@@ -86,6 +86,8 @@ export const SAVE_CONFIGURATION = 0x59;
 export const GET_CONFIGURATION_FIELD = 0x5A;
 export const SET_DRIVER_SLEEP = 0x5B;
 export const GET_DRIVER_SLEEP = 0x5C;
+export const SET_BOARD_IDLE = 0x5D;
+export const GET_BOARD_IDLE = 0x5E;
 export const ErrorCode = Object.freeze({
   INCOMPATIBLE_PROTOCOL: 1,
   INVALID_ARGUMENT: 2,
@@ -106,6 +108,7 @@ export const ErrorCode = Object.freeze({
   SUBSCRIPTION_LIMIT: 17,
   SAMPLE_OUT_OF_RANGE: 18,
   DRIVERS_ASLEEP: 19,
+  BOARD_IDLE: 20,
 });
 export const ErrorDescriptions = Object.freeze({
   1: "The requested protocol version is incompatible with this firmware.",
@@ -127,6 +130,7 @@ export const ErrorDescriptions = Object.freeze({
   17: "This connection has no free subscription slots; unsubscribe an existing source first.",
   18: "The sensor reading is saturated; no valid measurement can be returned.",
   19: "Driver sleep is active. Explicitly wake the drivers before requesting this operation.",
+  20: "Board idle is active. Explicitly wake the board before changing driver sleep or starting a subscription.",
 });
 /** Preserve uint64/int64 precision instead of silently accepting rounded Numbers. */
 function exactBigInt(value) {
@@ -1222,7 +1226,7 @@ export class Commands {
     return HeartbeatConfig.decode(response);
   }
 
-  /** Create or replace this connection's subscription for an odometry source. Requires READY, enabled heartbeat and running odometry. The interval must be at least twice the calculation period. Stop or reset pauses delivery until a fresh sample is available. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CLOCK_NOT_READY, ODOMETRY_NOT_INITIALIZED.
+  /** Create or replace this connection's subscription for an odometry source. Requires READY, enabled heartbeat and running odometry. The interval must be at least twice the calculation period. Stop or reset pauses delivery until a fresh sample is available. Errors: BOARD_IDLE, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CLOCK_NOT_READY, ODOMETRY_NOT_INITIALIZED.
    * @deprecated Retired since protocol 2.6.0. Use SUBSCRIBE. Kept for compatibility; eligible for removal in protocol 3.0.0.
     */
   async subscribe_odometry(source, interval_ms) {
@@ -1417,7 +1421,7 @@ export class Commands {
     await this._request(INITIALIZE_PLATFORM_POSITION_PID_CONTROLLER, payload, 0);
   }
 
-  /** Create or replace this connection's subscription for a topic and resource. Requires READY and enabled heartbeat. Odometry must be running. The interval must meet the topic minimum and, for odometry, be at least twice the calculation period. Failed reads pause delivery until recovery. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, ODOMETRY_NOT_INITIALIZED, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SUBSCRIPTION_LIMIT, SAMPLE_OUT_OF_RANGE. */
+  /** Create or replace this connection's subscription for a topic and resource. Requires READY and enabled heartbeat. Odometry must be running. The interval must meet the topic minimum and, for odometry, be at least twice the calculation period. Failed reads pause delivery until recovery. Errors: BOARD_IDLE, INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, ODOMETRY_NOT_INITIALIZED, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SUBSCRIPTION_LIMIT, SAMPLE_OUT_OF_RANGE. */
   async subscribe(topic_id, index, interval_ms) {
     if (!Number.isInteger(topic_id) || !Object.hasOwn(TopicDefinitions, topic_id)) throw new RangeError('Invalid topic');
     if (!Number.isInteger(index) || index < 0 || index > TopicDefinitions[topic_id].indexMax) throw new RangeError('Invalid topic index');
@@ -1441,7 +1445,7 @@ export class Commands {
     await this._request(UNSUBSCRIBE, payload, 0);
   }
 
-  /** Create or replace this connection's subscription with a delivery mode. Requires READY and enabled heartbeat. The interval sets the sampling cadence and must meet the topic minimum; odometry also requires twice the calculation period. ON_CHANGE sends an initial snapshot and changed values, excluding timestamp and clock metadata. Failed reads pause delivery; recovery sends a fresh snapshot. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, ODOMETRY_NOT_INITIALIZED, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SUBSCRIPTION_LIMIT, SAMPLE_OUT_OF_RANGE. */
+  /** Create or replace this connection's subscription with a delivery mode. Requires READY and enabled heartbeat. The interval sets the sampling cadence and must meet the topic minimum; odometry also requires twice the calculation period. ON_CHANGE sends an initial snapshot and changed values, excluding timestamp and clock metadata. Failed reads pause delivery; recovery sends a fresh snapshot. Errors: BOARD_IDLE, INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, ODOMETRY_NOT_INITIALIZED, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SUBSCRIPTION_LIMIT, SAMPLE_OUT_OF_RANGE. */
   async subscribe_with_mode(topic_id, index, interval_ms, mode) {
     if (!Number.isInteger(topic_id) || !Object.hasOwn(TopicDefinitions, topic_id)) throw new RangeError('Invalid topic');
     if (!Object.values(SubscriptionMode).includes(mode)) throw new RangeError('Invalid subscription mode');
@@ -1489,7 +1493,7 @@ export class Commands {
     return MotorCurrentLimit.decode(response);
   }
 
-  /** Create or replace a subscription with independent trigger and delivery settings. Send an initial snapshot. PERIODIC uses poll_interval_ms; ON_EVENT requires zero polling interval and an event-capable source. ON_CHANGE suppresses unchanged values, excluding timestamp and clock metadata; max_silence_ms requests fresh refreshes, or zero disables refreshes. Delivery is best effort and requires READY and heartbeat. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, ODOMETRY_NOT_INITIALIZED, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SUBSCRIPTION_LIMIT, SAMPLE_OUT_OF_RANGE. */
+  /** Create or replace a subscription with independent trigger and delivery settings. Send an initial snapshot. PERIODIC uses poll_interval_ms; ON_EVENT requires zero polling interval and an event-capable source. ON_CHANGE suppresses unchanged values, excluding timestamp and clock metadata; max_silence_ms requests fresh refreshes, or zero disables refreshes. Delivery is best effort and requires READY and heartbeat. Errors: BOARD_IDLE, INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, ODOMETRY_NOT_INITIALIZED, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SUBSCRIPTION_LIMIT, SAMPLE_OUT_OF_RANGE. */
   async subscribe_configured(topic_id, index, poll_interval_ms, trigger, delivery, max_silence_ms) {
     if (!Number.isInteger(topic_id) || !Object.hasOwn(TopicDefinitions, topic_id)) throw new RangeError('Invalid topic');
     if (!Number.isInteger(index) || index < 0 || index > TopicDefinitions[topic_id].indexMax) throw new RangeError('Invalid topic index');
@@ -1544,7 +1548,7 @@ export class Commands {
     return view.getFloat64(0, true);
   }
 
-  /** Explicitly inhibit or wake the board's motor drivers. Entry stops motion and controllers across all connections. Wake verifies the retained settings for previously initialized channels and leaves outputs stopped. A failed wake keeps the inhibit set and permits retry. Repeating a confirmed state is a no-op. After a failed sleep entry, repeat sleep to retry pin verification. Requires a ready connection, protocol 2.15 and a board profile with driver sleep. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
+  /** Explicitly inhibit or wake the board's motor drivers. Entry stops motion and controllers across all connections. Wake verifies the retained settings for previously initialized channels and leaves outputs stopped. A failed wake keeps the inhibit set and permits retry. Repeating a confirmed state is a no-op. After a failed sleep entry, repeat sleep to retry pin verification. Requires a ready connection, protocol 2.15 and a board profile with driver sleep. Errors: BOARD_IDLE, INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
   async set_driver_sleep(sleeping) {
     if (sleeping !== 0 && sleeping !== 1) throw new RangeError('sleeping must be 0 (awake) or 1 (asleep)');
     const payload = new ArrayBuffer(1);
@@ -1561,5 +1565,24 @@ export class Commands {
     const sleeping = view.getUint8(0);
     if (sleeping !== 0 && sleeping !== 1) throw new Error('Invalid driver sleep state');
     return sleeping;
+  }
+
+  /** Enter communication-preserving board idle (1) or explicitly leave it (0). Entry stops control and sleeps all drivers. Existing subscriptions pause and resume with fresh samples. Heartbeat, time sync and direct reads remain available. Wake preserves an independent driver sleep request present on entry, otherwise it verifies initialized drivers and leaves outputs stopped. A failed transition keeps idle and motion inhibition active for explicit retry. Requires READY, protocol 2.16 and a board with board idle support. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, BOARD_IDLE. */
+  async set_board_idle(idle) {
+    if (idle !== 0 && idle !== 1) throw new RangeError('idle must be 0 (active) or 1 (idle)');
+    const payload = new ArrayBuffer(1);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, idle);
+    await this._request(SET_BOARD_IDLE, payload, 0);
+  }
+
+  /** Read the shared board idle request. It survives reconnect and clears on reset. GET_DRIVER_SLEEP reports the effective motor-driver inhibit, which is also set while the board is idle. Requires READY, protocol 2.16 and a board with board idle support. Errors: INVALID_LENGTH, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE. */
+  async get_board_idle() {
+    const payload = new ArrayBuffer(0);
+    const response = await this._request(GET_BOARD_IDLE, payload, 1);
+    const view = payloadView(response, 1);
+    const idle = view.getUint8(0);
+    if (idle !== 0 && idle !== 1) throw new Error('Invalid board idle state');
+    return idle;
   }
 }

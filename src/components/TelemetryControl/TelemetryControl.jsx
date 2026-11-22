@@ -1,9 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
+import { BoardPowerContext } from '../../contexts/BoardPowerContext';
 import { TopicDefinitions, SubscriptionMode, SubscriptionTrigger, SubscriptionDelivery } from '../../commands/kinisi_commands';
 import { supportsTopic } from '../../commands/telemetry';
 
 /** Explicit live updates, with cleanup even when a subscription ACK arrives after unmount. */
 export default function TelemetryControl({ controller, topic, index = 0, intervalMs = 100, mode = SubscriptionMode.PERIODIC, trigger = SubscriptionTrigger.PERIODIC, maxSilenceMs = 0, onSample }) {
+  const power = useContext(BoardPowerContext);
+  const monitored = power?.controller === controller && power.idleSupported;
+  const powerNow = useRef(null);
+  useEffect(() => { powerNow.current = monitored ? power.current : null; }, [monitored, power]);
   const [state, setState] = useState(null);
   const [interval, setIntervalValue] = useState(intervalMs);
   const [selectedMode, setSelectedMode] = useState(mode);
@@ -30,8 +35,30 @@ export default function TelemetryControl({ controller, topic, index = 0, interva
   }, [controller, connection, topic, index]);
 
   const current = state?.controller === controller && state.connection === connection && state.topic === topic && state.index === index ? state : null;
+  useEffect(() => {
+    const run = active.current, verified = powerNow.current;
+    if (!monitored || !run?.subscription || run.cancelled || run.refreshing ||
+        run.subscription.active === false || verified?.idle !== 0 || verified.transition === 'board' ||
+        run.requestedEpoch === verified.epoch) return;
+    run.requestedEpoch = verified.epoch;
+    run.received = false;
+    run.refreshing = true;
+    clearTimeout(run.timer);
+    // Early wake events may have arrived while status was still unverified.
+    // Rearm once after verification, retaining the exact stream and handle.
+    void run.subscription.refresh().then(() => {
+      run.refreshing = false;
+      if (active.current === run && !run.cancelled)
+        setState({ ...run, status: run.received ? (deliveryMode === SubscriptionMode.ON_CHANGE ? 'Listening for changes' : 'Live') : 'Waiting for samples…' });
+    }).catch(error => {
+      run.refreshing = false;
+      if (active.current === run && !run.cancelled)
+        setState({ ...run, status: 'Waiting for samples…', error: `Could not refresh live updates. Stop and start updates to retry. ${error.message}` });
+    });
+  }, [monitored, power, current, deliveryMode]);
   const start = async () => {
-    const run = { controller, connection, topic, index, cancelled: false, subscription: null };
+    const run = { controller, connection, topic, index, cancelled: false, subscription: null,
+      requestedEpoch: monitored ? power.current?.epoch : undefined };
     active.current = run;
     setState({ ...run, status: 'Starting…' });
     const stale = () => {
@@ -50,7 +77,10 @@ export default function TelemetryControl({ controller, topic, index = 0, interva
         pollIntervalMs: eventTrigger ? 0 : interval, maxSilenceMs: deliveryMode === SubscriptionMode.ON_CHANGE ? silence : 0,
       } : { topic, index, intervalMs: interval, mode: deliveryMode }, sample => {
         if (run.cancelled || active.current !== run) return;
+        if (monitored && (powerNow.current?.idle !== 0 || powerNow.current.transition === 'board' ||
+            run.requestedEpoch !== powerNow.current.epoch)) return;
         run.received = true;
+        run.sampleEpoch = powerNow.current?.epoch;
         callback.current(sample);
         setState({ ...run, status: deliveryMode === SubscriptionMode.ON_CHANGE ? 'Listening for changes' : 'Live' });
         stale();
@@ -86,6 +116,12 @@ export default function TelemetryControl({ controller, topic, index = 0, interva
   if (!supportsTopic(controller?.boardInfo, topic, index)) return null;
   const running = current && !current.cancelled && current.subscription?.active !== false &&
     ['Starting…', 'Waiting for samples…', 'Live', 'Listening for changes', 'No recent samples', 'Stopping…'].includes(current.status);
+  const paused = monitored && (power.current?.idle !== 0 || power.current?.transition === 'board');
+  const status = paused ? (power.current?.idle === 1 && !power.current?.transition
+    ? 'Paused by board idle — automatic samples are not live'
+    : 'Board state not verified — samples are not live')
+    : monitored && running && current.sampleEpoch !== power.current?.epoch
+      ? 'Waiting for fresh samples…' : current?.status;
   return <div className="telemetry-control">
     {configured && <label>Trigger
       <select value={selectedTrigger} disabled={!!running} onChange={event => setTrigger(Number(event.target.value))}>
@@ -108,9 +144,9 @@ export default function TelemetryControl({ controller, topic, index = 0, interva
         onChange={event => setSilence(Number(event.target.value))} />
     </label>}
     <button type="button" className="k-button"
-      disabled={current?.status === 'Starting…' || current?.status === 'Stopping…'}
+      disabled={current?.status === 'Starting…' || current?.status === 'Stopping…' || (!running && paused)}
       onClick={running ? stop : start}>{running ? 'Stop live updates' : 'Start live updates'}</button>
-    {current?.status && <p role="status" aria-label="Live update status">{current.status}</p>}
+    {status && <p role="status" aria-label="Live update status">{status}</p>}
     {current?.error && <p className="conn-error" role="alert">{current.error}</p>}
   </div>;
 }

@@ -74,3 +74,8 @@ export function supportsDriverSleep(info) {
   return info?.protocol_major === 2 && Number.isInteger(info.protocol_minor) && info.protocol_minor >= 15 &&
     getBoardProfile(info)?.power?.driver_sleep === true;
 }
+
+export function supportsBoardIdle(info) {
+  return info?.protocol_major === 2 && Number.isInteger(info.protocol_minor) && info.protocol_minor >= 16 &&
+    getBoardProfile(info)?.power?.board_idle === true;
+}

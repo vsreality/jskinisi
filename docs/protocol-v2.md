@@ -399,9 +399,56 @@ The inhibit survives reconnects but clears at boot. Save configuration does not
 persist it; saved platform/encoder/direction/PWM setup is unchanged by this API.
 
 In the web client's **Motor → Driver sleep — all motors** panel, state is read on
-entry and reconnect, and refreshed every two seconds while the tab is open. No
+entry and reconnect, and refreshed every two seconds while connected. No
 automatic sleep or wake occurs. Manual actions wait for ACK and then read the
 current state; failed requests show recovery guidance rather than a success
 claim. The panel remains available without initializing an individual motor,
 including when a restored platform owns every channel. Other connections can
 change the state after any read; use **Read driver state** for a fresh snapshot.
+
+## Communication-preserving board idle
+
+Board idle requires READY, compatible protocol 2.16 or later, and an exact known
+profile advertising `power.board_idle: true`. Driver sleep remains usable on
+protocol 2.15 boards; those boards receive no board-idle requests.
+
+```js
+if (controller.supportsBoardIdle()) {
+  await controller.set_board_idle(1); // ACK confirms entry; numeric 0/1 only.
+  const idle = await controller.get_board_idle(); // Scalar 0 or 1.
+  await controller.set_board_idle(0); // Explicit board wake; no motion resumes.
+}
+```
+
+Entry stops controllers and motion, sleeps the drivers, and pauses autonomous
+subscription samples. Existing subscriptions stay registered. USB and I²C remain
+available for explicit reads, heartbeat and time synchronization. New subscription
+requests and independent driver-sleep changes are rejected while idle with typed
+`ControllerError` code `ErrorCode.BOARD_IDLE` (20). An explicit board wake preserves
+driver sleep if it was requested before idle; otherwise it verifies the retained
+driver settings and leaves outputs stopped. Restart controllers and issue fresh
+motion commands when ready. Failed transitions retain idle and motion inhibition;
+read current state and explicitly retry. There is no implicit wake on reconnect.
+
+Board idle is volatile and does not change saved configuration. Reset clears the
+idle request and follows the usual stopped boot/restore behavior. Read driver
+sleep separately to inspect the effective motor inhibit, including board idle.
+
+The web client's Motor page has separate **Board idle** and **Driver sleep**
+controls. Both use one shared reader, refreshed every two seconds while connected
+and after manual transitions. Readbacks are snapshots, so another connection may
+change state between reads. No polling operation enters or leaves idle. A failed
+or mismatched readback never produces a success claim.
+
+Telemetry UI keeps subscription handles while idle and labels automatic samples
+as paused rather than live. Unknown power state also suppresses live status; after
+wake or recovery from an unverified power state, it rearms the retained stream
+once with the same settings and waits for a new sample before reporting
+live/listening again. This also handles a quiet on-change/event stream whose first
+wake event arrived before power readback. The SDK handle's `refresh()` method
+rearms that subscription without replacing its callback or ownership; pre-ACK
+events are discarded. A failed refresh offers stop/start retry. Explicit
+sensor reads remain available as snapshots. SDK idle readback, transition attempts
+and `BOARD_IDLE` errors clear cached legacy odometry and queued latest samples without
+unsubscribing. External idle changes become visible on the next shared state read;
+the existing no-recent-samples checks continue to apply between reads.

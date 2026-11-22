@@ -1,14 +1,14 @@
 // File: kinisi_session.js
 // Shared API-v2 framing, readiness and clock exchange for serial and proxy transports.
 import { Commands, INIT, READY, ERROR, TIME_SYNC_REQUEST, TIME_SYNC_RESPONSE,
-  SDK_VERSION, InitResponse, ErrorCode, ErrorDescriptions, GET_TEMPERATURE, GET_IMU, GET_MOTOR_CURRENT, GET_MOTOR_FAULTS, CLEAR_MOTOR_FAULTS, GET_PWM_FREQUENCY, SET_PWM_FREQUENCY, GET_MOTOR_CURRENT_LIMIT, SET_MOTOR_CURRENT_LIMIT, SAVE_CONFIGURATION, GET_CONFIGURATION_FIELD, SET_DRIVER_SLEEP, GET_DRIVER_SLEEP,
+  SDK_VERSION, InitResponse, ErrorCode, ErrorDescriptions, GET_TEMPERATURE, GET_IMU, GET_MOTOR_CURRENT, GET_MOTOR_FAULTS, CLEAR_MOTOR_FAULTS, GET_PWM_FREQUENCY, SET_PWM_FREQUENCY, GET_MOTOR_CURRENT_LIMIT, SET_MOTOR_CURRENT_LIMIT, SAVE_CONFIGURATION, GET_CONFIGURATION_FIELD, SET_DRIVER_SLEEP, GET_DRIVER_SLEEP, SET_BOARD_IDLE, GET_BOARD_IDLE,
   SET_HEARTBEAT_CONFIG, UNSUBSCRIBE_ODOMETRY, ENCODER_ODOMETRY_EVENT, PLATFORM_ODOMETRY_EVENT,
   SUBSCRIBE_ODOMETRY, SUBSCRIBE, SUBSCRIBE_WITH_MODE, SUBSCRIBE_CONFIGURED, UNSUBSCRIBE, TELEMETRY_EVENT, Topic, SubscriptionMode, SubscriptionTrigger, SubscriptionDelivery,
   decodeTelemetryEvent, EncoderOdometrySample, PlatformOdometrySample } from './kinisi_commands.js';
 import { POSITION_COMMANDS, supportsPositionControl, POSITION_PID_COMMANDS, supportsPositionPidControl } from './position_control.js';
 import { supportsTemperatureRead } from './temperature.js';
 import { supportsImuRead } from './imu.js';
-import { getBoardProfile, supportsBoardSensor, supportsMotorCurrent, supportsMotorFaults, getMotorCurrentLimitOptions, supportsMotorCurrentLimit, getPwmFrequencyOptions, supportsPwmFrequency, supportsConfigurationPersistence, supportsDriverSleep } from './board_profile.js';
+import { getBoardProfile, supportsBoardSensor, supportsMotorCurrent, supportsMotorFaults, getMotorCurrentLimitOptions, supportsMotorCurrentLimit, getPwmFrequencyOptions, supportsPwmFrequency, supportsConfigurationPersistence, supportsDriverSleep, supportsBoardIdle } from './board_profile.js';
 import { supportsTelemetry, supportsTopic } from './telemetry.js';
 
 export { PwmFrequency, Topic, SubscriptionMode, SubscriptionTrigger, SubscriptionDelivery } from './kinisi_commands.js';
@@ -135,6 +135,7 @@ export class KinisiSession extends Commands {
   supportsMotorCurrent(index = 0) { return supportsMotorCurrent(this.boardInfo, index); }
   supportsConfigurationPersistence() { return this.ready && supportsConfigurationPersistence(this.boardInfo); }
   supportsDriverSleep() { return this.ready && supportsDriverSleep(this.boardInfo); }
+  supportsBoardIdle() { return this.ready && supportsBoardIdle(this.boardInfo); }
 
   /** Serialize changes to one source, including cleanup racing with a replacement. */
   _telemetryOperation(key, operation) {
@@ -161,13 +162,15 @@ export class KinisiSession extends Commands {
     if (!Object.values(SubscriptionMode).includes(mode)) throw new RangeError('Invalid subscription mode');
     if (typeof callback !== 'function') throw new TypeError('A sample callback is required');
     const key = topic + ':' + index;
+    const sendSubscription = () => configured
+      ? super.subscribe_configured(topic, index, pollIntervalMs, trigger, delivery, maxSilenceMs)
+      : mode === SubscriptionMode.PERIODIC ? super.subscribe(topic, index, intervalMs)
+        : super.subscribe_with_mode(topic, index, intervalMs, mode);
     return this._telemetryOperation(key, async () => {
       const entry = { callback, closing: false, session: this._session };
       this._telemetryCandidates.set(key, entry);
       try {
-        if (configured) await super.subscribe_configured(topic, index, pollIntervalMs, trigger, delivery, maxSilenceMs);
-        else if (mode === SubscriptionMode.PERIODIC) await super.subscribe(topic, index, intervalMs);
-        else await super.subscribe_with_mode(topic, index, intervalMs, mode);
+        await sendSubscription();
       }
       catch (error) {
         // A lost ACK may still have installed a stream. Cancel that source so
@@ -183,6 +186,24 @@ export class KinisiSession extends Commands {
       let closing;
       return Object.freeze({
         get active() { return !entry.closing && owner._session === entry.session && owner._telemetryListeners.get(key) === entry; },
+        // Rearm the exact stream without replacing its callback or handle. The
+        // firmware resets its baseline and acquires a new initial snapshot.
+        refresh: () => {
+          // Fence already scheduled callbacks immediately, before the queued
+          // request gets its turn on the transport.
+          entry.refreshing = true;
+          entry.latest = null;
+          entry.sampleEpoch = (entry.sampleEpoch ?? 0) + 1;
+          return this._telemetryOperation(key, async () => {
+            if (entry.closing || this._telemetryListeners.get(key) !== entry) throw new ProtocolError('Subscription is no longer active');
+            entry.refreshing = true;
+            this._telemetryCandidates.set(key, entry);
+            try { await sendSubscription(); }
+            finally {
+              if (this._telemetryCandidates.get(key) === entry) this._telemetryCandidates.delete(key);
+            }
+          });
+        },
         unsubscribe: () => {
           if (closing) return closing;
           if (this._telemetryListeners.get(key) !== entry || this._session !== entry.session) return Promise.resolve();
@@ -215,8 +236,17 @@ export class KinisiSession extends Commands {
     this._telemetryOperations.clear();
   }
 
+  _discardCachedTelemetry() {
+    this._subscriptionSamples.clear();
+    for (const entry of this._telemetryListeners.values()) {
+      entry.latest = null;
+      entry.sampleEpoch = (entry.sampleEpoch ?? 0) + 1;
+    }
+  }
+
   /** Keep at most the latest waiting sample while an asynchronous callback runs. */
   _deliverTelemetry(key, entry, sample) {
+    if (entry.refreshing) return;
     entry.latest = sample;
     if (entry.delivering) return;
     const deliver = () => {
@@ -224,9 +254,10 @@ export class KinisiSession extends Commands {
         entry.latest = null; entry.delivering = false; return;
       }
       const next = entry.latest;
+      const epoch = entry.sampleEpoch;
       entry.latest = null;
       Promise.resolve().then(() => {
-        if (!entry.closing && this._telemetryListeners.get(key) === entry) return entry.callback(next);
+        if (!entry.closing && entry.sampleEpoch === epoch && this._telemetryListeners.get(key) === entry) return entry.callback(next);
       }).catch(error => { this.lastTelemetryError = error; }).then(deliver);
     };
     entry.delivering = true;
@@ -236,6 +267,8 @@ export class KinisiSession extends Commands {
   /** Generated commands cannot bypass the INIT/READY gate. */
   async _request(command, payload, responseLength) {
     if (!this.ready) throw new ProtocolError('Controller is not ready; complete INIT first');
+    if ([SET_BOARD_IDLE, GET_BOARD_IDLE].includes(command) && !this.supportsBoardIdle())
+      throw new ProtocolError('Board idle requires a known supported board and firmware protocol 2.16 or newer');
     if ([SET_DRIVER_SLEEP, GET_DRIVER_SLEEP].includes(command) && !this.supportsDriverSleep())
       throw new ProtocolError('Driver sleep requires a known supported board and firmware protocol 2.15 or newer');
     if ([SAVE_CONFIGURATION, GET_CONFIGURATION_FIELD].includes(command) && !this.supportsConfigurationPersistence())
@@ -302,9 +335,19 @@ export class KinisiSession extends Commands {
     if (POSITION_COMMANDS.has(command) && !supportsPositionControl(this.boardInfo))
       throw new ProtocolError('Position control requires firmware protocol 2.2 or newer');
     const session = this._session;
-    const response = await this._sendRequest(command, payload, responseLength, false);
+    if (command === SET_BOARD_IDLE) this._discardCachedTelemetry();
+    let response;
+    try { response = await this._sendRequest(command, payload, responseLength, false); }
+    catch (error) {
+      if (error.code === ErrorCode.BOARD_IDLE) this._discardCachedTelemetry();
+      throw error;
+    }
     if (this._session !== session) throw new ConnectionClosedError();
     const data = bytes(payload);
+    if (command === SET_BOARD_IDLE || (command === GET_BOARD_IDLE && bytes(response)[0] === 1)) {
+      // Keep subscription registrations, but discard cached pre-transition data.
+      this._discardCachedTelemetry();
+    }
     if (command === SET_HEARTBEAT_CONFIG) {
       const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
       this._heartbeatIntervalMs = data[0] ? view.getUint32(1, true) / 5 : null;
@@ -314,7 +357,10 @@ export class KinisiSession extends Commands {
       // Activate at the ACK boundary, before the reader dispatches a coalesced event.
       const key = data[0] + ':' + data[1];
       const entry = this._telemetryCandidates.get(key);
-      if (entry && !entry.closing && entry.session === session) this._telemetryListeners.set(key, entry);
+      if (entry && !entry.closing && entry.session === session) {
+        entry.refreshing = false;
+        this._telemetryListeners.set(key, entry);
+      }
       if (data[0] === Topic.ENCODER_ODOMETRY) this._subscriptionSamples.delete(data[1]);
       if (data[0] === Topic.PLATFORM_ODOMETRY) this._subscriptionSamples.delete(4);
     } else if (command === UNSUBSCRIBE) {

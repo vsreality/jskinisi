@@ -10,7 +10,7 @@ TYPES = {'bool':(1,'Uint8'), 'uint8_t':(1,'Uint8'), 'int8_t':(1,'Int8'),
 # Additional user commands are generated freely; these support handwritten session behavior.
 # Sensor exports are required by the session even when connected firmware is older.
 SESSION_COMMANDS = {'PING', 'SET_HEARTBEAT_CONFIG', 'SUBSCRIBE_ODOMETRY',
-                    'SAVE_CONFIGURATION', 'GET_CONFIGURATION_FIELD', 'SET_DRIVER_SLEEP', 'GET_DRIVER_SLEEP',
+                    'SAVE_CONFIGURATION', 'GET_CONFIGURATION_FIELD', 'SET_DRIVER_SLEEP', 'GET_DRIVER_SLEEP', 'SET_BOARD_IDLE', 'GET_BOARD_IDLE',
                     'UNSUBSCRIBE_ODOMETRY', 'ENCODER_ODOMETRY_EVENT', 'PLATFORM_ODOMETRY_EVENT',
                     'GET_TEMPERATURE', 'GET_IMU', 'GET_MOTOR_CURRENT', 'GET_MOTOR_FAULTS', 'CLEAR_MOTOR_FAULTS', 'GET_PWM_FREQUENCY', 'SET_PWM_FREQUENCY', 'GET_MOTOR_CURRENT_LIMIT', 'SET_MOTOR_CURRENT_LIMIT', 'SUBSCRIBE', 'SUBSCRIBE_WITH_MODE', 'UNSUBSCRIBE', 'TELEMETRY_EVENT', 'SUBSCRIBE_CONFIGURED'}
 
@@ -26,6 +26,12 @@ def validate_driver_sleep(schema):
             setter.get('response') or getter.get('direction') != 'client_to_controller' or getter.get('properties') or
             getter.get('response', {}).get('type') != 'uint8_t'):
         raise ValueError('Invalid driver sleep envelope')
+    setter, getter = commands['SET_BOARD_IDLE'], commands['GET_BOARD_IDLE']
+    if (setter.get('direction') != 'client_to_controller' or
+            [(p.get('name'), p.get('type'), p.get('range')) for p in setter.get('properties', [])] != [('idle', 'uint8_t', [0, 1])] or
+            setter.get('response') or getter.get('direction') != 'client_to_controller' or getter.get('properties') or
+            getter.get('response', {}).get('type') != 'uint8_t'):
+        raise ValueError('Invalid board idle envelope')
 
 
 def validate_pwm_frequency(schema):
@@ -287,6 +293,8 @@ export function decodeTelemetryEvent(payload) {
             lines.append("    if (typeof enabled !== 'boolean' || !Number.isInteger(threshold_ma) || threshold_ma < 1 || threshold_ma > 65535) throw new RangeError('Expected enabled boolean and threshold_ma integer from 1 to 65535');\n")
         if c['command'] == 'SET_DRIVER_SLEEP':
             lines.append("    if (sleeping !== 0 && sleeping !== 1) throw new RangeError('sleeping must be 0 (awake) or 1 (asleep)');\n")
+        if c['command'] == 'SET_BOARD_IDLE':
+            lines.append("    if (idle !== 0 && idle !== 1) throw new RangeError('idle must be 0 (active) or 1 (idle)');\n")
         if c['command'] in {'INITIALIZE_MOTOR_CONTROLLER', 'START_PLATFORM_CONTROLLER'}:
             # These existing APIs also accept numeric strings from UI controls.
             for name in ('kp', 'ki', 'kd', 'integral_limit'):
@@ -328,6 +336,9 @@ export function decodeTelemetryEvent(payload) {
             elif c['command'] == 'GET_DRIVER_SLEEP':
                 lines.append(f'    const view = payloadView(response, {size(t)});\n    const sleeping = {read(t,0)};\n')
                 lines.append("    if (sleeping !== 0 && sleeping !== 1) throw new Error('Invalid driver sleep state');\n    return sleeping;\n")
+            elif c['command'] == 'GET_BOARD_IDLE':
+                lines.append(f'    const view = payloadView(response, {size(t)});\n    const idle = {read(t,0)};\n')
+                lines.append("    if (idle !== 0 && idle !== 1) throw new Error('Invalid board idle state');\n    return idle;\n")
             else:
                 lines.append(f'    const view = payloadView(response, {size(t)});\n    return {read(t,0)};\n')
         else: lines.append(f'    await this._request({c["command"]}, payload, 0);\n')

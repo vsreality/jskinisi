@@ -34,12 +34,14 @@ class ProfileTests(unittest.TestCase):
             lambda b: b['boards'][3]['motor_features'][0].update(current_limit='yes'),
             lambda b: b['boards'][3].update(power={'driver_sleep': 1}),
             lambda b: b['boards'][3].update(power={'driver_sleep': True, 'sleep_pin': 'PA0'}),
+            lambda b: b['boards'][3]['power'].update(board_idle=1),
         ):
             bundle = deepcopy(self.bundle); mutate(bundle)
             with self.assertRaises(ValueError): updater.generate(bundle)
 
     def test_driver_sleep_is_explicit_and_only_on_v4(self):
         self.assertEqual([p['power']['driver_sleep'] for p in self.bundle['boards']], [False, False, False, True])
+        self.assertEqual([p['power']['board_idle'] for p in self.bundle['boards']], [False, False, False, True])
         legacy = deepcopy(self.bundle)
         for profile in legacy['boards']: profile.pop('power')
         updater.validate(legacy)  # Older bundles remain readable; no inferred capability.
