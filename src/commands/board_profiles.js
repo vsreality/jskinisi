@@ -120,7 +120,7 @@ export const BOARD_PROFILES = [
     },
     "power": {
       "driver_sleep": true,
-      "board_idle": false
+      "board_idle": true
     },
     "resources": {
       "motors": 4,
@@ -176,7 +176,7 @@ export const BOARD_PROFILES = [
     },
     "power": {
       "driver_sleep": true,
-      "board_idle": false
+      "board_idle": true
     },
     "resources": {
       "motors": 4,

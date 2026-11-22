@@ -44,7 +44,9 @@ export default function BoardPowerProvider({ controller, isConnected, isActive =
           ? 'The board remains idle. Read board state, then explicitly retry the transition if still wanted.'
           : 'Board idle is active. Use Wake board before changing driver sleep or starting live updates.'
         : kind === 'board' && error.code === ErrorCode.INTERNAL_ERROR
-          ? 'Board transition failed; idle and motion inhibition remain active. Check motor power and driver faults, then explicitly retry.'
+          ? getDriverSleepKind(connection) === 'input_low'
+            ? 'Board transition failed; idle and motion inhibition remain active. Check motor power and wiring, read board state, then explicitly retry.'
+            : 'Board transition failed; idle and motion inhibition remain active. Check motor power and driver faults, then explicitly retry.'
           : kind === 'driver' && requested === 0 && error.code === ErrorCode.INTERNAL_ERROR
             ? getDriverSleepKind(connection) === 'input_low'
               ? 'Wake failed; the software inhibit remains active. Check motor power and wiring, read driver state, then retry Wake drivers.'

@@ -10,12 +10,16 @@ function PowerControls() {
   return <>
     <section className="control-section" aria-labelledby="boardIdleTitle">
       <h3 id="boardIdleTitle">Board idle</h3>
-      {!idleSupported ? <p className="section-help">Board idle requires a supported v0.4 board and firmware protocol 2.16 or newer.</p>
+      {!idleSupported ? <p className="section-help">Board idle requires a supported v0.3.0 or Nano v0.3.1 board with protocol 2.18 or newer, or v0.4 with protocol 2.16 or newer.</p>
         : !available ? <p>Connect and wait for the controller to be ready.</p> : <>
-          <p className="section-help">Idle stops motion, sleeps the drivers and pauses automatic telemetry. USB and I²C communication, heartbeat, time sync and direct reads remain available.</p>
+          <p className="section-help">{inputLow
+            ? 'Idle stops motion, inhibits motor commands, holds the DRV8870 inputs low and pauses automatic telemetry.'
+            : 'Idle stops motion, sleeps the drivers and pauses automatic telemetry.'} USB and I²C communication, heartbeat, time sync and direct reads remain available. Idle keeps the USB session connected; it does not require reconnecting. The CPU can use shallow sleep between scheduled work.</p>
           <p><output aria-label="Board idle state" aria-live="polite">{current?.transition === 'board' ? 'Changing board state…'
             : current?.idle === 1 ? 'Idle — automatic telemetry paused' : current?.idle === 0 ? 'Active — board idle cleared' : 'State not verified'}</output></p>
-          <p className="section-help">Wake board preserves driver sleep if it was active before idle. Otherwise it verifies the drivers and leaves outputs stopped. Existing subscriptions resume with fresh samples; restart controllers before requesting new motion.</p>
+          <p className="section-help">{inputLow
+            ? 'Wake board preserves a motor inhibit that was active before idle. Otherwise it clears the inhibit while both inputs remain low until a fresh drive or explicit short brake. It does not verify physical driver wake or resume motion.'
+            : 'Wake board preserves driver sleep if it was active before idle. Otherwise it verifies the drivers and leaves outputs stopped.'} Existing subscriptions resume with fresh samples; restart controllers before requesting new motion.</p>
           <div className="action-row">
             <button type="button" className="k-button" disabled={current?.busy} onClick={() => update()}>Read board state</button>
             <button type="button" className="k-button" disabled={current?.busy} onClick={() => update('board', 1)}>Enter board idle</button>

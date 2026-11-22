@@ -86,6 +86,9 @@ export function supportsDriverSleep(info) {
 }
 
 export function supportsBoardIdle(info) {
-  return info?.protocol_major === 2 && Number.isInteger(info.protocol_minor) && info.protocol_minor >= 16 &&
-    getBoardProfile(info)?.power?.board_idle === true;
+  const profile = getBoardProfile(info);
+  const minimum = profile?.board.model === 1
+    ? { '0.3.0': 18, '0.3.1': 18, '0.4.0': 16 }[profile.board.revision] : undefined;
+  return minimum !== undefined && info?.protocol_major === 2 && Number.isInteger(info.protocol_minor) &&
+    info.protocol_minor >= minimum && info.protocol_minor <= 255 && profile.power?.board_idle === true;
 }

@@ -423,10 +423,11 @@ change the state after any read; use **Read driver state** for a fresh snapshot.
 
 ## Communication-preserving board idle
 
-Board idle requires READY, compatible protocol 2.16 or later, and an exact known
-profile advertising `power.board_idle: true` (v0.4.0). v0.3/Nano driver sleep
-does not imply board idle. v0.4 driver sleep remains usable with protocol 2.15;
-those connections receive no board-idle requests.
+Board idle requires READY, protocol major 2, and an exact known profile advertising
+`power.board_idle: true`. Model 1 v0.3.0 and Nano v0.3.1 require protocol 2.18 or
+later; v0.4.0 retains support from protocol 2.16. v0.3/Nano at protocol 2.17 and
+v0.4 at protocol 2.15 retain driver sleep without receiving board-idle requests.
+v0.1, v0.2 and unknown revisions remain unsupported.
 
 ```js
 if (controller.supportsBoardIdle()) {
@@ -436,15 +437,24 @@ if (controller.supportsBoardIdle()) {
 }
 ```
 
-Entry stops controllers and motion, sleeps the drivers, and pauses autonomous
+Entry stops controllers and motion, inhibits the drivers, and pauses autonomous
 subscription samples. Existing subscriptions stay registered. USB and I²C remain
 available for explicit reads, heartbeat and time synchronization. New subscription
 requests and independent driver-sleep changes are rejected while idle with typed
 `ControllerError` code `ErrorCode.BOARD_IDLE` (20). An explicit board wake preserves
-driver sleep if it was requested before idle; otherwise it verifies the retained
-driver settings and leaves outputs stopped. Restart controllers and issue fresh
+driver sleep if it was requested before idle. Otherwise, v0.4 verifies the retained
+driver settings; v0.3/Nano clears the software inhibit and keeps both DRV8870
+inputs low until a fresh drive or explicit short-brake request. Neither case
+resumes motion. Restart controllers and issue fresh
 motion commands when ready. Failed transitions retain idle and motion inhibition;
 read current state and explicitly retry. There is no implicit wake on reconnect.
+
+Idle preserves the existing USB session and does not disconnect or re-enumerate
+the device. The CPU may use shallow sleep between scheduled work; heartbeat,
+clock synchronization, explicit reads and USB/I²C service continue. Querying
+idle state never clears it or resumes motion. Normal session timeout and physical
+disconnect rules still apply. Firmware scheduling support does not establish a
+measured reduction in power consumption or a guaranteed wake latency.
 
 Board idle is volatile and does not change saved configuration. Reset clears the
 idle request and follows the usual stopped boot/restore behavior. Read driver

@@ -30,7 +30,7 @@ describe('bundled board profiles', () => {
     const profile = getBoardProfile(nano);
     expect(profile.board).toEqual({ model: 1, revision: '0.3.1' });
     expect(profile.resources).toEqual({ motors: 4, encoders: 4, gpio: 10, status_leds: 1 });
-    expect(profile.power).toEqual({ driver_sleep: true, board_idle: false });
+    expect(profile.power).toEqual({ driver_sleep: true, board_idle: true });
     expect(profile.sensors).toEqual({ temperature: [], imu: [] });
     expect(hasBoardSensor(nano, 'temperature')).toBe(false);
     expect(getBoardProfile({ ...nano, board_patch: 2 })).toBeNull();

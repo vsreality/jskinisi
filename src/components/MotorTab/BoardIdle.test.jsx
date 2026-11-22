@@ -7,8 +7,9 @@ import { ErrorCode, Topic, SubscriptionMode, SubscriptionTrigger } from '../../c
 
 afterEach(() => vi.useRealTimers());
 const info = { board_model: 1, board_major: 0, board_minor: 4, board_patch: 0, protocol_major: 2, protocol_minor: 16 };
-function client() {
-  const c = { boardInfo: { ...info }, ready: true, idle: 0, sleeping: 0,
+const boards = [info, ...[0, 1].map(board_patch => ({ ...info, board_minor: 3, board_patch, protocol_minor: 18 }))];
+function client(boardInfo = info) {
+  const c = { boardInfo: { ...boardInfo }, ready: true, idle: 0, sleeping: 0,
     get_board_idle: vi.fn(async () => c.idle), get_driver_sleep: vi.fn(async () => c.sleeping),
     set_board_idle: vi.fn(async value => { c.idle = value; }), set_driver_sleep: vi.fn(),
     handle: { active: true, unsubscribe: vi.fn().mockResolvedValue(), refresh: vi.fn().mockResolvedValue() },
@@ -18,8 +19,8 @@ function client() {
 const click = name => fireEvent.click(screen.getByRole('button', { name }));
 const idleState = () => screen.getByLabelText('Board idle state');
 
-it('waits for transition ACK and readback, preserving independent driver sleep on board wake', async () => {
-  const c = client(); c.sleeping = 1;
+it.each(boards)('waits for ACK/readback and preserves prior inhibit on board wake: %j', async board => {
+  const c = client(board); c.sleeping = 1;
   render(<DriverSleep controller={c} isConnected />);
   await screen.findByText('Active — board idle cleared');
   expect(c.set_board_idle).not.toHaveBeenCalled();
@@ -34,13 +35,13 @@ it('waits for transition ACK and readback, preserving independent driver sleep o
   expect(screen.getByRole('button', { name: 'Wake drivers' })).toBeDisabled();
   click('Wake board');
   await screen.findByText('Active — board idle cleared');
-  expect(screen.getByLabelText('Driver sleep state')).toHaveTextContent('Asleep');
+  expect(screen.getByLabelText('Driver sleep state')).toHaveTextContent(board.board_minor === 3 ? 'Inhibited' : 'Asleep');
   expect(c.set_driver_sleep).not.toHaveBeenCalled();
   expect(c.set_board_idle.mock.calls).toEqual([[1], [0]]);
 });
 
-it('offers explicit retry after failed entry or wake and never reports unverified success', async () => {
-  const c = client();
+it.each(boards)('offers explicit retry without unverified success: %j', async board => {
+  const c = client(board);
   render(<DriverSleep controller={c} isConnected />);
   await screen.findByText('Active — board idle cleared');
   c.set_board_idle.mockRejectedValueOnce({ code: ErrorCode.INTERNAL_ERROR });
@@ -48,6 +49,7 @@ it('offers explicit retry after failed entry or wake and never reports unverifie
   await screen.findByRole('alert');
   expect(idleState()).toHaveTextContent('State not verified');
   expect(screen.getByRole('alert')).toHaveTextContent('idle and motion inhibition remain active');
+  expect(screen.getByRole('alert')).toHaveTextContent(board.board_minor === 3 ? 'motor power and wiring' : 'driver faults');
   click('Enter board idle');
   await screen.findByText('Idle — automatic telemetry paused');
   c.set_board_idle.mockRejectedValueOnce(new Error('Timed out'));
@@ -60,12 +62,12 @@ it('offers explicit retry after failed entry or wake and never reports unverifie
   await screen.findByText('Active — board idle cleared');
 });
 
-it('reads idle after reconnect and ignores an old in-flight reply', async () => {
-  const c = client(); let finish;
+it.each(boards)('reads idle after reconnect and ignores an old reply: %j', async board => {
+  const c = client(board); let finish;
   c.get_board_idle.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
   const view = render(<DriverSleep controller={c} isConnected />);
   view.rerender(<DriverSleep controller={c} isConnected={false} />);
-  c.boardInfo = { ...info }; c.idle = 1; c.sleeping = 1;
+  c.boardInfo = { ...board }; c.idle = 1; c.sleeping = 1;
   view.rerender(<DriverSleep controller={c} isConnected />);
   await screen.findByText('Idle — automatic telemetry paused');
   await act(async () => finish(0));
@@ -73,11 +75,11 @@ it('reads idle after reconnect and ignores an old in-flight reply', async () => 
   expect(c.set_board_idle).not.toHaveBeenCalled();
 });
 
-it('uses one poll for both panels and marks retained subscriptions stale across external idle/wake', async () => {
-  const c = client(), onSample = vi.fn();
+it.each(boards)('uses one poll and preserves fresh telemetry across external idle/wake: %j', async board => {
+  const c = client(board), onSample = vi.fn();
   const content = active => <BoardPowerProvider controller={c} isConnected isActive={active}>
     <DriverSleep controller={c} isConnected />
-    <TelemetryControl controller={c} topic={Topic.TEMPERATURE} mode={SubscriptionMode.ON_CHANGE} onSample={onSample} />
+    <TelemetryControl controller={c} topic={Topic.ENCODER_ODOMETRY} mode={SubscriptionMode.ON_CHANGE} onSample={onSample} />
   </BoardPowerProvider>;
   const view = render(content(true));
   await screen.findByText('Active — board idle cleared');
@@ -86,7 +88,7 @@ it('uses one poll for both panels and marks retained subscriptions stale across 
   click('Start live updates');
   await screen.findByRole('button', { name: 'Stop live updates' });
   const sample = c.subscribe.mock.calls[0][1];
-  act(() => sample({ celsius: 22 }));
+  act(() => sample({ angle: 22 }));
   expect(screen.getByLabelText('Live update status')).toHaveTextContent('Listening for changes');
   vi.useFakeTimers();
   view.rerender(content(false)); view.rerender(content(true));
@@ -97,15 +99,34 @@ it('uses one poll for both panels and marks retained subscriptions stale across 
   expect(c.get_board_idle).toHaveBeenCalledTimes(before + 1);
   expect(screen.getByLabelText('Live update status')).toHaveTextContent('Paused by board idle');
   expect(c.handle.unsubscribe).not.toHaveBeenCalled();
-  act(() => sample({ celsius: 99 }));
+  act(() => sample({ angle: 99 }));
   expect(onSample).toHaveBeenCalledTimes(1);
   c.idle = 0; c.sleeping = 0;
   await act(async () => vi.advanceTimersByTimeAsync(2000));
   expect(screen.getByLabelText('Live update status')).toHaveTextContent('Waiting for fresh samples');
-  act(() => sample({ celsius: 23 }));
+  act(() => sample({ angle: 23 }));
   expect(screen.getByLabelText('Live update status')).toHaveTextContent('Listening for changes');
   expect(c.subscribe).toHaveBeenCalledTimes(1);
   expect(c.handle.refresh).toHaveBeenCalledTimes(1);
+  expect(c.set_board_idle).not.toHaveBeenCalled();
+  expect(c.set_driver_sleep).not.toHaveBeenCalled();
+});
+
+it.each([0, 1])('explains input-low board idle and keeps 2.17 driver-only for v0.3.%s', async board_patch => {
+  const c = client({ ...info, board_minor: 3, board_patch, protocol_minor: 17 });
+  const view = render(<DriverSleep controller={c} isConnected />);
+  await screen.findByText('Inhibit cleared — fresh drive or brake allowed');
+  expect(c.get_board_idle).not.toHaveBeenCalled();
+  expect(screen.queryByRole('button', { name: 'Enter board idle' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Sleep drivers' })).toBeEnabled();
+  c.boardInfo = { ...c.boardInfo, protocol_minor: 18 };
+  view.rerender(<DriverSleep controller={c} isConnected />);
+  await screen.findByText('Active — board idle cleared');
+  expect(screen.getByText(/Idle stops motion, inhibits motor commands/)).toHaveTextContent('keeps the USB session connected');
+  expect(screen.getByText(/Wake board preserves a motor inhibit/)).toHaveTextContent('fresh drive or explicit short brake');
+  expect(screen.queryByText(/Otherwise it verifies the drivers/)).not.toBeInTheDocument();
+  click('Read board state');
+  await waitFor(() => expect(c.get_board_idle).toHaveBeenCalledTimes(2));
   expect(c.set_board_idle).not.toHaveBeenCalled();
   expect(c.set_driver_sleep).not.toHaveBeenCalled();
 });

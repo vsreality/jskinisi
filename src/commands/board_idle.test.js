@@ -26,6 +26,46 @@ it('gates board idle before transmission while retaining protocol 2.15 driver sl
   await expect(c.set_driver_sleep(1)).resolves.toBeUndefined();
 });
 
+it.each([0, 1])('gates exact v0.3.%s board idle at 2.18 while preserving 2.17 driver-only control', async board_patch => {
+  const c = new KinisiSession();
+  const board = { ...info, board_minor: 3, board_patch, protocol_minor: 18 };
+  c.boardInfo = board; c._sendRequest = vi.fn();
+  expect(c.supportsBoardIdle()).toBe(false);
+  await expect(c.set_board_idle(1)).rejects.toThrow('not ready');
+  c.ready = true;
+  for (const override of [{ protocol_minor: 16 }, { protocol_minor: 17 }, { protocol_minor: '18' },
+    { protocol_minor: NaN }, { protocol_minor: 256 }, { protocol_major: 3 },
+    { board_patch: 2 }, { board_model: 2 }, { board_major: 1 },
+    { board_minor: 1, board_patch: 0 }, { board_minor: 2, board_patch: 0 }]) {
+    c.boardInfo = { ...board, ...override };
+    expect(c.supportsBoardIdle()).toBe(false);
+    await expect(c.set_board_idle(1)).rejects.toThrow('protocol 2.18');
+    await expect(c.get_board_idle()).rejects.toThrow('protocol 2.18');
+  }
+  expect(c._sendRequest).not.toHaveBeenCalled();
+  c.boardInfo = { ...board, protocol_minor: 17 };
+  expect(c.supportsDriverSleep()).toBe(true);
+  c._sendRequest.mockResolvedValue(new ArrayBuffer(0));
+  await c.set_driver_sleep(1);
+  c.boardInfo = board;
+  expect(c.supportsBoardIdle()).toBe(true);
+  expect(c.supportsDriverSleep()).toBe(true);
+  expect(supportsBoardIdle({ ...board, protocol_minor: 19 })).toBe(true);
+  c._sendRequest.mockClear();
+  c._sendRequest.mockResolvedValue(new Uint8Array([1]));
+  expect(await c.get_board_idle()).toBe(1);
+  expect(c._sendRequest).toHaveBeenCalledExactlyOnceWith(GET_BOARD_IDLE, new ArrayBuffer(0), 1, false);
+  c._sendRequest.mockResolvedValue(new ArrayBuffer(0));
+  for (const idle of [1, 0]) {
+    await c.set_board_idle(idle);
+    expect(c._sendRequest).toHaveBeenLastCalledWith(SET_BOARD_IDLE, new Uint8Array([idle]).buffer, 0, false);
+  }
+  const superseded = new ControllerError(ErrorCode.BOARD_IDLE, SET_BOARD_IDLE, 4);
+  c._sendRequest.mockRejectedValue(superseded);
+  await expect(c.set_board_idle(0)).rejects.toBe(superseded);
+  expect(c.ready).toBe(true);
+});
+
 it('encodes one-byte state and rejects coercion or malformed readback', async () => {
   const c = new Commands(); c._request = vi.fn().mockResolvedValue(new ArrayBuffer(0));
   for (const idle of [1, 0]) {

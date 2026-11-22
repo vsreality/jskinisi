@@ -43,8 +43,8 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual({p['board']['revision']: p['power'] for p in self.bundle['boards']}, {
             '0.1.0': {'driver_sleep': False, 'board_idle': False},
             '0.2.0': {'driver_sleep': False, 'board_idle': False},
-            '0.3.0': {'driver_sleep': True, 'board_idle': False},
-            '0.3.1': {'driver_sleep': True, 'board_idle': False},
+            '0.3.0': {'driver_sleep': True, 'board_idle': True},
+            '0.3.1': {'driver_sleep': True, 'board_idle': True},
             '0.4.0': {'driver_sleep': True, 'board_idle': True},
         })
         legacy = deepcopy(self.bundle)
