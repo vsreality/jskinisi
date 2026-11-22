@@ -122,8 +122,8 @@ it.each([0, 1])('shows truthful DRV8870 inhibit, explicit release and reconnect 
   c.boardInfo = { ...boardInfo, board_minor: 3, board_patch, protocol_minor: 17 };
   c.get_board_idle = vi.fn(); c.set_board_idle = vi.fn();
   const view = render(<DriverSleep controller={c} isConnected />);
-  await screen.findByText('Inhibit cleared — fresh drive allowed');
-  expect(screen.getByText(/both inputs stay low until a fresh drive/)).toBeInTheDocument();
+  await screen.findByText('Inhibit cleared — fresh drive or brake allowed');
+  expect(screen.getByText(/both inputs stay low until a fresh drive or explicit short-brake request/)).toHaveTextContent('Short brake drives both inputs high; coast returns them low');
   expect(screen.getByText(/no sleep-state readback/)).toHaveTextContent('1.5 ms');
   expect(screen.getByText(/no sleep-state readback/)).toHaveTextContent('5 μs');
   expect(screen.getByText(/no sleep-state readback/)).toHaveTextContent('50 μs');
@@ -145,7 +145,7 @@ it.each([0, 1])('shows truthful DRV8870 inhibit, explicit release and reconnect 
   expect(screen.getByRole('alert')).toHaveTextContent('state is not confirmed');
   c.get_driver_sleep.mockResolvedValue(0);
   click('Wake drivers');
-  await screen.findByText('Inhibit cleared — fresh drive allowed');
+  await screen.findByText('Inhibit cleared — fresh drive or brake allowed');
   expect(c.set_driver_sleep.mock.calls).toEqual([[1], [0], [0]]);
   expect(c.set_board_idle).not.toHaveBeenCalled();
   // A second transport can inhibit without any implicit local wake.

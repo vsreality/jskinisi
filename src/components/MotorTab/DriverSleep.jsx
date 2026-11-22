@@ -28,12 +28,12 @@ function PowerControls() {
       {!driverSupported ? <p className="section-help">Manual driver sleep requires a supported v0.3.0 or Nano v0.3.1 board with protocol 2.17 or newer, or v0.4 with protocol 2.15 or newer.</p>
         : !available ? <p>Connect and wait for the controller to be ready.</p> : <>
           <p className="section-help">{inputLow
-            ? 'Sleep stops motion and controllers on every connection, blocks motor commands and holds both DRV8870 inputs low so the motors coast. Wake clears the software inhibit; both inputs stay low until a fresh drive request. Restart controllers and send fresh motion commands when ready.'
+            ? 'Sleep stops motion and controllers on every connection, blocks motor commands and holds both DRV8870 inputs low so the motors coast. Wake clears the software inhibit; both inputs stay low until a fresh drive or explicit short-brake request. Short brake drives both inputs high; coast returns them low. Restart controllers before requesting closed-loop motion.'
             : 'Sleep stops motion and controllers on every connection. Wake checks the retained driver settings and leaves outputs stopped. Restart controllers and send fresh motion commands when ready.'}</p>
-          {inputLow && <p className="section-help">DRV8870 has no sleep-state readback. Its sleep entry can take up to 1.5 ms with both inputs low. On the first fresh drive, the silicon needs a qualifying high input of at least 5 μs, followed by 50 μs for wake. A cleared inhibit does not confirm that the silicon is awake.</p>}
+          {inputLow && <p className="section-help">DRV8870 has no sleep-state readback. Its sleep entry can take up to 1.5 ms with both inputs low. On the first fresh drive or short brake, the silicon needs a qualifying high input of at least 5 μs, followed by up to 50 μs for wake. A cleared inhibit does not confirm that the silicon is awake.</p>}
           <p><output aria-label="Driver sleep state" aria-live="polite">{current?.sleeping === 1
             ? inputLow ? 'Inhibited — motor commands blocked' : 'Asleep — motor commands inhibited'
-            : current?.sleeping === 0 ? inputLow ? 'Inhibit cleared — fresh drive allowed' : 'Awake — board-wide inhibit cleared' : 'State not verified'}</output></p>
+            : current?.sleeping === 0 ? inputLow ? 'Inhibit cleared — fresh drive or brake allowed' : 'Awake — board-wide inhibit cleared' : 'State not verified'}</output></p>
           <p className="section-help">This is the board-wide inhibit, not the power state of each individual driver. Power states are not saved with configuration and clear at boot. One shared read refreshes them every 2 seconds while connected.</p>
           {idleSupported && current?.idle !== 0 && <p>Wake board before changing driver sleep. If board state is unknown, read it first.</p>}
           <div className="action-row">

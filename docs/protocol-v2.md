@@ -399,9 +399,12 @@ power state: an uninitialized driver may still be asleep when it returns zero.
 On v0.3.0 and Nano v0.3.1, the DRV8870 implementation holds both inputs low,
 coasting the motors and preventing further drive commands. Sleep entry takes up
 to 1.5 ms according to the chip timing specification. Explicit wake clears only
-the software inhibit: both inputs remain low until a fresh drive request.
-On that first drive, a qualifying high input must last at least 5 μs, followed by
-50 μs for the chip to wake. The command ACK and `get_driver_sleep() == 0` do not
+the software inhibit: both inputs remain low until a fresh drive or explicit
+short-brake request. Short brake sets both inputs high, and coast returns them
+low. Motor and platform brake requests are blocked while inhibited; stale queued
+brake requests cannot actuate the bridge after another connection releases it.
+On the first fresh drive or short brake, a qualifying high input must last at
+least 5 μs, followed by up to 50 μs for the chip to wake. The command ACK and `get_driver_sleep() == 0` do not
 confirm physical wake, a drive response time, or measured power savings. These
 boards have no sleep pin or SPI sleep-state verification. PWM, direction and
 initialization settings remain available, and normal telemetry/session behavior
