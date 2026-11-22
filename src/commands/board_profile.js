@@ -100,3 +100,10 @@ export function supportsFusionExperiment(info) {
     profile.capabilities?.fusion_experiment === true && info?.protocol_major === 2 &&
     Number.isInteger(info.protocol_minor) && info.protocol_minor >= 19 && info.protocol_minor <= 255;
 }
+
+export function supportsImuTracking(info) {
+  const profile = getBoardProfile(info);
+  return profile?.board.model === 1 && profile.board.revision === '0.4.0' &&
+    profile.capabilities?.imu_tracking === true && info?.protocol_major === 2 &&
+    Number.isInteger(info.protocol_minor) && info.protocol_minor >= 20 && info.protocol_minor <= 255;
+}

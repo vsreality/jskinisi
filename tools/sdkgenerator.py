@@ -43,6 +43,21 @@ FUSION_CATALOGS = [
     ('fusion_vectors', 'FusionVectorKind', 'FUSION_VECTOR', ['ENCODER_POSE', 'ENCODER_TWIST', 'FUSED_POSE', 'FUSED_TWIST', 'BIAS']),
 ]
 
+IMU_TRACKING_CATALOGS = [('imu_tracking_actions', 'ImuTrackingAction', 'IMU_TRACKING_ACTION', ['START', 'STOP', 'RESET', 'RECALIBRATE']), ('imu_tracking_states', 'ImuTrackingState', 'IMU_TRACKING_STATE', ['STOPPED', 'CALIBRATING', 'TRACKING', 'FAULT', 'EXPIRED']), ('imu_tracking_faults', 'ImuTrackingFault', 'IMU_TRACKING_FAULT', ['NONE', 'NOT_STATIONARY', 'IMU_UNAVAILABLE', 'STALE', 'TIMESTAMP', 'SATURATION', 'BIAS_NOT_READY', 'WINDOW_EXPIRED', 'INHIBITED', 'MOUNT_INVALID']), ('imu_tracking_flags', 'ImuTrackingFlag', 'IMU_TRACKING_FLAG', ['ESTIMATE_VALID', 'BIAS_READY', 'RESTART_REQUIRED', 'MOUNT_CONFIRMED']), ('imu_tracking_vectors', 'ImuTrackingVectorKind', 'IMU_TRACKING_VECTOR', ['POSE', 'TWIST', 'BIAS'])]
+
+def validate_imu_tracking(schema):
+    commands = {c["command"] for c in schema.get("commands", [])}
+    required = {"SET_IMU_TRACKING", "GET_IMU_TRACKING_STATUS", "GET_IMU_TRACKING_VECTOR", "GET_IMU_TRACKING_CONFIGURATION"}
+    if not commands & required and not any(key in schema for key, *_ in IMU_TRACKING_CATALOGS):
+        return
+    if not required <= commands:
+        raise ValueError("Incomplete IMU tracking command family")
+    for key, _, _, names in IMU_TRACKING_CATALOGS:
+        ids = [1, 2, 4, 8] if key.endswith("_flags") else list(range(len(names)))
+        values = schema.get(key, [])
+        if [(v.get("id"), v.get("name")) for v in values] != list(zip(ids, names)) or any(type(v.get("id")) is not int for v in values):
+            raise ValueError("Invalid " + key + " catalog")
+
 def validate_fusion(schema):
     commands = {c['command'] for c in schema.get('commands', [])}
     required = {'SET_FUSION_EXPERIMENT', 'GET_FUSION_STATUS', 'GET_FUSION_VECTOR', 'GET_FUSION_CONFIGURATION'}
@@ -58,6 +73,7 @@ def validate_fusion(schema):
 
 def validate_pwm_frequency(schema):
     validate_fusion(schema)
+    validate_imu_tracking(schema)
     values = schema.get('pwm_frequencies', [])
     expected = [(v, 'KHZ_' + str(v // 1000)) for v in (10000, 20000, 25000, 50000, 100000)]
     if [(v.get('id'), v.get('name')) for v in values] != expected or any(type(v.get('id')) is not int for v in values):
@@ -225,7 +241,7 @@ function payloadView(buffer, size) {
     : new DataView(buffer);
 }
 ''')
-    for key, name in [('subscription_triggers', 'SubscriptionTrigger'), ('subscription_deliveries', 'SubscriptionDelivery'), ('pwm_frequencies', 'PwmFrequency')] + [(key, name) for key, name, _, _ in FUSION_CATALOGS]:
+    for key, name in [('subscription_triggers', 'SubscriptionTrigger'), ('subscription_deliveries', 'SubscriptionDelivery'), ('pwm_frequencies', 'PwmFrequency')] + [(key, name) for key, name, _, _ in FUSION_CATALOGS + IMU_TRACKING_CATALOGS]:
         lines.append(f'export const {name} = Object.freeze({{\n')
         for item in schema.get(key, []):
             lines.append(f"  {item['name']}: {item['id']},\n")
@@ -316,6 +332,11 @@ export function decodeTelemetryEvent(payload) {
             lines.append("    if (typeof enabled !== 'boolean' || !Number.isInteger(threshold_ma) || threshold_ma < 1 || threshold_ma > 65535) throw new RangeError('Expected enabled boolean and threshold_ma integer from 1 to 65535');\n")
         if c['command'] == 'SET_DRIVER_SLEEP':
             lines.append("    if (sleeping !== 0 && sleeping !== 1) throw new RangeError('sleeping must be 0 (awake) or 1 (asleep)');\n")
+        if c['command'] == 'SET_IMU_TRACKING':
+            lines.append("    if (!Number.isInteger(action) || action < 0 || action > 3 || !Number.isInteger(stationary_mount_confirmed) || stationary_mount_confirmed < 0 || stationary_mount_confirmed > 1) throw new RangeError('Invalid IMU tracking action or confirmation');\n")
+            lines.append("    if (!Number.isFinite(mounting_yaw_rad) || Math.abs(mounting_yaw_rad) > Math.PI || (action === 1 ? stationary_mount_confirmed !== 0 || mounting_yaw_rad !== 0 : stationary_mount_confirmed !== 1)) throw new RangeError('Invalid IMU tracking mounting declaration');\n")
+        if c['command'] == 'GET_IMU_TRACKING_VECTOR':
+            lines.append("    if (!Number.isInteger(kind) || kind < 0 || kind > 2) throw new RangeError('Invalid IMU tracking vector kind');\n")
         if c['command'] == 'SET_FUSION_EXPERIMENT':
             lines.append("    if (!Number.isInteger(mode) || mode < 0 || mode > 2) throw new RangeError('Invalid fusion experiment mode');\n")
             lines.append("    if (typeof mounting_yaw_rad !== 'number' || !Number.isFinite(mounting_yaw_rad) || Math.abs(mounting_yaw_rad) > Math.PI) throw new RangeError('Mounting yaw must be finite radians within [-pi, pi]');\n")
@@ -351,9 +372,15 @@ export function decodeTelemetryEvent(payload) {
         if r:
             t=r['name'] if r['type']=='object' else r['type']
             lines.append(f'    const response = await this._request({c["command"]}, payload, {size(t)});\n')
-            if c['command'].startswith('GET_FUSION_'):
+            if c['command'].startswith(('GET_FUSION_', 'GET_IMU_TRACKING_')):
                 lines.append(f'    const sample = {class_name(t)}.decode(response);\n')
-                if c['command'] == 'GET_FUSION_STATUS':
+                if c['command'] == 'GET_IMU_TRACKING_STATUS':
+                    lines.append("    if (sample.state > 4 || sample.fault > 9 || sample.flags > 15 || sample.reserved !== 0) throw new Error('Invalid IMU tracking status');\n")
+                elif c['command'] == 'GET_IMU_TRACKING_CONFIGURATION':
+                    lines.append("    if (!Number.isFinite(sample.mounting_yaw_rad) || Math.abs(sample.mounting_yaw_rad) > Math.PI || sample.window_us === 0) throw new Error('Invalid IMU tracking configuration');\n")
+                elif c['command'] == 'GET_IMU_TRACKING_VECTOR':
+                    lines.append("    if (![sample.x, sample.y, sample.z].every(Number.isFinite)) throw new Error('Invalid IMU tracking vector');\n")
+                elif c['command'] == 'GET_FUSION_STATUS':
                     lines.append("    if (sample.mode > 2 || sample.health > 3 || sample.fault > 9 || sample.flags > 15) throw new Error('Invalid fusion status');\n")
                 elif c['command'] == 'GET_FUSION_CONFIGURATION':
                     lines.append("    if (sample.mode > 2 || !Number.isFinite(sample.mounting_yaw_rad) || Math.abs(sample.mounting_yaw_rad) > Math.PI) throw new Error('Invalid fusion configuration');\n")

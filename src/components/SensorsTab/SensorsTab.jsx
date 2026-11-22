@@ -3,6 +3,7 @@ import { ControllerContext } from '../../contexts/ControllerContext';
 import { supportsTemperatureRead } from '../../commands/temperature';
 import BoardTemperature from './BoardTemperature';
 import BoardImu from './BoardImu';
+import ImuTracking from './ImuTracking';
 import { supportsImuRead } from '../../commands/imu';
 import { getBoardProfile } from '../../commands/board_profile';
 import './SensorsTab.css';
@@ -16,6 +17,7 @@ export default function SensorsTab({ isActive = true }) {
         <h2>Sensor availability</h2>
         <p className="section-help">This board is not recognized. Update the client to view its sensors.</p>
       </section> : <>
+      {profile.capabilities?.imu_tracking && <ImuTracking controller={controller} isConnected={isConnected} isActive={isActive} />}
       {profile.sensors.temperature.map(sensor => supportsTemperatureRead(controller?.boardInfo)
         ? <BoardTemperature key={sensor.id} controller={controller} sensorIndex={sensor.id} isActive={isActive} />
         : <section key={sensor.id} className="panel-card">

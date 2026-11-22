@@ -1,6 +1,6 @@
 // Generated from tools/commands.json by tools/sdkgenerator.py. Do not edit.
 export const SDK_VERSION = Object.freeze([2, 6, 0]);
-export const PROTOCOL_VERSION = Object.freeze([2, 19, 0]);
+export const PROTOCOL_VERSION = Object.freeze([2, 20, 0]);
 export const GET_TEMPERATURE = 0x50;
 export const GET_IMU = 0x51;
 export const GET_MOTOR_CURRENT = 0x52;
@@ -92,6 +92,10 @@ export const SET_FUSION_EXPERIMENT = 0x5f;
 export const GET_FUSION_STATUS = 0x60;
 export const GET_FUSION_VECTOR = 0x61;
 export const GET_FUSION_CONFIGURATION = 0x62;
+export const SET_IMU_TRACKING = 0x63;
+export const GET_IMU_TRACKING_STATUS = 0x64;
+export const GET_IMU_TRACKING_VECTOR = 0x65;
+export const GET_IMU_TRACKING_CONFIGURATION = 0x66;
 export const ErrorCode = Object.freeze({
   INCOMPATIBLE_PROTOCOL: 1,
   INVALID_ARGUMENT: 2,
@@ -198,6 +202,42 @@ export const FusionVectorKind = Object.freeze({
   FUSED_POSE: 2,
   FUSED_TWIST: 3,
   BIAS: 4,
+});
+export const ImuTrackingAction = Object.freeze({
+  START: 0,
+  STOP: 1,
+  RESET: 2,
+  RECALIBRATE: 3,
+});
+export const ImuTrackingState = Object.freeze({
+  STOPPED: 0,
+  CALIBRATING: 1,
+  TRACKING: 2,
+  FAULT: 3,
+  EXPIRED: 4,
+});
+export const ImuTrackingFault = Object.freeze({
+  NONE: 0,
+  NOT_STATIONARY: 1,
+  IMU_UNAVAILABLE: 2,
+  STALE: 3,
+  TIMESTAMP: 4,
+  SATURATION: 5,
+  BIAS_NOT_READY: 6,
+  WINDOW_EXPIRED: 7,
+  INHIBITED: 8,
+  MOUNT_INVALID: 9,
+});
+export const ImuTrackingFlag = Object.freeze({
+  ESTIMATE_VALID: 1,
+  BIAS_READY: 2,
+  RESTART_REQUIRED: 4,
+  MOUNT_CONFIRMED: 8,
+});
+export const ImuTrackingVectorKind = Object.freeze({
+  POSE: 0,
+  TWIST: 1,
+  BIAS: 2,
 });
 export const SubscriptionMode = Object.freeze({
   PERIODIC: 0,
@@ -887,6 +927,114 @@ export class FusionConfiguration {
     return new FusionConfiguration(
       view.getUint8(0),
       view.getFloat64(1, true),
+    );
+  }
+}
+
+/** Volatile IMU-only relative tracking diagnostics. */
+export class ImuTrackingStatus {
+  /** Store one decoded payload. */
+  constructor(state, fault, flags, reserved, sequence, timestamp_us, elapsed_us, accel_age_us, gyro_age_us) {
+    this.state = state;
+    this.fault = fault;
+    this.flags = flags;
+    this.reserved = reserved;
+    this.sequence = sequence;
+    this.timestamp_us = timestamp_us;
+    this.elapsed_us = elapsed_us;
+    this.accel_age_us = accel_age_us;
+    this.gyro_age_us = gyro_age_us;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 28; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(ImuTrackingStatus.getSize());
+    const view = new DataView(buffer);
+    view.setUint8(0, this.state);
+    view.setUint8(1, this.fault);
+    view.setUint8(2, this.flags);
+    view.setUint8(3, this.reserved);
+    view.setUint32(4, this.sequence, true);
+    view.setBigUint64(8, exactBigInt(this.timestamp_us), true);
+    view.setUint32(16, this.elapsed_us, true);
+    view.setUint32(20, this.accel_age_us, true);
+    view.setUint32(24, this.gyro_age_us, true);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, ImuTrackingStatus.getSize());
+    return new ImuTrackingStatus(
+      view.getUint8(0),
+      view.getUint8(1),
+      view.getUint8(2),
+      view.getUint8(3),
+      view.getUint32(4, true),
+      view.getBigUint64(8, true),
+      view.getUint32(16, true),
+      view.getUint32(20, true),
+      view.getUint32(24, true),
+    );
+  }
+}
+
+/** Volatile IMU-only relative tracking diagnostics. */
+export class ImuTrackingVector {
+  /** Store one decoded payload. */
+  constructor(sequence, x, y, z) {
+    this.sequence = sequence;
+    this.x = x;
+    this.y = y;
+    this.z = z;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 28; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(ImuTrackingVector.getSize());
+    const view = new DataView(buffer);
+    view.setUint32(0, this.sequence, true);
+    view.setFloat64(4, this.x, true);
+    view.setFloat64(12, this.y, true);
+    view.setFloat64(20, this.z, true);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, ImuTrackingVector.getSize());
+    return new ImuTrackingVector(
+      view.getUint32(0, true),
+      view.getFloat64(4, true),
+      view.getFloat64(12, true),
+      view.getFloat64(20, true),
+    );
+  }
+}
+
+/** Volatile IMU-only relative tracking diagnostics. */
+export class ImuTrackingConfiguration {
+  /** Store one decoded payload. */
+  constructor(mounting_yaw_rad, window_us) {
+    this.mounting_yaw_rad = mounting_yaw_rad;
+    this.window_us = window_us;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 12; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(ImuTrackingConfiguration.getSize());
+    const view = new DataView(buffer);
+    view.setFloat64(0, this.mounting_yaw_rad, true);
+    view.setUint32(8, this.window_us, true);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, ImuTrackingConfiguration.getSize());
+    return new ImuTrackingConfiguration(
+      view.getFloat64(0, true),
+      view.getUint32(8, true),
     );
   }
 }
@@ -1772,6 +1920,48 @@ export class Commands {
     const response = await this._request(GET_FUSION_CONFIGURATION, payload, 9);
     const sample = FusionConfiguration.decode(response);
     if (sample.mode > 2 || !Number.isFinite(sample.mounting_yaw_rad) || Math.abs(sample.mounting_yaw_rad) > Math.PI) throw new Error('Invalid fusion configuration');
+    return sample;
+  }
+
+  /** Control volatile IMU-only relative tracking. START=0, RESET=2 and RECALIBRATE=3 are accepted from any state with stationary_mount_confirmed=1 and finite yaw in [-pi,pi]; all discard prior bias and pose and begin full cold stationary calibration at a new relative origin. The caller confirms true zero velocity, rigid level sensor-+Z-up mounting with IMU at the chassis reference point. Yaw is the angle of sensor +X in chassis XY, counterclockwise about chassis +Z. Sensor-to-chassis transform is Rz(yaw)*(x,y,z), axes forward/left/up. IMU stationarity checks cannot establish zero constant velocity. STOP=1 requires confirmation=0 and yaw=0 and stops integration. ACK confirms the action, not a valid estimate. Fault, expiry or interruption requires deliberate restart; no automatic recovery. Not saved to FRAM. Requires READY, exact model 1 hardware 0.4.0 with imu_tracking capability and protocol 2.20+. Independent of platform, encoders and fusion; never commands motion or changes control feedback. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, BOARD_IDLE, DRIVERS_ASLEEP. */
+  async set_imu_tracking(action, stationary_mount_confirmed, mounting_yaw_rad) {
+    if (!Number.isInteger(action) || action < 0 || action > 3 || !Number.isInteger(stationary_mount_confirmed) || stationary_mount_confirmed < 0 || stationary_mount_confirmed > 1) throw new RangeError('Invalid IMU tracking action or confirmation');
+    if (!Number.isFinite(mounting_yaw_rad) || Math.abs(mounting_yaw_rad) > Math.PI || (action === 1 ? stationary_mount_confirmed !== 0 || mounting_yaw_rad !== 0 : stationary_mount_confirmed !== 1)) throw new RangeError('Invalid IMU tracking mounting declaration');
+    const payload = new ArrayBuffer(10);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, action);
+    requestView.setUint8(1, stationary_mount_confirmed);
+    requestView.setFloat64(2, mounting_yaw_rad, true);
+    await this._request(SET_IMU_TRACKING, payload, 0);
+  }
+
+  /** Read IMU-only tracking state, fault, flags, sequence, joint sample-watermark timestamp, elapsed tracking time and separate accel/gyro ages in microseconds. UINT32_MAX age means unavailable. ESTIMATE_VALID is required for usable current estimates; timestamp and health are not physical accuracy guarantees. Reads can enforce expiry but never start tracking. Status and vector sequences must match to combine separate reads. Requires READY, exact model 1 hardware 0.4.0 with imu_tracking capability and protocol 2.20+. Independent of platform, encoders and fusion; never commands motion or changes control feedback. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
+  async get_imu_tracking_status() {
+    const payload = new ArrayBuffer(0);
+    const response = await this._request(GET_IMU_TRACKING_STATUS, payload, 28);
+    const sample = ImuTrackingStatus.decode(response);
+    if (sample.state > 4 || sample.fault > 9 || sample.flags > 15 || sample.reserved !== 0) throw new Error('Invalid IMU tracking status');
+    return sample;
+  }
+
+  /** Read a compact IMU-only vector selected by kind: POSE=0 (relative metres,metres,radians), TWIST=1 (body metres/second,metres/second,radians/second), BIAS=2 (accel-X,accel-Y metres/second squared and gyro-Z radians/second). SAMPLE_NOT_AVAILABLE means the requested estimate is invalid. Match sequence with GET_IMU_TRACKING_STATUS; never combine mismatched snapshots. Relative integration drifts and has no absolute position or heading reference. Requires READY, exact model 1 hardware 0.4.0 with imu_tracking capability and protocol 2.20+. Independent of platform, encoders and fusion; never commands motion or changes control feedback. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SAMPLE_NOT_AVAILABLE. */
+  async get_imu_tracking_vector(kind) {
+    if (!Number.isInteger(kind) || kind < 0 || kind > 2) throw new RangeError('Invalid IMU tracking vector kind');
+    const payload = new ArrayBuffer(1);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, kind);
+    const response = await this._request(GET_IMU_TRACKING_VECTOR, payload, 28);
+    const sample = ImuTrackingVector.decode(response);
+    if (![sample.x, sample.y, sample.z].every(Number.isFinite)) throw new Error('Invalid IMU tracking vector');
+    return sample;
+  }
+
+  /** Read mounting yaw and the actual bounded tracking horizon in microseconds. The development horizon is provisional; use this readback rather than assuming a fixed duration. Reset clears volatile tracking state; reconnect does not start or re-anchor tracking. Requires READY, exact model 1 hardware 0.4.0 with imu_tracking capability and protocol 2.20+. Independent of platform, encoders and fusion; never commands motion or changes control feedback. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
+  async get_imu_tracking_configuration() {
+    const payload = new ArrayBuffer(0);
+    const response = await this._request(GET_IMU_TRACKING_CONFIGURATION, payload, 12);
+    const sample = ImuTrackingConfiguration.decode(response);
+    if (!Number.isFinite(sample.mounting_yaw_rad) || Math.abs(sample.mounting_yaw_rad) > Math.PI || sample.window_us === 0) throw new Error('Invalid IMU tracking configuration');
     return sample;
   }
 }
