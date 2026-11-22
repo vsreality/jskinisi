@@ -32,9 +32,17 @@ class ProfileTests(unittest.TestCase):
             lambda b: b['boards'][0]['sensors']['temperature'].append({'id': 0, 'pin': 'PA8'}),
             lambda b: b['boards'][3]['sensors']['imu'][0].update(id=1),
             lambda b: b['boards'][3]['motor_features'][0].update(current_limit='yes'),
+            lambda b: b['boards'][3].update(power={'driver_sleep': 1}),
+            lambda b: b['boards'][3].update(power={'driver_sleep': True, 'sleep_pin': 'PA0'}),
         ):
             bundle = deepcopy(self.bundle); mutate(bundle)
             with self.assertRaises(ValueError): updater.generate(bundle)
+
+    def test_driver_sleep_is_explicit_and_only_on_v4(self):
+        self.assertEqual([p['power']['driver_sleep'] for p in self.bundle['boards']], [False, False, False, True])
+        legacy = deepcopy(self.bundle)
+        for profile in legacy['boards']: profile.pop('power')
+        updater.validate(legacy)  # Older bundles remain readable; no inferred capability.
 
     def test_failed_import_preserves_both_outputs(self):
         with tempfile.TemporaryDirectory() as folder:

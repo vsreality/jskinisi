@@ -370,3 +370,38 @@ initialized encoder. Applying Initialize clears the previous save confirmation
 and refreshes running setup; save again to persist the new applied configuration.
 The individual scalar requests are not an atomic transaction, so avoid changing
 setup concurrently from another client while reading.
+
+## Manual driver sleep
+
+Driver sleep requires READY, protocol 2.15 or newer within major version 2,
+and the exact bundled board profile advertising `power.driver_sleep: true`
+(currently v0.4). Unknown hardware and earlier firmware are rejected before I/O.
+
+```js
+if (controller.supportsDriverSleep()) {
+  await controller.set_driver_sleep(1); // Sleep all drivers; wait for ACK.
+  const sleeping = await controller.get_driver_sleep(); // 0 or 1
+  await controller.set_driver_sleep(0); // Explicit wake; outputs remain stopped.
+}
+```
+
+`set_driver_sleep` accepts only numeric `0` or `1`. Sleep stops motion and
+controllers across connections. Wake verifies retained settings on previously
+initialized channels; it does not resume targets or restart controllers. A failed
+wake leaves the board-wide inhibit active and may be retried after checking motor
+power and driver faults. Repeating the current state is a no-op. Motion requests
+while inhibited fail with typed `ControllerError` code `ErrorCode.DRIVERS_ASLEEP`
+(19); ordinary telemetry and subscriptions retain their session behavior.
+
+`get_driver_sleep` reports the board-wide inhibit, not each driver's individual
+power state: an uninitialized driver may still be asleep when it returns zero.
+The inhibit survives reconnects but clears at boot. Save configuration does not
+persist it; saved platform/encoder/direction/PWM setup is unchanged by this API.
+
+In the web client's **Motor → Driver sleep — all motors** panel, state is read on
+entry and reconnect, and refreshed every two seconds while the tab is open. No
+automatic sleep or wake occurs. Manual actions wait for ACK and then read the
+current state; failed requests show recovery guidance rather than a success
+claim. The panel remains available without initializing an individual motor,
+including when a restored platform owns every channel. Other connections can
+change the state after any read; use **Read driver state** for a fresh snapshot.

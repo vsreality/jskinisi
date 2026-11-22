@@ -38,6 +38,22 @@ class GeneratorTests(unittest.TestCase):
         actual = (ROOT / 'src/commands/kinisi_commands.js').read_text(encoding='utf-8')
         self.assertEqual(generate_js_code(self.schema), actual)
 
+    def test_driver_sleep_contract(self):
+        for name in ('SET_DRIVER_SLEEP', 'GET_DRIVER_SLEEP'):
+            schema = deepcopy(self.schema)
+            schema['commands'] = [c for c in schema['commands'] if c['command'] != name]
+            with self.assertRaisesRegex(ValueError, 'missing runtime commands'):
+                generate_js_code(schema)
+        for mutate in (
+            lambda commands: commands['SET_DRIVER_SLEEP']['properties'][0].update(type='bool'),
+            lambda commands: commands['SET_DRIVER_SLEEP']['properties'][0].update(range=[0, 2]),
+            lambda commands: commands['GET_DRIVER_SLEEP']['response'].update(type='uint16_t'),
+        ):
+            schema = deepcopy(self.schema)
+            mutate({c['command']: c for c in schema['commands']})
+            with self.assertRaisesRegex(ValueError, 'driver sleep envelope'):
+                generate_js_code(schema)
+
     def test_incompatible_schema_preserves_output(self):
         """Unsupported framing or absent runtime commands cannot replace the module."""
         with tempfile.TemporaryDirectory() as directory:
