@@ -152,12 +152,12 @@ function ConnectedTracking({ controller }) {
       <p className="section-help">+X forward, +Y left, yaw counterclockwise. Compare positions within one origin and board boot.</p>
     </>}
     {fused && <fieldset className="tracking-mount"><legend>Passive fused tracking</legend>
-      <p>Use initialized platform geometry and running odometry. Confirm the sensor mount after each board restart. Keep the platform still for calibration.</p>
+      <p>Use initialized platform geometry and running odometry. Enter the board +X direction relative to chassis forward, positive counterclockwise. Confirm the board mount after each restart. Keep the platform still for calibration.</p>
       {mount?.error ? <p role="alert">Mount readback unavailable. {mount.error}</p> :
         mount && <p>Board mounting declaration {mount.confirmed ? `confirmed at ${mount.mounting_yaw_rad} rad` : 'unconfirmed'}</p>}
-      <label>Sensor +X angle in chassis XY (radians)
+      <label>Board +X angle in chassis XY (radians)
         <input type="number" step="any" min={-Math.PI} max={Math.PI} value={yaw} onChange={event => { setYaw(event.target.value); setConfirmed(false); }} /></label>
-      <label><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} /> I confirm a rigid, level, centered mount with sensor +Z up.</label>
+      <label><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} /> I confirm a rigid, level, centered mount with board +Z up.</label>
       <button className="k-button" disabled={busy || !confirmed || !validYaw} type="button" onClick={confirmMount}>Confirm fused mount</button>
     </fieldset>}
     {imu && <>

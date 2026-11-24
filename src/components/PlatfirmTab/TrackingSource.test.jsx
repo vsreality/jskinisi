@@ -79,8 +79,9 @@ describe('board tracking source', () => {
     await screen.findByText('mount required');
     expect(c.set_feedback_fusion_mount).not.toHaveBeenCalled();
     expect(screen.getByRole('button',{name:'Confirm fused mount'})).toBeDisabled();
-    fireEvent.change(screen.getByLabelText(/Sensor \+X angle/),{target:{value:'0'}});
-    fireEvent.click(screen.getByRole('checkbox',{name:/rigid, level, centered/}));
+    expect(screen.queryByLabelText(/Sensor \+X angle/)).toBeNull();
+    fireEvent.change(screen.getByLabelText(/Board \+X angle/),{target:{value:'0'}});
+    fireEvent.click(screen.getByRole('checkbox',{name:/centered mount with board \+Z up/}));
     click('Confirm fused mount');
     await screen.findByText(/confirmed at 0 rad/);
     expect(c.set_feedback_fusion_mount).toHaveBeenCalledExactlyOnceWith(0);
