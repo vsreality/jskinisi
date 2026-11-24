@@ -154,6 +154,19 @@ describe('board tracking source', () => {
     expect(screen.queryByText('Historical relative pose')).toBeNull();
     expect(reading('Board reason')).toBe('not started');
   });
+  it('classifies a delayed first delivery as historical without altering the native sample age',async()=>{
+    vi.useFakeTimers();
+    const c=board(), sample={sequence:53,x:.1,y:0,z:0};
+    let finish;
+    c.readFeedbackSourceSnapshot.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));
+    render(<TrackingSource controller={c} isConnected />);
+    await act(async()=>vi.advanceTimersByTimeAsync(200));
+    await act(async()=>finish({status:{...status(1),max_age_ms:50,age_us:20000},pose:sample,twist:sample}));
+    expect(screen.queryByText('Relative pose')).toBeNull();
+    expect(screen.getByText('Historical relative pose')).toBeVisible();
+    expect(reading('Validity at board read')).toBe('Valid');
+    expect(reading('Sample age at read')).toBe('20000 µs');
+  });
   it('uses the existing explicit whole-configuration save',async()=>{
     const c=board();
     render(<><TrackingSource controller={c} isConnected /><ConfigurationSave controller={c} isConnected onBusy={()=>{}} onLoaded={()=>{}} /></>);

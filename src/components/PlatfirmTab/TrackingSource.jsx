@@ -56,9 +56,11 @@ function ConnectedTracking({ controller }) {
         if (!current()) return;
         acknowledged = true;
       }
+      // The final native status may itself be delayed in transit. The request
+      // start conservatively bounds the remaining life even on first delivery.
+      const requestedAt = performance.now();
       const value = await controller.readFeedbackSourceSnapshot();
       if (!current()) return;
-      const receivedAt = performance.now();
       if (value.status.requested === FeedbackSource.FUSED) {
         try {
           const config = await controller.get_feedback_fusion_mount();
@@ -79,7 +81,7 @@ function ConnectedTracking({ controller }) {
       if (value.status.valid) {
         const { active, origin_id, sequence, timestamp_us, max_age_ms, age_us } = value.status;
         const identity = [active, origin_id, sequence, timestamp_us].join('/');
-        const fromBoard = receivedAt + max_age_ms - age_us / 1000;
+        const fromBoard = requestedAt + max_age_ms - age_us / 1000;
         // A repeated capture may shorten its remaining life; it cannot renew it.
         const deadline = op.sample?.identity === identity ? Math.min(op.sample.deadline, fromBoard) : fromBoard;
         op.sample = { identity, deadline };
