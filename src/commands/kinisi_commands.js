@@ -1,6 +1,6 @@
 // Generated from tools/commands.json by tools/sdkgenerator.py. Do not edit.
 export const SDK_VERSION = Object.freeze([2, 6, 0]);
-export const PROTOCOL_VERSION = Object.freeze([2, 20, 0]);
+export const PROTOCOL_VERSION = Object.freeze([2, 21, 0]);
 export const GET_TEMPERATURE = 0x50;
 export const GET_IMU = 0x51;
 export const GET_MOTOR_CURRENT = 0x52;
@@ -96,6 +96,11 @@ export const SET_IMU_TRACKING = 0x63;
 export const GET_IMU_TRACKING_STATUS = 0x64;
 export const GET_IMU_TRACKING_VECTOR = 0x65;
 export const GET_IMU_TRACKING_CONFIGURATION = 0x66;
+export const SET_FEEDBACK_SOURCE = 0x67;
+export const GET_FEEDBACK_SOURCE_STATUS = 0x68;
+export const GET_FEEDBACK_SOURCE_VECTOR = 0x69;
+export const SET_FEEDBACK_FUSION_MOUNT = 0x6a;
+export const GET_FEEDBACK_FUSION_MOUNT = 0x6b;
 export const ErrorCode = Object.freeze({
   INCOMPATIBLE_PROTOCOL: 1,
   INVALID_ARGUMENT: 2,
@@ -117,6 +122,7 @@ export const ErrorCode = Object.freeze({
   SAMPLE_OUT_OF_RANGE: 18,
   DRIVERS_ASLEEP: 19,
   BOARD_IDLE: 20,
+  SOURCE_SWITCH_UNSAFE: 21,
 });
 export const ErrorDescriptions = Object.freeze({
   1: "The requested protocol version is incompatible with this firmware.",
@@ -139,6 +145,7 @@ export const ErrorDescriptions = Object.freeze({
   18: "The sensor reading is saturated; no valid measurement can be returned.",
   19: "Driver sleep is active. Explicitly wake the drivers before requesting this operation.",
   20: "Board idle is active. Explicitly wake the board before changing driver sleep or starting a subscription.",
+  21: "Stop all motor outputs, disarm all controllers and wait for stationary wheel observations before changing the tracking preference.",
 });
 /** Preserve uint64/int64 precision instead of silently accepting rounded Numbers. */
 function exactBigInt(value) {
@@ -238,6 +245,28 @@ export const ImuTrackingVectorKind = Object.freeze({
   POSE: 0,
   TWIST: 1,
   BIAS: 2,
+});
+export const FeedbackSource = Object.freeze({
+  ENCODER: 0,
+  IMU_ONLY: 1,
+  FUSED: 2,
+  NONE: 255,
+});
+export const FeedbackSourceReason = Object.freeze({
+  OK: 0,
+  NOT_STARTED: 1,
+  CALIBRATING: 2,
+  UNAVAILABLE: 3,
+  STALE: 4,
+  EXPIRED: 5,
+  FAULT: 6,
+  INHIBITED: 7,
+  WAITING_SAMPLE: 8,
+  MOUNT_REQUIRED: 9,
+});
+export const FeedbackSourceVectorKind = Object.freeze({
+  POSE: 0,
+  TWIST: 1,
 });
 export const SubscriptionMode = Object.freeze({
   PERIODIC: 0,
@@ -1035,6 +1064,114 @@ export class ImuTrackingConfiguration {
     return new ImuTrackingConfiguration(
       view.getFloat64(0, true),
       view.getUint32(8, true),
+    );
+  }
+}
+
+/** Board-wide selected tracking telemetry status. */
+export class FeedbackSourceStatus {
+  /** Store one decoded payload. */
+  constructor(requested, active, valid, reason, sequence, timestamp_us, origin_id, source_detail, age_us) {
+    this.requested = requested;
+    this.active = active;
+    this.valid = valid;
+    this.reason = reason;
+    this.sequence = sequence;
+    this.timestamp_us = timestamp_us;
+    this.origin_id = origin_id;
+    this.source_detail = source_detail;
+    this.age_us = age_us;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 25; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(FeedbackSourceStatus.getSize());
+    const view = new DataView(buffer);
+    view.setUint8(0, this.requested);
+    view.setUint8(1, this.active);
+    view.setUint8(2, this.valid);
+    view.setUint8(3, this.reason);
+    view.setUint32(4, this.sequence, true);
+    view.setBigUint64(8, exactBigInt(this.timestamp_us), true);
+    view.setUint32(16, this.origin_id, true);
+    view.setUint8(20, this.source_detail);
+    view.setUint32(21, this.age_us, true);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, FeedbackSourceStatus.getSize());
+    return new FeedbackSourceStatus(
+      view.getUint8(0),
+      view.getUint8(1),
+      view.getUint8(2),
+      view.getUint8(3),
+      view.getUint32(4, true),
+      view.getBigUint64(8, true),
+      view.getUint32(16, true),
+      view.getUint8(20),
+      view.getUint32(21, true),
+    );
+  }
+}
+
+/** Selected source vector in the selector pose frame or native body twist frame. */
+export class FeedbackSourceVector {
+  /** Store one decoded payload. */
+  constructor(sequence, x, y, z) {
+    this.sequence = sequence;
+    this.x = x;
+    this.y = y;
+    this.z = z;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 28; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(FeedbackSourceVector.getSize());
+    const view = new DataView(buffer);
+    view.setUint32(0, this.sequence, true);
+    view.setFloat64(4, this.x, true);
+    view.setFloat64(12, this.y, true);
+    view.setFloat64(20, this.z, true);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, FeedbackSourceVector.getSize());
+    return new FeedbackSourceVector(
+      view.getUint32(0, true),
+      view.getFloat64(4, true),
+      view.getFloat64(12, true),
+      view.getFloat64(20, true),
+    );
+  }
+}
+
+/** Passive tracking mount, independent of chassis control. */
+export class FeedbackFusionMount {
+  /** Store one decoded payload. */
+  constructor(confirmed, mounting_yaw_rad) {
+    this.confirmed = confirmed;
+    this.mounting_yaw_rad = mounting_yaw_rad;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 9; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(FeedbackFusionMount.getSize());
+    const view = new DataView(buffer);
+    view.setUint8(0, this.confirmed);
+    view.setFloat64(1, this.mounting_yaw_rad, true);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, FeedbackFusionMount.getSize());
+    return new FeedbackFusionMount(
+      view.getUint8(0),
+      view.getFloat64(1, true),
     );
   }
 }
@@ -1962,6 +2099,54 @@ export class Commands {
     const response = await this._request(GET_IMU_TRACKING_CONFIGURATION, payload, 12);
     const sample = ImuTrackingConfiguration.decode(response);
     if (!Number.isFinite(sample.mounting_yaw_rad) || Math.abs(sample.mounting_yaw_rad) > Math.PI || sample.window_us === 0) throw new Error('Invalid IMU tracking configuration');
+    return sample;
+  }
+
+  /** Choose the board-wide telemetry preference. A change requires stopped outputs, disarmed controllers and stationary observed encoders. An unchanged preference is idempotent. The selector never starts motion, wheel odometry, standalone IMU calibration or a controller. FUSED uses an independent passive instance of the release estimator when its explicit mount and encoder odometry are available. It anchors a new relative frame at the first available source sample serviced after a switch or producer restart. The existing SAVE_CONFIGURATION explicitly persists the preference alongside platform setup; cold restore never restores an origin, bias, stationary declaration or motion target. Requires READY and exact model 1 hardware 0.4.0 with feedback_source_selector and protocol 2.21 or newer. Selection only routes tracking telemetry. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SOURCE_SWITCH_UNSAFE. */
+  async set_feedback_source(source) {
+    if (!Number.isInteger(source) || source < 0 || source > 2) throw new RangeError('Invalid feedback source');
+    const payload = new ArrayBuffer(1);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, source);
+    await this._request(SET_FEEDBACK_SOURCE, payload, 0);
+  }
+
+  /** Get requested and active source, availability reason and producer detail. Invalid status reports active NONE; no fallback. While valid the sample sequence and monotonic timestamp identify the underlying producer publication. Inspect requested source diagnostics for acquisition ages and fault detail. The standalone IMU is a one-second relative motion-onset diagnostic; fused telemetry uses the existing experimental estimator. Reconnect reads live board state. Requires READY and exact model 1 hardware 0.4.0 with feedback_source_selector and protocol 2.21 or newer. Selection only routes tracking telemetry. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
+  async get_feedback_source_status() {
+    const payload = new ArrayBuffer(0);
+    const response = await this._request(GET_FEEDBACK_SOURCE_STATUS, payload, 25);
+    const sample = FeedbackSourceStatus.decode(response);
+    if (sample.requested > 2 || sample.valid > 1 || sample.reason > 9 || (sample.valid ? sample.active !== sample.requested || sample.reason !== 0 : sample.active !== 255 || sample.reason === 0)) throw new Error('Invalid feedback source status');
+    return sample;
+  }
+
+  /** Get selector-relative pose (metres, metres, unwrapped radians) or body twist (metres/second, metres/second, radians/second), +X forward, +Y left, yaw CCW. Relative XY is rotated into the heading at the new anchor. Bracket vectors with valid status reads having identical requested/active source, origin_id, sequence and timestamp_us; also match every vector sequence. Discard mismatches and retry. Compare origins only within the same boot. Requires READY and exact model 1 hardware 0.4.0 with feedback_source_selector and protocol 2.21 or newer. Selection only routes tracking telemetry. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SAMPLE_NOT_AVAILABLE. */
+  async get_feedback_source_vector(kind) {
+    if (!Number.isInteger(kind) || kind < 0 || kind > 1) throw new RangeError('Invalid feedback vector kind');
+    const payload = new ArrayBuffer(1);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, kind);
+    const response = await this._request(GET_FEEDBACK_SOURCE_VECTOR, payload, 28);
+    const sample = FeedbackSourceVector.decode(response);
+    if (![sample.x, sample.y, sample.z].every(Number.isFinite)) throw new Error('Invalid feedback vector');
+    return sample;
+  }
+
+  /** Confirm a rigid centered level board mount for passive fused telemetry, with finite board yaw in [-pi,pi]. Requires stopped outputs and disarmed controllers. Each successful command discards prior passive calibration and pose; the observer requires fresh stationary observations. This volatile setting applies only to passive telemetry. Requires READY, exact v0.4 and protocol 2.21+. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SOURCE_SWITCH_UNSAFE. */
+  async set_feedback_fusion_mount(mounting_yaw_rad) {
+    if (!Number.isFinite(mounting_yaw_rad) || Math.abs(mounting_yaw_rad) > Math.PI) throw new RangeError('Invalid fusion mounting yaw');
+    const payload = new ArrayBuffer(8);
+    const requestView = new DataView(payload);
+    requestView.setFloat64(0, mounting_yaw_rad, true);
+    await this._request(SET_FEEDBACK_FUSION_MOUNT, payload, 0);
+  }
+
+  /** Read the explicit volatile passive fusion mounting confirmation and board yaw. Reset clears confirmation. Requires READY, exact v0.4 and protocol 2.21+. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
+  async get_feedback_fusion_mount() {
+    const payload = new ArrayBuffer(0);
+    const response = await this._request(GET_FEEDBACK_FUSION_MOUNT, payload, 9);
+    const sample = FeedbackFusionMount.decode(response);
+    if (sample.confirmed > 1 || !Number.isFinite(sample.mounting_yaw_rad) || Math.abs(sample.mounting_yaw_rad) > Math.PI) throw new Error('Invalid feedback fusion mount');
     return sample;
   }
 }

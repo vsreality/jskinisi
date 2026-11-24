@@ -45,6 +45,29 @@ FUSION_CATALOGS = [
 
 IMU_TRACKING_CATALOGS = [('imu_tracking_actions', 'ImuTrackingAction', 'IMU_TRACKING_ACTION', ['START', 'STOP', 'RESET', 'RECALIBRATE']), ('imu_tracking_states', 'ImuTrackingState', 'IMU_TRACKING_STATE', ['STOPPED', 'CALIBRATING', 'TRACKING', 'FAULT', 'EXPIRED']), ('imu_tracking_faults', 'ImuTrackingFault', 'IMU_TRACKING_FAULT', ['NONE', 'NOT_STATIONARY', 'IMU_UNAVAILABLE', 'STALE', 'TIMESTAMP', 'SATURATION', 'BIAS_NOT_READY', 'WINDOW_EXPIRED', 'INHIBITED', 'MOUNT_INVALID']), ('imu_tracking_flags', 'ImuTrackingFlag', 'IMU_TRACKING_FLAG', ['ESTIMATE_VALID', 'BIAS_READY', 'RESTART_REQUIRED', 'MOUNT_CONFIRMED']), ('imu_tracking_vectors', 'ImuTrackingVectorKind', 'IMU_TRACKING_VECTOR', ['POSE', 'TWIST', 'BIAS'])]
 
+FEEDBACK_CATALOGS = [
+    ('feedback_sources', 'FeedbackSource', 'FEEDBACK_SOURCE', ['ENCODER', 'IMU_ONLY', 'FUSED', 'NONE']),
+    ('feedback_source_reasons', 'FeedbackSourceReason', 'FEEDBACK_SOURCE_REASON',
+     ['OK', 'NOT_STARTED', 'CALIBRATING', 'UNAVAILABLE', 'STALE', 'EXPIRED', 'FAULT', 'INHIBITED', 'WAITING_SAMPLE', 'MOUNT_REQUIRED']),
+    ('feedback_source_vectors', 'FeedbackSourceVectorKind', 'FEEDBACK_SOURCE_VECTOR', ['POSE', 'TWIST']),
+]
+
+
+def validate_feedback_source(schema):
+    required = {'SET_FEEDBACK_SOURCE', 'GET_FEEDBACK_SOURCE_STATUS', 'GET_FEEDBACK_SOURCE_VECTOR',
+                'SET_FEEDBACK_FUSION_MOUNT', 'GET_FEEDBACK_FUSION_MOUNT'}
+    commands = {c['command'] for c in schema['commands']}
+    if not required & commands and not any(key in schema for key, *_ in FEEDBACK_CATALOGS):
+        return
+    if not required <= commands:
+        raise ValueError('Incomplete feedback source command family')
+    for key, _, _, names in FEEDBACK_CATALOGS:
+        ids = [0, 1, 2, 255] if key == 'feedback_sources' else list(range(len(names)))
+        values = schema.get(key, [])
+        if [(v.get('id'), v.get('name')) for v in values] != list(zip(ids, names)) or any(type(v.get('id')) is not int for v in values):
+            raise ValueError('Invalid ' + key + ' catalog')
+
+
 def validate_imu_tracking(schema):
     commands = {c["command"] for c in schema.get("commands", [])}
     required = {"SET_IMU_TRACKING", "GET_IMU_TRACKING_STATUS", "GET_IMU_TRACKING_VECTOR", "GET_IMU_TRACKING_CONFIGURATION"}
@@ -74,6 +97,7 @@ def validate_fusion(schema):
 def validate_pwm_frequency(schema):
     validate_fusion(schema)
     validate_imu_tracking(schema)
+    validate_feedback_source(schema)
     values = schema.get('pwm_frequencies', [])
     expected = [(v, 'KHZ_' + str(v // 1000)) for v in (10000, 20000, 25000, 50000, 100000)]
     if [(v.get('id'), v.get('name')) for v in values] != expected or any(type(v.get('id')) is not int for v in values):
@@ -241,7 +265,7 @@ function payloadView(buffer, size) {
     : new DataView(buffer);
 }
 ''')
-    for key, name in [('subscription_triggers', 'SubscriptionTrigger'), ('subscription_deliveries', 'SubscriptionDelivery'), ('pwm_frequencies', 'PwmFrequency')] + [(key, name) for key, name, _, _ in FUSION_CATALOGS + IMU_TRACKING_CATALOGS]:
+    for key, name in [('subscription_triggers', 'SubscriptionTrigger'), ('subscription_deliveries', 'SubscriptionDelivery'), ('pwm_frequencies', 'PwmFrequency')] + [(key, name) for key, name, _, _ in FUSION_CATALOGS + IMU_TRACKING_CATALOGS + FEEDBACK_CATALOGS]:
         lines.append(f'export const {name} = Object.freeze({{\n')
         for item in schema.get(key, []):
             lines.append(f"  {item['name']}: {item['id']},\n")
@@ -332,6 +356,12 @@ export function decodeTelemetryEvent(payload) {
             lines.append("    if (typeof enabled !== 'boolean' || !Number.isInteger(threshold_ma) || threshold_ma < 1 || threshold_ma > 65535) throw new RangeError('Expected enabled boolean and threshold_ma integer from 1 to 65535');\n")
         if c['command'] == 'SET_DRIVER_SLEEP':
             lines.append("    if (sleeping !== 0 && sleeping !== 1) throw new RangeError('sleeping must be 0 (awake) or 1 (asleep)');\n")
+        if c['command'] == 'SET_FEEDBACK_FUSION_MOUNT':
+            lines.append("    if (!Number.isFinite(mounting_yaw_rad) || Math.abs(mounting_yaw_rad) > Math.PI) throw new RangeError('Invalid fusion mounting yaw');\n")
+        if c['command'] == 'SET_FEEDBACK_SOURCE':
+            lines.append("    if (!Number.isInteger(source) || source < 0 || source > 2) throw new RangeError('Invalid feedback source');\n")
+        if c['command'] == 'GET_FEEDBACK_SOURCE_VECTOR':
+            lines.append("    if (!Number.isInteger(kind) || kind < 0 || kind > 1) throw new RangeError('Invalid feedback vector kind');\n")
         if c['command'] == 'SET_IMU_TRACKING':
             lines.append("    if (!Number.isInteger(action) || action < 0 || action > 3 || !Number.isInteger(stationary_mount_confirmed) || stationary_mount_confirmed < 0 || stationary_mount_confirmed > 1) throw new RangeError('Invalid IMU tracking action or confirmation');\n")
             lines.append("    if (!Number.isFinite(mounting_yaw_rad) || Math.abs(mounting_yaw_rad) > Math.PI || (action === 1 ? stationary_mount_confirmed !== 0 || mounting_yaw_rad !== 0 : stationary_mount_confirmed !== 1)) throw new RangeError('Invalid IMU tracking mounting declaration');\n")
@@ -372,9 +402,15 @@ export function decodeTelemetryEvent(payload) {
         if r:
             t=r['name'] if r['type']=='object' else r['type']
             lines.append(f'    const response = await this._request({c["command"]}, payload, {size(t)});\n')
-            if c['command'].startswith(('GET_FUSION_', 'GET_IMU_TRACKING_')):
+            if c['command'].startswith(('GET_FUSION_', 'GET_IMU_TRACKING_', 'GET_FEEDBACK_')):
                 lines.append(f'    const sample = {class_name(t)}.decode(response);\n')
-                if c['command'] == 'GET_IMU_TRACKING_STATUS':
+                if c['command'] == 'GET_FEEDBACK_FUSION_MOUNT':
+                    lines.append("    if (sample.confirmed > 1 || !Number.isFinite(sample.mounting_yaw_rad) || Math.abs(sample.mounting_yaw_rad) > Math.PI) throw new Error('Invalid feedback fusion mount');\n")
+                elif c['command'] == 'GET_FEEDBACK_SOURCE_STATUS':
+                    lines.append("    if (sample.requested > 2 || sample.valid > 1 || sample.reason > 9 || (sample.valid ? sample.active !== sample.requested || sample.reason !== 0 : sample.active !== 255 || sample.reason === 0)) throw new Error('Invalid feedback source status');\n")
+                elif c['command'] == 'GET_FEEDBACK_SOURCE_VECTOR':
+                    lines.append("    if (![sample.x, sample.y, sample.z].every(Number.isFinite)) throw new Error('Invalid feedback vector');\n")
+                elif c['command'] == 'GET_IMU_TRACKING_STATUS':
                     lines.append("    if (sample.state > 4 || sample.fault > 9 || sample.flags > 15 || sample.reserved !== 0) throw new Error('Invalid IMU tracking status');\n")
                 elif c['command'] == 'GET_IMU_TRACKING_CONFIGURATION':
                     lines.append("    if (!Number.isFinite(sample.mounting_yaw_rad) || Math.abs(sample.mounting_yaw_rad) > Math.PI || sample.window_us === 0) throw new Error('Invalid IMU tracking configuration');\n")

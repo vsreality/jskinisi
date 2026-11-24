@@ -101,6 +101,13 @@ export function supportsFusionExperiment(info) {
     Number.isInteger(info.protocol_minor) && info.protocol_minor >= 19 && info.protocol_minor <= 255;
 }
 
+export function supportsFeedbackSourceSelector(info) {
+  const profile = getBoardProfile(info);
+  return profile?.board.model === 1 && profile.board.revision === '0.4.0' &&
+    profile.capabilities?.feedback_source_selector === true && info.protocol_major === 2 &&
+    Number.isInteger(info.protocol_minor) && info.protocol_minor >= 21 && info.protocol_minor <= 255;
+}
+
 export function supportsImuTracking(info) {
   const profile = getBoardProfile(info);
   return profile?.board.model === 1 && profile.board.revision === '0.4.0' &&

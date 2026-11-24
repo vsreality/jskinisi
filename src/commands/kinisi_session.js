@@ -1,6 +1,7 @@
 // File: kinisi_session.js
 // Shared API-v2 framing, readiness and clock exchange for serial and proxy transports.
 import { Commands, INIT, READY, ERROR, TIME_SYNC_REQUEST, TIME_SYNC_RESPONSE,
+  SET_FEEDBACK_FUSION_MOUNT, GET_FEEDBACK_FUSION_MOUNT, FeedbackSourceVectorKind, SET_FEEDBACK_SOURCE, GET_FEEDBACK_SOURCE_STATUS, GET_FEEDBACK_SOURCE_VECTOR,
   SET_IMU_TRACKING, GET_IMU_TRACKING_STATUS, GET_IMU_TRACKING_VECTOR, GET_IMU_TRACKING_CONFIGURATION,
   SET_FUSION_EXPERIMENT, GET_FUSION_STATUS, GET_FUSION_VECTOR, GET_FUSION_CONFIGURATION,
   SDK_VERSION, InitResponse, ErrorCode, ErrorDescriptions, GET_TEMPERATURE, GET_IMU, GET_MOTOR_CURRENT, GET_MOTOR_FAULTS, CLEAR_MOTOR_FAULTS, GET_PWM_FREQUENCY, SET_PWM_FREQUENCY, GET_MOTOR_CURRENT_LIMIT, SET_MOTOR_CURRENT_LIMIT, SAVE_CONFIGURATION, GET_CONFIGURATION_FIELD, SET_DRIVER_SLEEP, GET_DRIVER_SLEEP, SET_BOARD_IDLE, GET_BOARD_IDLE,
@@ -10,7 +11,7 @@ import { Commands, INIT, READY, ERROR, TIME_SYNC_REQUEST, TIME_SYNC_RESPONSE,
 import { POSITION_COMMANDS, supportsPositionControl, POSITION_PID_COMMANDS, supportsPositionPidControl } from './position_control.js';
 import { supportsTemperatureRead } from './temperature.js';
 import { supportsImuRead } from './imu.js';
-import { getBoardProfile, supportsBoardSensor, supportsMotorCurrent, supportsMotorFaults, getMotorCurrentLimitOptions, supportsMotorCurrentLimit, getPwmFrequencyOptions, supportsPwmFrequency, supportsConfigurationPersistence, supportsDriverSleep, supportsBoardIdle, supportsFusionExperiment, supportsImuTracking } from './board_profile.js';
+import { getBoardProfile, supportsBoardSensor, supportsMotorCurrent, supportsMotorFaults, getMotorCurrentLimitOptions, supportsMotorCurrentLimit, getPwmFrequencyOptions, supportsPwmFrequency, supportsConfigurationPersistence, supportsDriverSleep, supportsBoardIdle, supportsFusionExperiment, supportsImuTracking, supportsFeedbackSourceSelector } from './board_profile.js';
 import { supportsTelemetry, supportsTopic } from './telemetry.js';
 
 export { PwmFrequency, Topic, SubscriptionMode, SubscriptionTrigger, SubscriptionDelivery } from './kinisi_commands.js';
@@ -267,11 +268,40 @@ export class KinisiSession extends Commands {
   }
 
   /** Generated commands cannot bypass the INIT/READY gate. */
+  supportsFeedbackSourceSelector() { return this.ready && supportsFeedbackSourceSelector(this.boardInfo); }
+
+  /** Read one source episode and sample. All requests are read-only. */
+  async readFeedbackSourceSnapshot() {
+    const session = this._session;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const first = await this.get_feedback_source_status();
+      if (session !== this._session || !this.ready) throw new ConnectionClosedError('Controller session changed');
+      if (!first.valid) return { status: first, pose: null, twist: null };
+      let pose, twist;
+      try {
+        pose = await this.get_feedback_source_vector(FeedbackSourceVectorKind.POSE);
+        twist = await this.get_feedback_source_vector(FeedbackSourceVectorKind.TWIST);
+      } catch (error) {
+        if (error.code !== ErrorCode.SAMPLE_NOT_AVAILABLE) throw error;
+      }
+      const status = await this.get_feedback_source_status();
+      if (session !== this._session || !this.ready) throw new ConnectionClosedError('Controller session changed');
+      if (!status.valid) return { status, pose: null, twist: null };
+      if (pose?.sequence === status.sequence && twist?.sequence === status.sequence &&
+          ['requested', 'active', 'origin_id', 'sequence', 'timestamp_us'].every(key => first[key] === status[key])) {
+        return { status, pose, twist };
+      }
+    }
+    throw new ProtocolError('Feedback source changed during read. No coherent snapshot available.');
+  }
+
   supportsImuTracking() { return this.ready && supportsImuTracking(this.boardInfo); }
   supportsFusionExperiment() { return this.ready && supportsFusionExperiment(this.boardInfo); }
 
   async _request(command, payload, responseLength) {
     if (!this.ready) throw new ProtocolError('Controller is not ready; complete INIT first');
+    if ([SET_FEEDBACK_SOURCE, GET_FEEDBACK_SOURCE_STATUS, GET_FEEDBACK_SOURCE_VECTOR, SET_FEEDBACK_FUSION_MOUNT, GET_FEEDBACK_FUSION_MOUNT].includes(command) && !this.supportsFeedbackSourceSelector())
+      throw new ProtocolError('Feedback source selector requires READY, exact v0.4.0 capability and protocol 2.21+');
     if ([SET_IMU_TRACKING, GET_IMU_TRACKING_STATUS, GET_IMU_TRACKING_VECTOR, GET_IMU_TRACKING_CONFIGURATION].includes(command) && !this.supportsImuTracking())
       throw new ProtocolError('IMU tracking requires READY, exact v0.4.0 capability and protocol 2.20+');
     if ([SET_FUSION_EXPERIMENT, GET_FUSION_STATUS, GET_FUSION_VECTOR, GET_FUSION_CONFIGURATION].includes(command) && !this.supportsFusionExperiment())
