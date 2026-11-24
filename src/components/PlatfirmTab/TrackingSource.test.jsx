@@ -7,7 +7,7 @@ const info = { board_model: 1, board_major: 0, board_minor: 4, board_patch: 0, p
 const status = (requested = 0, valid = true, reason = 0) => ({
   requested, active: valid ? requested : 255, valid: Number(valid), reason,
   sequence: valid ? 53 : 0, timestamp_us: valid ? 2n**59n+17n : 0n,
-  origin_id: 16, source_detail: 0, age_us: valid ? 12500 : 0xffffffff,
+  origin_id: 16, source_detail: 0, age_us: valid ? 12500 : 0xffffffff, max_age_ms: 900,
 });
 function board() {
   const c = { boardInfo: {...info}, ready: true, status: status(), confirmed: false,
@@ -114,15 +114,45 @@ describe('board tracking source', () => {
     expect(screen.getByLabelText('Tracking preference')).toHaveValue('');
     expect(c.set_feedback_source).not.toHaveBeenCalled();
   });
-  it('withholds stale vectors while a board read is delayed',async()=>{
+  it('marks a stalled sample historical at the remaining native source deadline',async()=>{
     const c=board();vi.useFakeTimers();
+    c.status={...status(1,true),age_us:20000,max_age_ms:50};
     render(<TrackingSource controller={c} isConnected />);
     await act(async()=>{});
     expect(screen.getByText('Relative pose')).toBeVisible();
     c.readFeedbackSourceSnapshot.mockImplementation(()=>new Promise(()=>{}));
-    await act(async()=>vi.advanceTimersByTimeAsync(1200));
+    await act(async()=>vi.advanceTimersByTimeAsync(29));
+    expect(screen.getByText('Relative pose')).toBeVisible();
+    await act(async()=>vi.advanceTimersByTimeAsync(1));
     expect(screen.getByText(/Historical readback/)).toBeVisible();
     expect(screen.queryByText('Relative pose')).toBeNull();
+    expect(screen.getByText('Historical relative pose')).toBeVisible();
+    expect(reading('Validity at board read')).toBe('Valid');
+    expect(reading('Sample age at read')).toBe('20000 µs');
+  });
+  it('honors a slow encoder deadline and never refreshes a repeated sample',async()=>{
+    const c=board();vi.useFakeTimers();
+    c.status={...status(),max_age_ms:2500,age_us:400000};
+    const view=render(<TrackingSource controller={c} isConnected />);
+    await act(async()=>{});
+    await act(async()=>vi.advanceTimersByTimeAsync(2050));
+    expect(screen.getByText('Relative pose')).toBeVisible();
+    expect(reading('Board freshness limit')).toBe('2500 ms');
+    await act(async()=>vi.advanceTimersByTimeAsync(50));
+    expect(screen.getByText('Historical relative pose')).toBeVisible();
+    await act(async()=>vi.advanceTimersByTimeAsync(500));
+    expect(screen.getByText('Historical body twist')).toBeVisible();
+    view.rerender(<TrackingSource controller={c} isConnected={false}/>);
+    expect(screen.queryByText('Historical relative pose')).toBeNull();
+    c.boardInfo={...info}; c.status={...status(),max_age_ms:60,age_us:0};
+    view.rerender(<TrackingSource controller={c} isConnected />);
+    await act(async()=>{});
+    expect(screen.getByText('Relative pose')).toBeVisible();
+    c.status=status(0,false,1);
+    await act(async()=>{click('Read board status');});
+    expect(screen.queryByText('Relative pose')).toBeNull();
+    expect(screen.queryByText('Historical relative pose')).toBeNull();
+    expect(reading('Board reason')).toBe('not started');
   });
   it('uses the existing explicit whole-configuration save',async()=>{
     const c=board();

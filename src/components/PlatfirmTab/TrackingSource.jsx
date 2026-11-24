@@ -34,7 +34,7 @@ function ConnectedTracking({ controller }) {
   const [historical, setHistorical] = useState(false);
   const [showImu, setShowImu] = useState(false);
   const [previousOrigin, setPreviousOrigin] = useState(null);
-  const operation = useRef({ generation: 0, pending: null, userBusy: false, expires: null, origin: null });
+  const operation = useRef({ generation: 0, pending: null, userBusy: false, expires: null, origin: null, sample: null });
   const read = useCallback(async (action = null, passive = false) => {
     const op = operation.current;
     const generation = op.generation;
@@ -56,9 +56,9 @@ function ConnectedTracking({ controller }) {
         if (!current()) return;
         acknowledged = true;
       }
-      const readAt = performance.now();
       const value = await controller.readFeedbackSourceSnapshot();
       if (!current()) return;
+      const receivedAt = performance.now();
       if (value.status.requested === FeedbackSource.FUSED) {
         try {
           const config = await controller.get_feedback_fusion_mount();
@@ -75,10 +75,21 @@ function ConnectedTracking({ controller }) {
       if (op.origin !== null && op.origin !== value.status.origin_id) setPreviousOrigin(op.origin);
       op.origin = value.status.origin_id;
       setSnapshot(value);
-      const remaining = 1000 - (performance.now() - readAt);
-      setHistorical(remaining <= 0);
       clearTimeout(op.expires);
-      op.expires = setTimeout(() => { if (current()) setHistorical(true); }, Math.max(0, remaining));
+      if (value.status.valid) {
+        const { active, origin_id, sequence, timestamp_us, max_age_ms, age_us } = value.status;
+        const identity = [active, origin_id, sequence, timestamp_us].join('/');
+        const fromBoard = receivedAt + max_age_ms - age_us / 1000;
+        // A repeated capture may shorten its remaining life; it cannot renew it.
+        const deadline = op.sample?.identity === identity ? Math.min(op.sample.deadline, fromBoard) : fromBoard;
+        op.sample = { identity, deadline };
+        const remaining = deadline - performance.now();
+        setHistorical(remaining <= 0);
+        if (remaining > 0) op.expires = setTimeout(() => { if (current()) setHistorical(true); }, remaining);
+      } else {
+        op.sample = null;
+        setHistorical(false);
+      }
       setError(old => passive && old?.fromWrite ? old : null);
     } catch (e) {
       if (!current()) return;
@@ -138,16 +149,17 @@ function ConnectedTracking({ controller }) {
         <div><dt>Validity at board read</dt><dd>{status.valid ? 'Valid' : 'Unavailable'}</dd></div>
         <div><dt>Board reason</dt><dd>{enumName(FeedbackSourceReason, status.reason)}</dd></div>
         <div><dt>Sample age at read</dt><dd>{status.age_us === 0xffffffff ? 'Unavailable' : `${status.age_us} µs`}</dd></div>
+        <div><dt>Board freshness limit</dt><dd>{status.max_age_ms ? `${status.max_age_ms} ms` : 'Unavailable'}</dd></div>
         <div><dt>Source timestamp</dt><dd>{status.timestamp_us ? `${status.timestamp_us} µs` : 'Unavailable'}</dd></div>
         <div><dt>Source sequence</dt><dd>{status.sequence}</dd></div>
         <div><dt>Board origin ID</dt><dd>{status.origin_id}</dd></div>
       </dl>
       {previousOrigin !== null && <p>Origin changed from {previousOrigin} to {status.origin_id}. Earlier coordinates belong to the prior frame.</p>}
       {detail !== 0 && <p>Producer detail {imu ? enumName(ImuTrackingFault, detail) : fused ? enumName(FusionFault, detail) : detail} ({detail})</p>}
-      {historical ? <p role="status">Historical readback. Waiting for a fresh board snapshot.</p> :
-        Boolean(status.valid && snapshot.pose && snapshot.twist) && <div className="tracking-vectors">
-          <Vector title="Relative pose" frame="World axes at this board origin" units={['m','m','rad']} sample={snapshot.pose} />
-          <Vector title="Body twist" frame="Current chassis axes" units={['m/s','m/s','rad/s']} sample={snapshot.twist} />
+      {historical && <p role="status">Historical readback. This sample has reached the board’s freshness limit.</p>}
+      {Boolean(status.valid && snapshot.pose && snapshot.twist) && <div className="tracking-vectors">
+          <Vector title={historical ? 'Historical relative pose' : 'Relative pose'} frame="World axes at this board origin" units={['m','m','rad']} sample={snapshot.pose} />
+          <Vector title={historical ? 'Historical body twist' : 'Body twist'} frame="Current chassis axes" units={['m/s','m/s','rad/s']} sample={snapshot.twist} />
         </div>}
       <p className="section-help">+X forward, +Y left, yaw counterclockwise. Compare positions within one origin and board boot.</p>
     </>}
