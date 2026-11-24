@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ErrorCode } from '../../commands/kinisi_commands';
-import { supportsConfigurationPersistence } from '../../commands/board_profile';
+import { supportsConfigurationPersistence, supportsFeedbackSourceSelector } from '../../commands/board_profile';
 import { readRunningConfiguration } from '../../commands/configuration';
 
 function failureMessage(error, saving) {
@@ -56,6 +56,7 @@ export default function ConfigurationSave({ controller, isConnected, onLoaded, o
   };
   return <section className="control-section" aria-labelledby="configurationSaveTitle">
     <h3 id="configurationSaveTitle">Save setup on the board</h3>
+    {supportsFeedbackSourceSelector(connection) && <p className="section-help">The save includes the board's requested tracking source. After restart, check the requested source in Position and velocity tracking. The board establishes a new origin and requires fresh producer setup.</p>}
     <p className="section-help">Save the applied platform geometry, encoder setup, motor and encoder directions, and motor PWM frequency to onboard memory. Apply form changes first: Save does not apply these inputs or browser Settings.</p>
     <p className="section-help">On startup, saved setup is restored with motors stopped. Motion targets, PID controllers and driver current-limit settings are not restored. Reading the running setup does not initialize or move the platform.</p>
     {!supported ? <p>Requires a known Kinisi v0.4 board and firmware protocol 2.14 or newer.</p>

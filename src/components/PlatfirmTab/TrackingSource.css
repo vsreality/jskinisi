@@ -1,0 +1,24 @@
+.tracking-source .tracking-actions, .tracking-source .tracking-vectors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+  margin: 12px 0;
+}
+.tracking-actions label, .tracking-mount > label { display: grid; gap: 4px; }
+.tracking-actions select { min-width: 170px; }
+.tracking-status, .tracking-vector dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 10px 20px;
+  margin: 14px 0;
+}
+.tracking-source dt, .tracking-vector p { color: #57606a; font-size: .85rem; }
+.tracking-source dd { margin: 3px 0 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.tracking-vector { min-width: 0; flex: 1 1 245px; border-top: 1px solid #d0d7de; padding-top: 10px; }
+.tracking-vector h4, .tracking-vector p { margin: 0 0 3px; }
+.tracking-vector dl { grid-template-columns: repeat(3,minmax(0,1fr)); margin: 8px 0; }
+.tracking-mount { margin: 12px 0; padding: 12px; min-width: 0; }
+.tracking-mount > label { margin: 8px 0; }
+.tracking-mount > label:has(input[type=checkbox]) { display: block; }
+.tracking-mount input[type=number] { width: 9rem; }

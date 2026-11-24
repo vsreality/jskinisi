@@ -2,6 +2,8 @@ import PositionControl from '../PositionControl/PositionControl';
 import ConfigurationSave from './ConfigurationSave';
 import PlatformLayout from './PlatformLayout';
 import FusionExperiment from './FusionExperiment';
+import TrackingSource from './TrackingSource';
+import { supportsFeedbackSourceSelector } from '../../commands/board_profile';
 import TelemetryControl from '../TelemetryControl/TelemetryControl';
 import { Topic } from '../../commands/kinisi_commands';
 import { useSettings, scaleInput } from '../../contexts/SettingsContext';
@@ -20,6 +22,7 @@ function PlatformTab({ isActive = true }) {
     const angleScale = angleUnit === 'deg' ? 180 / Math.PI : 1;
     const [commandError, runCommand] = useCommandAction();
     const { controller, isConnected} = useContext(ControllerContext);
+    const [experimentOpen, setExperimentOpen] = useState(false);
     const pidDefaults = velocityPidDefaults(controller?.boardInfo);
 
     const [isPlatformInitialized, setIsPlatformInitialized] = useState(false);
@@ -469,7 +472,12 @@ function PlatformTab({ isActive = true }) {
     return (
         <div id="tabPlatform" className="platform-tab page-layout">
             {commandError && <p className="conn-error" role="alert">{commandError}</p>}
-            <FusionExperiment controller={controller} isConnected={isConnected} isActive={isActive} />
+            <TrackingSource controller={controller} isConnected={isConnected} isActive={isActive} />
+            {supportsFeedbackSourceSelector(controller?.boardInfo) ?
+              <details onToggle={event => setExperimentOpen(event.currentTarget.open)}>
+                <summary>Experimental motion feedback controls</summary>
+                {experimentOpen && <FusionExperiment controller={controller} isConnected={isConnected} isActive={isActive} />}
+              </details> : <FusionExperiment controller={controller} isConnected={isConnected} isActive={isActive} />}
             <div className="platform-setup-grid">
                 <section className="panel-card platform-hardware">
                 <h2>Platform setup</h2>
