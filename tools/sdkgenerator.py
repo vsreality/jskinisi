@@ -362,6 +362,7 @@ export function decodeTelemetryEvent(payload) {
             lines.append("    if (!Number.isInteger(source) || source < 0 || source > 2) throw new RangeError('Invalid feedback source');\n")
         if c['command'] == 'GET_FEEDBACK_SOURCE_VECTOR':
             lines.append("    if (!Number.isInteger(kind) || kind < 0 || kind > 1) throw new RangeError('Invalid feedback vector kind');\n")
+            lines.append("    if (![origin_id, sequence].every(value => Number.isInteger(value) && value >= 0 && value <= 0xffffffff)) throw new RangeError('Invalid feedback sample key');\n")
         if c['command'] == 'SET_IMU_TRACKING':
             lines.append("    if (!Number.isInteger(action) || action < 0 || action > 3 || !Number.isInteger(stationary_mount_confirmed) || stationary_mount_confirmed < 0 || stationary_mount_confirmed > 1) throw new RangeError('Invalid IMU tracking action or confirmation');\n")
             lines.append("    if (!Number.isFinite(mounting_yaw_rad) || Math.abs(mounting_yaw_rad) > Math.PI || (action === 1 ? stationary_mount_confirmed !== 0 || mounting_yaw_rad !== 0 : stationary_mount_confirmed !== 1)) throw new RangeError('Invalid IMU tracking mounting declaration');\n")
@@ -407,7 +408,7 @@ export function decodeTelemetryEvent(payload) {
                 if c['command'] == 'GET_FEEDBACK_FUSION_MOUNT':
                     lines.append("    if (sample.confirmed > 1 || !Number.isFinite(sample.mounting_yaw_rad) || Math.abs(sample.mounting_yaw_rad) > Math.PI) throw new Error('Invalid feedback fusion mount');\n")
                 elif c['command'] == 'GET_FEEDBACK_SOURCE_STATUS':
-                    lines.append("    if (sample.requested > 2 || sample.valid > 1 || sample.reason > 9 || (sample.valid ? sample.active !== sample.requested || sample.reason !== 0 : sample.active !== 255 || sample.reason === 0)) throw new Error('Invalid feedback source status');\n")
+                    lines.append("    if (sample.requested > 2 || sample.valid > 1 || sample.reason > 9 || (sample.valid ? sample.active !== sample.requested || sample.reason !== 0 || !sample.max_age_ms || sample.age_us > 1000 * sample.max_age_ms : sample.active !== 255 || sample.reason === 0 || sample.sequence !== 0 || sample.timestamp_us !== 0n || sample.age_us !== 0xffffffff)) throw new Error('Invalid feedback source status');\n")
                 elif c['command'] == 'GET_FEEDBACK_SOURCE_VECTOR':
                     lines.append("    if (![sample.x, sample.y, sample.z].every(Number.isFinite)) throw new Error('Invalid feedback vector');\n")
                 elif c['command'] == 'GET_IMU_TRACKING_STATUS':

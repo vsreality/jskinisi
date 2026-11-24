@@ -1071,7 +1071,7 @@ export class ImuTrackingConfiguration {
 /** Board-wide selected tracking telemetry status. */
 export class FeedbackSourceStatus {
   /** Store one decoded payload. */
-  constructor(requested, active, valid, reason, sequence, timestamp_us, origin_id, source_detail, age_us) {
+  constructor(requested, active, valid, reason, sequence, timestamp_us, origin_id, source_detail, age_us, max_age_ms) {
     this.requested = requested;
     this.active = active;
     this.valid = valid;
@@ -1081,9 +1081,10 @@ export class FeedbackSourceStatus {
     this.origin_id = origin_id;
     this.source_detail = source_detail;
     this.age_us = age_us;
+    this.max_age_ms = max_age_ms;
   }
   /** Packed wire size; independent of JavaScript values. */
-  static getSize() { return 25; }
+  static getSize() { return 27; }
   /** Encode a payload without a message header. */
   encode() {
     const buffer = new ArrayBuffer(FeedbackSourceStatus.getSize());
@@ -1097,6 +1098,7 @@ export class FeedbackSourceStatus {
     view.setUint32(16, this.origin_id, true);
     view.setUint8(20, this.source_detail);
     view.setUint32(21, this.age_us, true);
+    view.setUint16(25, this.max_age_ms, true);
     return buffer;
   }
   /** Decode an exact response payload. uint64 values remain bigint. */
@@ -1112,6 +1114,7 @@ export class FeedbackSourceStatus {
       view.getUint32(16, true),
       view.getUint8(20),
       view.getUint32(21, true),
+      view.getUint16(25, true),
     );
   }
 }
@@ -2114,18 +2117,21 @@ export class Commands {
   /** Get requested and active source, availability reason and producer detail. Invalid status reports active NONE; no fallback. While valid the sample sequence and monotonic timestamp identify the underlying producer publication. Inspect requested source diagnostics for acquisition ages and fault detail. The standalone IMU is a one-second relative motion-onset diagnostic; fused telemetry uses the existing experimental estimator. Reconnect reads live board state. Requires READY and exact model 1 hardware 0.4.0 with feedback_source_selector and protocol 2.21 or newer. Selection only routes tracking telemetry. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
   async get_feedback_source_status() {
     const payload = new ArrayBuffer(0);
-    const response = await this._request(GET_FEEDBACK_SOURCE_STATUS, payload, 25);
+    const response = await this._request(GET_FEEDBACK_SOURCE_STATUS, payload, 27);
     const sample = FeedbackSourceStatus.decode(response);
-    if (sample.requested > 2 || sample.valid > 1 || sample.reason > 9 || (sample.valid ? sample.active !== sample.requested || sample.reason !== 0 : sample.active !== 255 || sample.reason === 0)) throw new Error('Invalid feedback source status');
+    if (sample.requested > 2 || sample.valid > 1 || sample.reason > 9 || (sample.valid ? sample.active !== sample.requested || sample.reason !== 0 || !sample.max_age_ms || sample.age_us > 1000 * sample.max_age_ms : sample.active !== 255 || sample.reason === 0 || sample.sequence !== 0 || sample.timestamp_us !== 0n || sample.age_us !== 0xffffffff)) throw new Error('Invalid feedback source status');
     return sample;
   }
 
-  /** Get selector-relative pose (metres, metres, unwrapped radians) or body twist (metres/second, metres/second, radians/second), +X forward, +Y left, yaw CCW. Relative XY is rotated into the heading at the new anchor. Bracket vectors with valid status reads having identical requested/active source, origin_id, sequence and timestamp_us; also match every vector sequence. Discard mismatches and retry. Compare origins only within the same boot. Requires READY and exact model 1 hardware 0.4.0 with feedback_source_selector and protocol 2.21 or newer. Selection only routes tracking telemetry. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SAMPLE_NOT_AVAILABLE. */
-  async get_feedback_source_vector(kind) {
+  /** Get selector-relative pose (metres, metres, unwrapped radians) or body twist (metres/second, metres/second, radians/second), +X forward, +Y left, yaw CCW. Relative XY is rotated into the heading at the new anchor. First capture a valid status, then request both vectors with its exact origin_id and sequence. Eight distinct recent captures are retained for at most 50000 us after capture. Both keys and the current healthy source/frame must match. Selected historical sample age cannot exceed 50000 us for IMU-only, 60000 us for fused, or three configured encoder periods. Expiry or invalidation immediately rejects cached data. A final live status may naturally advance sequence and time; require the same valid requested/active source and origin, match both vector sequences to the original capture and retry on SAMPLE_NOT_AVAILABLE. Compare origins only within the same boot. Requires READY and exact model 1 hardware 0.4.0 with feedback_source_selector and protocol 2.21 or newer. Selection only routes tracking telemetry. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SAMPLE_NOT_AVAILABLE. */
+  async get_feedback_source_vector(kind, origin_id, sequence) {
     if (!Number.isInteger(kind) || kind < 0 || kind > 1) throw new RangeError('Invalid feedback vector kind');
-    const payload = new ArrayBuffer(1);
+    if (![origin_id, sequence].every(value => Number.isInteger(value) && value >= 0 && value <= 0xffffffff)) throw new RangeError('Invalid feedback sample key');
+    const payload = new ArrayBuffer(9);
     const requestView = new DataView(payload);
     requestView.setUint8(0, kind);
+    requestView.setUint32(1, origin_id, true);
+    requestView.setUint32(5, sequence, true);
     const response = await this._request(GET_FEEDBACK_SOURCE_VECTOR, payload, 28);
     const sample = FeedbackSourceVector.decode(response);
     if (![sample.x, sample.y, sample.z].every(Number.isFinite)) throw new Error('Invalid feedback vector');

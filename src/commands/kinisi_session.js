@@ -279,17 +279,25 @@ export class KinisiSession extends Commands {
       if (!first.valid) return { status: first, pose: null, twist: null };
       let pose, twist;
       try {
-        pose = await this.get_feedback_source_vector(FeedbackSourceVectorKind.POSE);
-        twist = await this.get_feedback_source_vector(FeedbackSourceVectorKind.TWIST);
+        pose = await this.get_feedback_source_vector(FeedbackSourceVectorKind.POSE, first.origin_id, first.sequence);
+        twist = await this.get_feedback_source_vector(FeedbackSourceVectorKind.TWIST, first.origin_id, first.sequence);
       } catch (error) {
         if (error.code !== ErrorCode.SAMPLE_NOT_AVAILABLE) throw error;
       }
       const status = await this.get_feedback_source_status();
       if (session !== this._session || !this.ready) throw new ConnectionClosedError('Controller session changed');
       if (!status.valid) return { status, pose: null, twist: null };
-      if (pose?.sequence === status.sequence && twist?.sequence === status.sequence &&
-          ['requested', 'active', 'origin_id', 'sequence', 'timestamp_us'].every(key => first[key] === status[key])) {
-        return { status, pose, twist };
+      if (pose?.sequence !== first.sequence || twist?.sequence !== first.sequence ||
+          status.requested !== first.requested || status.active !== first.active || status.origin_id !== first.origin_id) continue;
+      const advance = (status.sequence - first.sequence) >>> 0;
+      const tick = status.timestamp_us - first.timestamp_us;
+      if (advance >= 0x80000000 || tick < 0n || tick > 0xffffffffn || (advance === 0) !== (tick === 0n)) continue;
+      // Both timers come from the board. A newer status may describe another acquisition.
+      const ageAtCheck = Number(tick) + status.age_us;
+      const elapsed = ageAtCheck - first.age_us;
+      if (elapsed >= 0 && elapsed <= 50000 && ageAtCheck <= 1000 * Math.min(first.max_age_ms, status.max_age_ms)) {
+        first.age_us = ageAtCheck;
+        return { status: first, pose, twist };
       }
     }
     throw new ProtocolError('Feedback source changed during read. No coherent snapshot available.');
