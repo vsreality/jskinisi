@@ -1,7 +1,7 @@
 // File: kinisi_session.js
 // Shared API-v2 framing, readiness and clock exchange for serial and proxy transports.
 import { Commands, INIT, READY, ERROR, TIME_SYNC_REQUEST, TIME_SYNC_RESPONSE,
-  SET_FEEDBACK_FUSION_MOUNT, GET_FEEDBACK_FUSION_MOUNT, FeedbackSourceVectorKind, SET_FEEDBACK_SOURCE, GET_FEEDBACK_SOURCE_STATUS, GET_FEEDBACK_SOURCE_VECTOR,
+  GET_FEEDBACK_SOURCE_HEALTH, GET_FEEDBACK_IMU_CHANNELS, SET_FEEDBACK_FUSION_MOUNT, GET_FEEDBACK_FUSION_MOUNT, FeedbackSourceVectorKind, SET_FEEDBACK_SOURCE, GET_FEEDBACK_SOURCE_STATUS, GET_FEEDBACK_SOURCE_VECTOR,
   SET_IMU_TRACKING, GET_IMU_TRACKING_STATUS, GET_IMU_TRACKING_VECTOR, GET_IMU_TRACKING_CONFIGURATION,
   SET_FUSION_EXPERIMENT, GET_FUSION_STATUS, GET_FUSION_VECTOR, GET_FUSION_CONFIGURATION,
   SDK_VERSION, InitResponse, ErrorCode, ErrorDescriptions, GET_TEMPERATURE, GET_IMU, GET_MOTOR_CURRENT, GET_MOTOR_FAULTS, CLEAR_MOTOR_FAULTS, GET_PWM_FREQUENCY, SET_PWM_FREQUENCY, GET_MOTOR_CURRENT_LIMIT, SET_MOTOR_CURRENT_LIMIT, SAVE_CONFIGURATION, GET_CONFIGURATION_FIELD, SET_DRIVER_SLEEP, GET_DRIVER_SLEEP, SET_BOARD_IDLE, GET_BOARD_IDLE,
@@ -11,7 +11,7 @@ import { Commands, INIT, READY, ERROR, TIME_SYNC_REQUEST, TIME_SYNC_RESPONSE,
 import { POSITION_COMMANDS, supportsPositionControl, POSITION_PID_COMMANDS, supportsPositionPidControl } from './position_control.js';
 import { supportsTemperatureRead } from './temperature.js';
 import { supportsImuRead } from './imu.js';
-import { getBoardProfile, supportsBoardSensor, supportsMotorCurrent, supportsMotorFaults, getMotorCurrentLimitOptions, supportsMotorCurrentLimit, getPwmFrequencyOptions, supportsPwmFrequency, supportsConfigurationPersistence, supportsDriverSleep, supportsBoardIdle, supportsFusionExperiment, supportsImuTracking, supportsFeedbackSourceSelector } from './board_profile.js';
+import { getBoardProfile, supportsBoardSensor, supportsMotorCurrent, supportsMotorFaults, getMotorCurrentLimitOptions, supportsMotorCurrentLimit, getPwmFrequencyOptions, supportsPwmFrequency, supportsConfigurationPersistence, supportsDriverSleep, supportsBoardIdle, supportsFusionExperiment, supportsImuTracking, supportsFeedbackSourceSelector, supportsFeedbackSourceHealth } from './board_profile.js';
 import { supportsTelemetry, supportsTopic } from './telemetry.js';
 
 export { PwmFrequency, Topic, SubscriptionMode, SubscriptionTrigger, SubscriptionDelivery } from './kinisi_commands.js';
@@ -268,6 +268,7 @@ export class KinisiSession extends Commands {
   }
 
   /** Generated commands cannot bypass the INIT/READY gate. */
+  supportsFeedbackSourceHealth() { return this.ready && supportsFeedbackSourceHealth(this.boardInfo); }
   supportsFeedbackSourceSelector() { return this.ready && supportsFeedbackSourceSelector(this.boardInfo); }
 
   /** Read one source episode and sample. All requests are read-only. */
@@ -308,6 +309,8 @@ export class KinisiSession extends Commands {
 
   async _request(command, payload, responseLength) {
     if (!this.ready) throw new ProtocolError('Controller is not ready; complete INIT first');
+    if ([GET_FEEDBACK_SOURCE_HEALTH, GET_FEEDBACK_IMU_CHANNELS].includes(command) && !this.supportsFeedbackSourceHealth())
+      throw new ProtocolError('Tracking source health requires READY, exact v0.4.0 capability and protocol 2.22+');
     if ([SET_FEEDBACK_SOURCE, GET_FEEDBACK_SOURCE_STATUS, GET_FEEDBACK_SOURCE_VECTOR, SET_FEEDBACK_FUSION_MOUNT, GET_FEEDBACK_FUSION_MOUNT].includes(command) && !this.supportsFeedbackSourceSelector())
       throw new ProtocolError('Feedback source selector requires READY, exact v0.4.0 capability and protocol 2.21+');
     if ([SET_IMU_TRACKING, GET_IMU_TRACKING_STATUS, GET_IMU_TRACKING_VECTOR, GET_IMU_TRACKING_CONFIGURATION].includes(command) && !this.supportsImuTracking())

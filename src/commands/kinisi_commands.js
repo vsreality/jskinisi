@@ -1,6 +1,6 @@
 // Generated from tools/commands.json by tools/sdkgenerator.py. Do not edit.
 export const SDK_VERSION = Object.freeze([2, 6, 0]);
-export const PROTOCOL_VERSION = Object.freeze([2, 21, 0]);
+export const PROTOCOL_VERSION = Object.freeze([2, 22, 0]);
 export const GET_TEMPERATURE = 0x50;
 export const GET_IMU = 0x51;
 export const GET_MOTOR_CURRENT = 0x52;
@@ -101,6 +101,8 @@ export const GET_FEEDBACK_SOURCE_STATUS = 0x68;
 export const GET_FEEDBACK_SOURCE_VECTOR = 0x69;
 export const SET_FEEDBACK_FUSION_MOUNT = 0x6a;
 export const GET_FEEDBACK_FUSION_MOUNT = 0x6b;
+export const GET_FEEDBACK_SOURCE_HEALTH = 0x6c;
+export const GET_FEEDBACK_IMU_CHANNELS = 0x6d;
 export const ErrorCode = Object.freeze({
   INCOMPATIBLE_PROTOCOL: 1,
   INVALID_ARGUMENT: 2,
@@ -147,6 +149,15 @@ export const ErrorDescriptions = Object.freeze({
   20: "Board idle is active. Explicitly wake the board before changing driver sleep or starting a subscription.",
   21: "Stop all motor outputs, disarm all controllers and wait for stationary wheel observations before changing the tracking preference.",
 });
+/** A response for a different producer cannot describe the requested source. */
+export class FeedbackSourceMismatchError extends Error {
+  constructor(requested, received) {
+    super(`Expected health for feedback source ${requested}, received ${received}`);
+    this.name = 'FeedbackSourceMismatchError';
+    this.requested = requested;
+    this.received = received;
+  }
+}
 /** Preserve uint64/int64 precision instead of silently accepting rounded Numbers. */
 function exactBigInt(value) {
   if (typeof value === 'number' && !Number.isSafeInteger(value)) throw new TypeError('64-bit values require a bigint or a safe integer');
@@ -267,6 +278,22 @@ export const FeedbackSourceReason = Object.freeze({
 export const FeedbackSourceVectorKind = Object.freeze({
   POSE: 0,
   TWIST: 1,
+});
+export const FeedbackSourceHealthState = Object.freeze({
+  HEALTHY: 0,
+  SUSPECT: 1,
+  UNAVAILABLE: 2,
+  INDETERMINATE: 3,
+});
+export const FeedbackSourceHealthFlag = Object.freeze({
+  PROVENANCE: 1,
+  FRESH: 2,
+  DISAGREEMENT: 4,
+  COMPARISON_AVAILABLE: 8,
+  RECOVERING: 16,
+  RESTART_REQUIRED: 32,
+  TIMESTAMP_FAULT: 64,
+  SATURATION: 128,
 });
 export const SubscriptionMode = Object.freeze({
   PERIODIC: 0,
@@ -1175,6 +1202,87 @@ export class FeedbackFusionMount {
     return new FeedbackFusionMount(
       view.getUint8(0),
       view.getFloat64(1, true),
+    );
+  }
+}
+
+/** Read producer health independently of selector and control. ENCODER is the running platform encoder batch, IMU_ONLY is physical BMI088 pair availability independent of the one-second estimate, FUSED is the passive fused estimate. Disagreement indicates conflicting observations without assigning sensor blame. HEALTHY means directly usable data. Comparability is separate. Historical provenance remains readable during failure. Reconnect reads board state. */
+export class FeedbackSourceHealth {
+  /** Store one decoded payload. */
+  constructor(source, health, reason, detail, flags, sequence, timestamp_us, age_us, max_age_us) {
+    this.source = source;
+    this.health = health;
+    this.reason = reason;
+    this.detail = detail;
+    this.flags = flags;
+    this.sequence = sequence;
+    this.timestamp_us = timestamp_us;
+    this.age_us = age_us;
+    this.max_age_us = max_age_us;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 28; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(FeedbackSourceHealth.getSize());
+    const view = new DataView(buffer);
+    view.setUint8(0, this.source);
+    view.setUint8(1, this.health);
+    view.setUint8(2, this.reason);
+    view.setUint8(3, this.detail);
+    view.setUint32(4, this.flags, true);
+    view.setUint32(8, this.sequence, true);
+    view.setBigUint64(12, exactBigInt(this.timestamp_us), true);
+    view.setUint32(20, this.age_us, true);
+    view.setUint32(24, this.max_age_us, true);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, FeedbackSourceHealth.getSize());
+    return new FeedbackSourceHealth(
+      view.getUint8(0),
+      view.getUint8(1),
+      view.getUint8(2),
+      view.getUint8(3),
+      view.getUint32(4, true),
+      view.getUint32(8, true),
+      view.getBigUint64(12, true),
+      view.getUint32(20, true),
+      view.getUint32(24, true),
+    );
+  }
+}
+
+/** Read independent last observed accelerometer and gyro acquisition times in board uptime microseconds. A timestamp of zero and age UINT32_MAX indicate no observed acquisition. These are physical source observations, independent of the finite IMU-only tracking window. A pair must meet the 35000 us age and 15000 us skew limits. */
+export class FeedbackImuChannels {
+  /** Store one decoded payload. */
+  constructor(accel_timestamp_us, gyro_timestamp_us, accel_age_us, gyro_age_us) {
+    this.accel_timestamp_us = accel_timestamp_us;
+    this.gyro_timestamp_us = gyro_timestamp_us;
+    this.accel_age_us = accel_age_us;
+    this.gyro_age_us = gyro_age_us;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 24; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(FeedbackImuChannels.getSize());
+    const view = new DataView(buffer);
+    view.setBigUint64(0, exactBigInt(this.accel_timestamp_us), true);
+    view.setBigUint64(8, exactBigInt(this.gyro_timestamp_us), true);
+    view.setUint32(16, this.accel_age_us, true);
+    view.setUint32(20, this.gyro_age_us, true);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, FeedbackImuChannels.getSize());
+    return new FeedbackImuChannels(
+      view.getBigUint64(0, true),
+      view.getBigUint64(8, true),
+      view.getUint32(16, true),
+      view.getUint32(20, true),
     );
   }
 }
@@ -2153,6 +2261,28 @@ export class Commands {
     const response = await this._request(GET_FEEDBACK_FUSION_MOUNT, payload, 9);
     const sample = FeedbackFusionMount.decode(response);
     if (sample.confirmed > 1 || !Number.isFinite(sample.mounting_yaw_rad) || Math.abs(sample.mounting_yaw_rad) > Math.PI) throw new Error('Invalid feedback fusion mount');
+    return sample;
+  }
+
+  /** Read producer health independently of selector and control. ENCODER is the running platform encoder batch, IMU_ONLY is physical BMI088 pair availability independent of the one-second estimate, FUSED is the passive fused estimate. Disagreement indicates conflicting observations without assigning sensor blame. HEALTHY means directly usable data. Comparability is separate. Historical provenance remains readable during failure. Reconnect reads board state. Requires READY, exact v0.4 and protocol 2.22+ with feedback_source_health. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
+  async get_feedback_source_health(source) {
+    if (!Number.isInteger(source) || source < 0 || source > 2) throw new RangeError('Invalid feedback source');
+    const payload = new ArrayBuffer(1);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, source);
+    const response = await this._request(GET_FEEDBACK_SOURCE_HEALTH, payload, 28);
+    const sample = FeedbackSourceHealth.decode(response);
+    if (sample.source !== source) throw new FeedbackSourceMismatchError(source, sample.source);
+    if (sample.health > FeedbackSourceHealthState.INDETERMINATE || sample.reason > FeedbackSourceReason.MOUNT_REQUIRED || sample.detail > FusionFault.INHIBITED) throw new Error('Invalid feedback source health');
+    return sample;
+  }
+
+  /** Read independent last observed accelerometer and gyro acquisition times in board uptime microseconds. A timestamp of zero and age UINT32_MAX indicate no observed acquisition. These are physical source observations, independent of the finite IMU-only tracking window. A pair must meet the 35000 us age and 15000 us skew limits. Requires READY, exact v0.4 and protocol 2.22+ with feedback_source_health. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
+  async get_feedback_imu_channels() {
+    const payload = new ArrayBuffer(0);
+    const response = await this._request(GET_FEEDBACK_IMU_CHANNELS, payload, 24);
+    const sample = FeedbackImuChannels.decode(response);
+    if ((!sample.accel_timestamp_us && sample.accel_age_us !== 0xffffffff) || (!sample.gyro_timestamp_us && sample.gyro_age_us !== 0xffffffff)) throw new Error('Invalid feedback IMU channel provenance');
     return sample;
   }
 }

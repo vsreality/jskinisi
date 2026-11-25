@@ -537,3 +537,28 @@ Use `await controller.readFeedbackSourceSnapshot()` for a verified status, pose
 and twist. An invalid status returns null vectors. If an episode or sequence changes
 during all three read attempts, the promise rejects. A failed write requires explicit
 readback before deciding whether to retry.
+
+### Comparing tracking inputs
+
+On a ready v0.4.0 controller with protocol 2.22 and the source-health capability,
+read each producer independently. The physical BMI088 pair can report healthy
+even after the one-second IMU-only tracking window expires. Read the selected
+estimate with `readFeedbackSourceSnapshot()`.
+
+```js
+if (controller.supportsFeedbackSourceHealth()) {
+  const encoder = await controller.get_feedback_source_health(FeedbackSource.ENCODER);
+  const imu = await controller.get_feedback_source_health(FeedbackSource.IMU_ONLY);
+  const fused = await controller.get_feedback_source_health(FeedbackSource.FUSED);
+  const channels = await controller.get_feedback_imu_channels();
+}
+```
+
+Each producer report includes its health, reason, fusion diagnostic, flags,
+sequence, 64-bit source timestamp, age and freshness limit in microseconds.
+The channel report preserves the accelerometer and gyro acquisition times
+separately. Read `FeedbackSourceHealthFlag.COMPARISON_AVAILABLE` before
+interpreting the disagreement flag. A fresh sample can still be unusable.
+Recovery, a read error or an expired sample requires a new board read before
+relying on the source. Reads preserve the selected telemetry source and motor state.
+A mismatched source echo rejects with `FeedbackSourceMismatchError`.

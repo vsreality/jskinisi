@@ -32,10 +32,12 @@ def validate(bundle):
         fields(profile, ('board', 'resources', 'motor_features', 'sensors') +
                tuple(key for key in ('pwm_frequency', 'power', 'capabilities') if key in profile), 'board profile')
         if 'capabilities' in profile:
-            fields(profile['capabilities'], ('fusion_experiment',) + tuple(key for key in ('imu_tracking', 'feedback_source_selector') if key in profile['capabilities']), 'capabilities')
+            fields(profile['capabilities'], ('fusion_experiment',) + tuple(key for key in ('imu_tracking', 'feedback_source_selector', 'feedback_source_health') if key in profile['capabilities']), 'capabilities')
             require(type(profile['capabilities']['fusion_experiment']) is bool, 'Invalid fusion capability')
             if 'feedback_source_selector' in profile['capabilities']:
                 require(type(profile['capabilities']['feedback_source_selector']) is bool, 'Invalid feedback source selector capability')
+            if 'feedback_source_health' in profile['capabilities']:
+                require(type(profile['capabilities']['feedback_source_health']) is bool, 'Invalid feedback source health capability')
             if 'imu_tracking' in profile['capabilities']:
                 require(type(profile['capabilities']['imu_tracking']) is bool, 'Invalid IMU tracking capability')
         if 'power' in profile:

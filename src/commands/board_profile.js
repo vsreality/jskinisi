@@ -108,6 +108,11 @@ export function supportsFeedbackSourceSelector(info) {
     Number.isInteger(info.protocol_minor) && info.protocol_minor >= 21 && info.protocol_minor <= 255;
 }
 
+export function supportsFeedbackSourceHealth(info) {
+  return supportsFeedbackSourceSelector(info) && info.protocol_minor >= 22 &&
+    getBoardProfile(info).capabilities.feedback_source_health === true;
+}
+
 export function supportsImuTracking(info) {
   const profile = getBoardProfile(info);
   return profile?.board.model === 1 && profile.board.revision === '0.4.0' &&

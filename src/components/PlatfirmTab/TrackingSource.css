@@ -22,3 +22,10 @@
 .tracking-mount > label { margin: 8px 0; }
 .tracking-mount > label:has(input[type=checkbox]) { display: block; }
 .tracking-mount input[type=number] { width: 9rem; }
+
+.tracking-health { margin: 20px 0; }
+.tracking-health h3 { margin-bottom: 6px; }
+.tracking-health-cards { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,200px),1fr)); gap: 12px; }
+.tracking-health-card { padding: 12px; border: 1px solid #d0d7de; border-radius: 6px; }
+.tracking-health-card h4, .tracking-health-card dl { margin: 0; }
+.tracking-health-card dl > div { margin-top: 8px; }

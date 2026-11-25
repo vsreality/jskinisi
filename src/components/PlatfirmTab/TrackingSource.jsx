@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { supportsFeedbackSourceSelector } from '../../commands/board_profile';
+import { supportsFeedbackSourceSelector, supportsFeedbackSourceHealth } from '../../commands/board_profile';
 import { FeedbackSource, FeedbackSourceReason, FusionFault, ImuTrackingFault } from '../../commands/kinisi_commands';
 import ImuTracking from '../SensorsTab/ImuTracking';
+import TrackingHealth from './TrackingHealth';
 import './TrackingSource.css';
 
 const sources = [
@@ -165,6 +166,7 @@ function ConnectedTracking({ controller }) {
         </div>}
       <p className="section-help">+X forward, +Y left, yaw counterclockwise. Compare positions within one origin and board boot.</p>
     </>}
+    {supportsFeedbackSourceHealth(controller.boardInfo) && <TrackingHealth controller={controller} />}
     {fused && <fieldset className="tracking-mount"><legend>Passive fused tracking</legend>
       <p>Use initialized platform geometry and running odometry. Enter the board +X direction relative to chassis forward, positive counterclockwise. Confirm the board mount after each restart. Keep the platform still for calibration.</p>
       {mount?.error ? <p role="alert">Mount readback unavailable. {mount.error}</p> :

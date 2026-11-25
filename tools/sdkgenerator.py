@@ -53,6 +53,29 @@ FEEDBACK_CATALOGS = [
 ]
 
 
+HEALTH_CATALOGS = [
+    ('feedback_source_health_states', 'FeedbackSourceHealthState', 'FEEDBACK_SOURCE_HEALTH',
+     ['HEALTHY', 'SUSPECT', 'UNAVAILABLE', 'INDETERMINATE']),
+    ('feedback_source_health_flags', 'FeedbackSourceHealthFlag', 'FEEDBACK_SOURCE_HEALTH',
+     ['PROVENANCE', 'FRESH', 'DISAGREEMENT', 'COMPARISON_AVAILABLE', 'RECOVERING', 'RESTART_REQUIRED',
+      'TIMESTAMP_FAULT', 'SATURATION']),
+]
+
+
+def validate_feedback_health(schema):
+    commands = {c['command']: c for c in schema['commands']}
+    expected = {'GET_FEEDBACK_SOURCE_HEALTH', 'GET_FEEDBACK_IMU_CHANNELS'}
+    if not (expected & commands.keys() or any(key in schema for key, *_ in HEALTH_CATALOGS)):
+        return
+    if not expected <= commands.keys():
+        raise ValueError('Incomplete feedback source health command family')
+    for key, _, _, names in HEALTH_CATALOGS:
+        ids = [1 << i for i in range(len(names))] if key.endswith('_flags') else range(len(names))
+        values = schema.get(key, [])
+        if [(v.get('id'), v.get('name')) for v in values] != list(zip(ids, names)) or any(type(v.get('id')) is not int for v in values):
+            raise ValueError('Invalid ' + key + ' catalog')
+
+
 def validate_feedback_source(schema):
     required = {'SET_FEEDBACK_SOURCE', 'GET_FEEDBACK_SOURCE_STATUS', 'GET_FEEDBACK_SOURCE_VECTOR',
                 'SET_FEEDBACK_FUSION_MOUNT', 'GET_FEEDBACK_FUSION_MOUNT'}
@@ -98,6 +121,7 @@ def validate_pwm_frequency(schema):
     validate_fusion(schema)
     validate_imu_tracking(schema)
     validate_feedback_source(schema)
+    validate_feedback_health(schema)
     values = schema.get('pwm_frequencies', [])
     expected = [(v, 'KHZ_' + str(v // 1000)) for v in (10000, 20000, 25000, 50000, 100000)]
     if [(v.get('id'), v.get('name')) for v in values] != expected or any(type(v.get('id')) is not int for v in values):
@@ -252,6 +276,15 @@ def generate_js_code(schema, js_version='ES6'):
     for e in schema['error_codes']:
         lines.append(f"  {e['code']}: {json.dumps(e['description'])},\n")
     lines.append('''});
+/** A response for a different producer cannot describe the requested source. */
+export class FeedbackSourceMismatchError extends Error {
+  constructor(requested, received) {
+    super(`Expected health for feedback source ${requested}, received ${received}`);
+    this.name = 'FeedbackSourceMismatchError';
+    this.requested = requested;
+    this.received = received;
+  }
+}
 /** Preserve uint64/int64 precision instead of silently accepting rounded Numbers. */
 function exactBigInt(value) {
   if (typeof value === 'number' && !Number.isSafeInteger(value)) throw new TypeError('64-bit values require a bigint or a safe integer');
@@ -265,7 +298,7 @@ function payloadView(buffer, size) {
     : new DataView(buffer);
 }
 ''')
-    for key, name in [('subscription_triggers', 'SubscriptionTrigger'), ('subscription_deliveries', 'SubscriptionDelivery'), ('pwm_frequencies', 'PwmFrequency')] + [(key, name) for key, name, _, _ in FUSION_CATALOGS + IMU_TRACKING_CATALOGS + FEEDBACK_CATALOGS]:
+    for key, name in [('subscription_triggers', 'SubscriptionTrigger'), ('subscription_deliveries', 'SubscriptionDelivery'), ('pwm_frequencies', 'PwmFrequency')] + [(key, name) for key, name, _, _ in FUSION_CATALOGS + IMU_TRACKING_CATALOGS + FEEDBACK_CATALOGS + HEALTH_CATALOGS]:
         lines.append(f'export const {name} = Object.freeze({{\n')
         for item in schema.get(key, []):
             lines.append(f"  {item['name']}: {item['id']},\n")
@@ -358,7 +391,7 @@ export function decodeTelemetryEvent(payload) {
             lines.append("    if (sleeping !== 0 && sleeping !== 1) throw new RangeError('sleeping must be 0 (awake) or 1 (asleep)');\n")
         if c['command'] == 'SET_FEEDBACK_FUSION_MOUNT':
             lines.append("    if (!Number.isFinite(mounting_yaw_rad) || Math.abs(mounting_yaw_rad) > Math.PI) throw new RangeError('Invalid fusion mounting yaw');\n")
-        if c['command'] == 'SET_FEEDBACK_SOURCE':
+        if c['command'] in {'SET_FEEDBACK_SOURCE', 'GET_FEEDBACK_SOURCE_HEALTH'}:
             lines.append("    if (!Number.isInteger(source) || source < 0 || source > 2) throw new RangeError('Invalid feedback source');\n")
         if c['command'] == 'GET_FEEDBACK_SOURCE_VECTOR':
             lines.append("    if (!Number.isInteger(kind) || kind < 0 || kind > 1) throw new RangeError('Invalid feedback vector kind');\n")
@@ -407,6 +440,10 @@ export function decodeTelemetryEvent(payload) {
                 lines.append(f'    const sample = {class_name(t)}.decode(response);\n')
                 if c['command'] == 'GET_FEEDBACK_FUSION_MOUNT':
                     lines.append("    if (sample.confirmed > 1 || !Number.isFinite(sample.mounting_yaw_rad) || Math.abs(sample.mounting_yaw_rad) > Math.PI) throw new Error('Invalid feedback fusion mount');\n")
+                elif c['command'] == 'GET_FEEDBACK_SOURCE_HEALTH':
+                    lines.append("    if (sample.source !== source) throw new FeedbackSourceMismatchError(source, sample.source);\n    if (sample.health > FeedbackSourceHealthState.INDETERMINATE || sample.reason > FeedbackSourceReason.MOUNT_REQUIRED || sample.detail > FusionFault.INHIBITED) throw new Error('Invalid feedback source health');\n")
+                elif c['command'] == 'GET_FEEDBACK_IMU_CHANNELS':
+                    lines.append("    if ((!sample.accel_timestamp_us && sample.accel_age_us !== 0xffffffff) || (!sample.gyro_timestamp_us && sample.gyro_age_us !== 0xffffffff)) throw new Error('Invalid feedback IMU channel provenance');\n")
                 elif c['command'] == 'GET_FEEDBACK_SOURCE_STATUS':
                     lines.append("    if (sample.requested > 2 || sample.valid > 1 || sample.reason > 9 || (sample.valid ? sample.active !== sample.requested || sample.reason !== 0 || !sample.max_age_ms || sample.age_us > 1000 * sample.max_age_ms : sample.active !== 255 || sample.reason === 0 || sample.sequence !== 0 || sample.timestamp_us !== 0n || sample.age_us !== 0xffffffff)) throw new Error('Invalid feedback source status');\n")
                 elif c['command'] == 'GET_FEEDBACK_SOURCE_VECTOR':
