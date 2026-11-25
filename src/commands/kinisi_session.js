@@ -1,7 +1,7 @@
 // File: kinisi_session.js
 // Shared API-v2 framing, readiness and clock exchange for serial and proxy transports.
 import { Commands, INIT, READY, ERROR, TIME_SYNC_REQUEST, TIME_SYNC_RESPONSE,
-  GET_IMU_MOUNT, SET_IMU_MOUNT,
+  GET_IMU_MOUNT, SET_IMU_MOUNT, GET_BOARD_MOUNT, SET_BOARD_MOUNT,
   GET_FEEDBACK_SOURCE_HEALTH, GET_FEEDBACK_IMU_CHANNELS, SET_FEEDBACK_FUSION_MOUNT, GET_FEEDBACK_FUSION_MOUNT, FeedbackSourceVectorKind, SET_FEEDBACK_SOURCE, GET_FEEDBACK_SOURCE_STATUS, GET_FEEDBACK_SOURCE_VECTOR,
   SET_IMU_TRACKING, GET_IMU_TRACKING_STATUS, GET_IMU_TRACKING_VECTOR, GET_IMU_TRACKING_CONFIGURATION,
   SET_FUSION_EXPERIMENT, GET_FUSION_STATUS, GET_FUSION_VECTOR, GET_FUSION_CONFIGURATION,
@@ -12,8 +12,8 @@ import { Commands, INIT, READY, ERROR, TIME_SYNC_REQUEST, TIME_SYNC_RESPONSE,
 import { POSITION_COMMANDS, supportsPositionControl, POSITION_PID_COMMANDS, supportsPositionPidControl } from './position_control.js';
 import { supportsTemperatureRead } from './temperature.js';
 import { supportsImuRead } from './imu.js';
-import { supportsImuMounting } from './board_profile.js';
-import { mountToWire } from './imu_mount.js';
+import { supportsBoardMounting, supportsImuMounting } from './board_profile.js';
+import { mountToWire, mountGeometry } from './imu_mount.js';
 import { getBoardProfile, supportsBoardSensor, supportsMotorCurrent, supportsMotorFaults, getMotorCurrentLimitOptions, supportsMotorCurrentLimit, getPwmFrequencyOptions, supportsPwmFrequency, supportsConfigurationPersistence, supportsDriverSleep, supportsBoardIdle, supportsFusionExperiment, supportsImuTracking, supportsFeedbackSourceSelector, supportsFeedbackSourceHealth } from './board_profile.js';
 import { supportsTelemetry, supportsTopic } from './telemetry.js';
 
@@ -274,16 +274,26 @@ export class KinisiSession extends Commands {
   supportsFeedbackSourceHealth() { return this.ready && supportsFeedbackSourceHealth(this.boardInfo); }
   supportsImuMounting() { return this.ready && supportsImuMounting(this.boardInfo); }
 
-  /** Set board-to-chassis Euler angles in degrees and origin-to-chip offset in chassis metres. */
+  /** Legacy chip-reference setter (2.23). Positions refer to U601. */
   async set_imu_mount_geometry(roll_deg, pitch_deg, yaw_deg, x_m, y_m, z_m) {
     await this.set_imu_mount(...mountToWire([roll_deg, pitch_deg, yaw_deg, x_m, y_m, z_m]));
   }
 
-  /** Read effective quantized angles in degrees and offsets in metres. */
+  /** Legacy chip-reference readback (2.23). Positions refer to U601. */
   async get_imu_mount_geometry() {
-    const m = await this.get_imu_mount();
-    return { roll_deg: m.roll_cdeg / 100, pitch_deg: m.pitch_cdeg / 100, yaw_deg: m.yaw_cdeg / 100,
-      x_m: m.x_um / 1e6, y_m: m.y_um / 1e6, z_m: m.z_um / 1e6, configured: m.configured };
+    return mountGeometry(await this.get_imu_mount());
+  }
+
+  supportsBoardMounting() { return this.ready && supportsBoardMounting(this.boardInfo); }
+
+  /** Set angles in degrees and chassis-origin to PCB underside center in chassis metres. */
+  async set_board_mount_geometry(roll_deg, pitch_deg, yaw_deg, x_m, y_m, z_m) {
+    await this.set_board_mount(...mountToWire([roll_deg, pitch_deg, yaw_deg, x_m, y_m, z_m]));
+  }
+
+  /** Read the applied board-center geometry in degrees and metres. */
+  async get_board_mount_geometry() {
+    return mountGeometry(await this.get_board_mount());
   }
   supportsFeedbackSourceSelector() { return this.ready && supportsFeedbackSourceSelector(this.boardInfo); }
 
@@ -324,6 +334,8 @@ export class KinisiSession extends Commands {
   supportsFusionExperiment() { return this.ready && supportsFusionExperiment(this.boardInfo); }
 
   async _request(command, payload, responseLength) {
+    if ((command === GET_BOARD_MOUNT || command === SET_BOARD_MOUNT) && !this.supportsBoardMounting())
+      throw new ProtocolError('Board mounting requires READY, exact v0.4.0 capability and protocol 2.24+');
     if ((command === GET_IMU_MOUNT || command === SET_IMU_MOUNT) && !this.supportsImuMounting())
       throw new ProtocolError('IMU mounting requires READY, exact v0.4.0 capability and protocol 2.23+');
     if (!this.ready) throw new ProtocolError('Controller is not ready; complete INIT first');

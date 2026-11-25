@@ -12,7 +12,7 @@ mode 0 retains the release path. This is not a general odometry-source selector
 and has no IMU-only mode. Comparative accuracy and physical performance remain
 unmeasured until separately reported.
 
-On protocol 2.23+ an applied [shared IMU mount](protocol-v2.md#shared-imu-mounting) supplies the board orientation and displacement to U601 for fused tracking. Verify the installation, confirm stationarity and pass zero for the legacy yaw when enabling the producer.
+On protocol 2.24+ an applied [shared IMU mount](protocol-v2.md#shared-imu-mounting) supplies the orientation and chassis offset to the PCB underside center for fused tracking. Verify the installation, confirm stationarity and pass zero for the legacy yaw when enabling the producer.
 
 For legacy geometry the caller must declare a rigid, level mount, component side up, with the IMU
 at the chassis reference point. Tilted or offset installations are unsupported.

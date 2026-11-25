@@ -37,6 +37,11 @@ export function readMountDraft(values) {
   return wire;
 }
 
+export function mountGeometry(mount) {
+  return { roll_deg: mount.roll_cdeg / 100, pitch_deg: mount.pitch_cdeg / 100, yaw_deg: mount.yaw_cdeg / 100,
+    x_m: mount.x_um / 1e6, y_m: mount.y_um / 1e6, z_m: mount.z_um / 1e6, configured: mount.configured };
+}
+
 export function mountValues(mount) {
   return mountFields.map(({ key, scale }) => String(mount[key] / scale));
 }
@@ -49,7 +54,7 @@ export function sameMount(a, b) {
 export async function verifyMount(controller, displayed) {
   if (!controller.supportsImuMounting?.()) return;
   const connection = controller.boardInfo;
-  const actual = await controller.get_imu_mount();
+  const actual = controller.supportsBoardMounting?.() ? await controller.get_board_mount() : await controller.get_imu_mount();
   if (!controller.ready || connection !== controller.boardInfo || !sameMount(actual, displayed))
     throw new Error('Mounting changed or readback is unavailable. Read the mount again and confirm the installation.');
 }

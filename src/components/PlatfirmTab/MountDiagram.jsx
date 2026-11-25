@@ -1,14 +1,10 @@
 import { useId } from 'react';
 
-// Manufacturing XY in millimetres: +X away from USB, +Y toward the U601 long edge.
-// The chip, rather than the center of the board outline, is the rotation pivot.
-const chip = [25.14, -6.06];
-const outline = [[0, 0], [81.025, 0], [81.025, -66.025], [0, -66.025]];
-const parts = [
-  { center: [5.5025, -13.5], size: [8, 9], fill: '#c9d5db' },
-  { center: [46.6, -20.545], size: [14, 14], fill: '#263d43' },
-  { center: chip, size: [3, 4.5], fill: '#ffbe55' },
-];
+// Millimetres in board axes, with the PCB underside center at (0, 0, 0).
+const length = 81.025126, width = 66.025126, thickness = 1.6;
+const underside = [0, 0, 0];
+const usb = [5.5025 - length / 2, -13.5 + width / 2, thickness];
+const processor = [46.6 - length / 2, -20.545 + width / 2, thickness];
 const axisColors = ['#b63d24', '#14724e', '#315cb6'];
 function rotate([x, y, z], [r, p, h]) {
   const ry = Math.cos(r) * y - Math.sin(r) * z, rz = Math.sin(r) * y + Math.cos(r) * z;
@@ -18,11 +14,26 @@ function rotate([x, y, z], [r, p, h]) {
 function box([x,y], [w,h]) {
   return [[x-w/2,y-h/2], [x+w/2,y-h/2], [x+w/2,y+h/2], [x-w/2,y+h/2]];
 }
-function Board({ project, showParts = true }) {
-  const shape = points => points.map(([x,y]) => project([x-chip[0], y-chip[1], 0]).join(',')).join(' ');
+function Board({ project, chip, showParts = true }) {
+  const shape = (center, size) => box(center, size).map(([x,y]) => project([x,y,center[2]]).join(',')).join(' ');
   return <>
-    <polygon points={shape(outline)} fill="#387364" stroke="#234d43" strokeWidth="2" strokeLinejoin="round"/>
-    {showParts && parts.map(({center,size,fill}) => <polygon key={center[0]} points={shape(box(center,size))} fill={fill} stroke="#263c3e" strokeWidth="1"/>)}
+    <polygon points={shape(underside, [length,width])} fill="#28574c" stroke="#234d43" strokeWidth="2" strokeLinejoin="round"/>
+    <polygon points={shape([0,0,thickness], [length,width])} fill="#387364" stroke="#234d43" strokeWidth="1"/>
+    {showParts && <>
+      <polygon points={shape(usb,[8,9])} fill="#c9d5db" stroke="#263c3e"/>
+      <polygon points={shape(processor,[14,14])} fill="#263d43"/>
+      <polygon points={shape(chip,[3,4.5])} fill="#ffbe55" stroke="#714912"/>
+    </>}
+  </>;
+}
+
+function MountPoints({ project, chip }) {
+  const [cx,cy] = project(underside), [ix,iy] = project(chip);
+  return <>
+    <path aria-label="PCB underside center" transform={`translate(${cx} ${cy})`}
+      d="M0 -6 L6 0 L0 6 L-6 0 Z" fill="none" stroke="white" strokeWidth="4"/>
+    <path d={`M${cx} ${cy-6}l6 6-6 6-6-6Z`} fill="none" stroke="#0a6783" strokeWidth="2"/>
+    <circle aria-label="U601 sensing point" cx={ix} cy={iy} r="3.5" fill="#f7ad37" stroke="#714912"/>
   </>;
 }
 
@@ -48,21 +59,26 @@ function platformLayout(platform) {
   return { name:'Generic chassis · unconfigured or custom', halfWidth:100, halfLength:120, diameter:0, wheels:[] };
 }
 
-export default function MountDiagram({ values, platform }) {
+export default function MountDiagram({ values, platform, boardProfile }) {
   const id = useId();
+  const intrinsic = boardProfile?.imu_geometry?.underside_center_to_imu_um;
+  if (!intrinsic) return <p role="status">Board geometry unavailable for this profile.</p>;
+  const chip = intrinsic.map(um => um / 1000);
   const angles = values.slice(0,3).map(n => Number(n) * Math.PI / 180);
   const [x,y,z] = values.slice(3).map(n => Number(n)*1000);
   const layout = platformLayout(platform);
   const { halfWidth, halfLength, diameter, wheels } = layout;
-  // The farthest physical PCB corner is 82.1 mm from U601. Fit every
-  // projected board corner as well as the chip and chassis in each view.
-  const boardReach = 83;
+  const boardReach = Math.max(Math.hypot(length/2, width/2, thickness), Math.hypot(...chip));
   const scale = Math.min(.8, 94/(halfWidth+diameter*.5), 92/(halfLength+diameter*.5),
     94/(Math.abs(y)+boardReach), 94/(Math.abs(x)+boardReach));
   const rearScale = Math.min(scale, 28/(Math.abs(z)+boardReach), 28/Math.max(1,diameter*.3));
   const origin = [147,150];
   const plan = ([dx,dy]) => [origin[0]-(y+dy)*scale, origin[1]-(x+dx)*scale];
   const [cx,cy] = plan([0,0]);
+  const rear = point => {
+    const [,b,c] = rotate(point,angles);
+    return [-(y+b)*rearScale,-(z+c)*rearScale];
+  };
   const boardPlan = point => plan(rotate(point,angles));
   // The elevated oblique view shows both the board face and side-mounted geometry.
   const oblique = ([a,b,c]) => [a*.58-b*.82, -a*.38-b*.27-c*.88];
@@ -72,10 +88,10 @@ export default function MountDiagram({ values, platform }) {
   };
   const normals = rotate([0,0,1],angles);
   const faceVisible = normals[0]*.72+normals[1]*.51-normals[2]*.47 < 0;
-  const usb = iso([parts[0].center[0]-chip[0],parts[0].center[1]-chip[1],0]);
+  const usbPoint = iso(usb), chipPoint = iso(chip);
   return <figure className="mount-diagram">
     <svg viewBox="0 0 590 332" role="img" aria-labelledby={id}>
-      <title id={id}>Robot top and rear views with chassis origin and chip offset, and an enlarged oriented Kinisi Mini board</title>
+      <title id={id}>Robot top and rear views with tracking origin, PCB underside center and U601, and an enlarged oriented Kinisi Mini board</title>
       <rect width="590" height="332" rx="10" fill="#f4f8f9"/>
       <g className="mount-view-caption"><text x="16" y="24">ROBOT · TOP</text><text x="316" y="24">BOARD ORIENTATION</text></g>
       <path d="M294 12v306" stroke="#cbd9dd"/>
@@ -90,24 +106,24 @@ export default function MountDiagram({ values, platform }) {
       </g>
       <text x="147" y="47" textAnchor="middle">Front +X ↑</text>
       <text x="15" y="146" className="mount-annotation">+Y left</text>
-      <Board project={boardPlan} showParts={normals[2] >= 0}/>
+      <Board chip={chip} project={boardPlan} showParts={normals[2] >= 0}/>
       <path d={`M${origin.join(' ')} L${cx} ${cy}`} stroke="#ab6815" strokeWidth="2" strokeDasharray="3 3"/>
-      <circle cx={cx} cy={cy} r="5" fill="#f7ad37" stroke="#714912" strokeWidth="1.5"/>
-      <g transform={`translate(${origin.join(' ')})`} fill="none" stroke="#142731" strokeWidth="1.5"><circle r="8"/><path d="M-12 0h7m10 0h7M0 -12v7m0 10v7"/></g>
+      <MountPoints project={boardPlan} chip={chip}/>
+      <g aria-label="Tracking origin" transform={`translate(${origin.join(' ')})`} fill="none" stroke="#142731" strokeWidth="1.5"><circle r="8"/><path d="M-12 0h7m10 0h7M0 -12v7m0 10v7"/></g>
       <text x="16" y="255" className="mount-view-caption">REAR VIEW · LOOKING FORWARD</text>
       <g aria-label="Rear-view geometry" transform="translate(147 294)">
         <rect x={-halfWidth*.93*rearScale} y={-7*rearScale} width={halfWidth*1.86*rearScale} height={14*rearScale} rx="3" fill="#d0dce0" stroke="#687e89"/>
         {Array.from(new Set(wheels.map(w=>w[0]))).map(wx=><rect key={wx} x={(wx-diameter*.12)*rearScale} y={-diameter*.2*rearScale} width={diameter*.24*rearScale} height={diameter*.5*rearScale} rx="3" fill="#435664"/>)}
-        <Board project={point=>{const [,b,c]=rotate(point,angles);return [-(y+b)*rearScale,-(z+c)*rearScale];}} showParts={false}/>
-        <circle r="5" fill="none" stroke="#142731"/><circle cx={-y*rearScale} cy={-z*rearScale} r="3.5" fill="#f7ad37" stroke="#714912"/>
+        <Board project={rear} chip={chip} showParts={false}/>
+        <MountPoints project={rear} chip={chip}/>
+        <g aria-label="Tracking origin" fill="none" stroke="#142731"><circle r="8"/><path d="M-11 0h4m14 0h4M0 -11v4m0 14v4"/></g>
       </g>
       <text x="16" y="293" className="mount-annotation">+Z up ↑</text>
-      <Board project={iso} showParts={faceVisible}/>
+      <Board chip={chip} project={iso} showParts={faceVisible}/>
       <g fill="none" stroke="#536976" strokeWidth="1.3">
-        <path d={`M${usb.join(' ')} L350 214 H319`} />
-        <path d="M438 157 L500 202 H564"/>
+        <path d={`M${usbPoint.join(' ')} L350 214 H319`} />
+        <path d={`M${chipPoint.join(' ')} L510 202 H565`}/>
       </g>
-      <circle cx="438" cy="157" r="4.5" fill="#ffbe55" stroke="#714912"/>
       <text x="319" y="229">J501 · USB-C</text>
       <text x="565" y="218" textAnchor="end">U601 · BMI088</text>
       {['X','Y','Z'].map((name,i)=>{
@@ -117,10 +133,11 @@ export default function MountDiagram({ values, platform }) {
         return <g key={name} stroke={axisColors[i]} strokeWidth="2"><line x1={start[0]} y1={start[1]} x2={end[0]} y2={end[1]}/>
           <circle cx={end[0]} cy={end[1]} r="8" fill="white"/><text x={end[0]} y={end[1]+3.5} textAnchor="middle" fill={axisColors[i]} stroke="none">{name}</text></g>;
       })}
+      <MountPoints project={iso} chip={chip}/>
       <text x="316" y="272" className="mount-view-caption">BOARD AXES</text>
       <text x="316" y="293">X away from USB-C · Y toward the IMU edge</text>
       <text x="316" y="312">Z out of the component face</text>
     </svg>
-    <figcaption><span className="mount-key-origin"/> Tracking origin <span className="mount-key-chip"/> IMU chip <span>{layout.name} · board detail enlarged</span></figcaption>
+    <figcaption><span className="mount-key-origin"/> Tracking origin <span className="mount-key-center"/> PCB underside center <span className="mount-key-chip"/> U601 <span>{layout.name} · board detail enlarged</span></figcaption>
   </figure>;
 }

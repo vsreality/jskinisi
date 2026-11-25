@@ -319,11 +319,13 @@ function payloadView(buffer, size) {
             lines.append('    '+write(p['type'],offset,'this.'+p['name'])+'\n'); offset+=size(p['type'])
         lines.append('    return buffer;\n  }\n')
         validation = ''
-        if o['name'] == 'imu_mount_configuration':
+        if o['name'] in ('imu_mount_configuration', 'board_mount_configuration'):
             for p in props:
                 pos = sum(size(field['type']) for field in props[:props.index(p)])
                 if p['type'] == 'bool':
                     validation += f"    if (view.getUint8({pos}) > 1) throw new Error('Invalid mount configured flag');\n"
+                    if o['name'] == 'board_mount_configuration':
+                        validation += f"    if (!view.getUint8({pos}) && new Uint8Array(view.buffer, view.byteOffset, {pos}).some(byte => byte !== 0)) throw new Error('Unexpected unconfigured board pose');\n"
                 elif 'range' in p:
                     lo, hi = p['range']
                     validation += f"    if ({read(p['type'],pos)} < {lo} || {read(p['type'],pos)} > {hi}) throw new Error('Invalid mount {p['name']}');\n"
@@ -399,7 +401,7 @@ export function decodeTelemetryEvent(payload) {
             lines.append("    if (sleeping !== 0 && sleeping !== 1) throw new RangeError('sleeping must be 0 (awake) or 1 (asleep)');\n")
         if c['command'] == 'SET_FEEDBACK_FUSION_MOUNT':
             lines.append("    if (!Number.isFinite(mounting_yaw_rad) || Math.abs(mounting_yaw_rad) > Math.PI) throw new RangeError('Invalid fusion mounting yaw');\n")
-        if c['command'] == 'SET_IMU_MOUNT':
+        if c['command'] in ('SET_IMU_MOUNT', 'SET_BOARD_MOUNT'):
             for p in props:
                 name, (lo, hi) = p['name'], p['range']
                 lines.append(f"    if (!Number.isInteger({name}) || {name} < {lo} || {name} > {hi}) throw new RangeError('Invalid mount {name}');\n")

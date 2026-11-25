@@ -7,8 +7,10 @@ export default function ImuMounting({ model, platform }) {
   // Drafts belong to the board readback from which they were edited.
   const [draft, setDraft] = useState(null);
   const { mount, busy, error, applied } = model;
-  const values = draft && draft.base === mount ? draft.values : mount ? mountValues(mount) : Array(6).fill('0');
+  const readback = mount ? mountValues(mount) : null;
+  const values = draft && draft.base === mount ? draft.values : readback ?? Array(6).fill('0');
   const wire = readMountDraft(values);
+  const unchangedReadback = readback && values.every((value,i) => value === readback[i]);
   const preset = mountPresets.findIndex(([, ...angles]) => angles.every((n,i) => String(n) === values[i]));
   const edit = (i, v) => setDraft({ base: mount, values: values.map((old,j) => i === j ? v : old) });
   const changed = mount && wire && (!mount.configured || mountFields.some(({ key }, i) => mount[key] !== wire[i]));
@@ -18,7 +20,7 @@ export default function ImuMounting({ model, platform }) {
       value={values[i]} onChange={event=>edit(i,event.target.value)}/></label>;
   return <section className="panel-card mount-card" aria-label="IMU mounting">
     <h2>IMU mounting</h2>
-    <p className="section-help">Measure from the chassis tracking origin to the BMI088 chip. Both IMU-only and fused tracking use this installation.</p>
+    <p className="section-help">Measure from the chassis tracking origin to the center of the PCB underside, opposite the components. Exclude connectors and standoffs. Both IMU-only and fused tracking use this installation.</p>
     <div className="mount-editor">
       <div className="mount-inputs">
         <fieldset disabled={busy || !mount}><legend>Board orientation</legend>
@@ -32,15 +34,16 @@ export default function ImuMounting({ model, platform }) {
           <span className="mount-unit">Angles in degrees</span>
           <div className="mount-fields">{mountFields.slice(0,3).map(range)}</div>
         </fieldset>
-        <fieldset disabled={busy || !mount}><legend>Chip offset</legend>
+        <fieldset disabled={busy || !mount}><legend>PCB underside center offset</legend>
           <span className="mount-unit">Chassis coordinates in metres</span>
           <div className="mount-fields">{mountFields.slice(3).map((field,i)=>range(field,i+3))}</div>
         </fieldset>
       </div>
-      <div>{wire ? <MountDiagram values={values} platform={platform}/> : <p role="status">Enter valid angles and offsets to preview the mount. Roll and yaw accept ±180°, pitch ±90°, and each offset ±10 m. Use up to two decimal places for degrees and six for metres.</p>}</div>
+      <div>{wire || unchangedReadback ? <MountDiagram values={values} platform={platform} boardProfile={model.boardProfile}/> : <p role="status">Enter valid angles and offsets to preview the mount. Roll and yaw accept ±180°, pitch ±90°, and each offset ±10 m. Use up to two decimal places for degrees and six for metres.</p>}</div>
     </div>
+    {unchangedReadback && !wire && <p>Converted board readback exceeds the ±10 m write range. Enter an offset within range to apply a new installation.</p>}
     <div className="mount-readback">
-      <strong>Board readback</strong>
+      <strong>Board-center readback</strong>
       {busy ? <span role="status">Reading mounting geometry…</span> : mount ? <span>{mount.configured ?
         `Configured · roll / pitch / yaw ${mountValues(mount).slice(0,3).join(' / ')}° · X / Y / Z ${mountValues(mount).slice(3).join(' / ')} m` :
         'Legacy per-mode yaw is active. Apply an installation to use the shared mount.'}</span> : <span>Geometry unavailable</span>}

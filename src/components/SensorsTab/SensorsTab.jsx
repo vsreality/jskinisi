@@ -8,6 +8,7 @@ import { supportsImuRead } from '../../commands/imu';
 import { getBoardProfile } from '../../commands/board_profile';
 import './SensorsTab.css';
 import useImuMount from '../../hooks/useImuMount';
+import MountReadback from '../MountReadback';
 
 export default function SensorsTab({ isActive = true }) {
   const { controller, isConnected } = useContext(ControllerContext);
@@ -19,9 +20,7 @@ export default function SensorsTab({ isActive = true }) {
         <h2>Sensor availability</h2>
         <p className="section-help">This board is not recognized. Update the client to view its sensors.</p>
       </section> : <>
-      {mounting.supported && <p className="section-help">Edit the shared installation under Platform → IMU mounting.
-        {' '}<button type="button" className="k-button" disabled={mounting.busy} onClick={()=>mounting.read()}>Read mounting</button>
-        {mounting.error && <span role="alert"> {mounting.error}</span>}</p>}
+      {mounting.supported && <MountReadback mounting={mounting}/>}
       {profile.capabilities?.imu_tracking && <ImuTracking controller={controller} isConnected={isConnected} isActive={isActive} mounting={mounting}/>}
       {profile.sensors.temperature.map(sensor => supportsTemperatureRead(controller?.boardInfo)
         ? <BoardTemperature key={sensor.id} controller={controller} sensorIndex={sensor.id} isActive={isActive} />

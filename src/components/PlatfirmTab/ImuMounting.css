@@ -10,6 +10,7 @@
 .mount-diagram figcaption {display:flex; flex-wrap:wrap; gap:7px; align-items:center; margin-top:7px; font-size:12px}
 .mount-diagram figcaption span:last-child {margin-left:auto; color:#596c75}
 .mount-key-origin,.mount-key-chip {display:inline-block; border-radius:50%}
+.mount-key-center {width:8px;height:8px;border:2px solid #0a6783;transform:rotate(45deg);margin-left:8px}
 .mount-key-origin {width:10px;height:10px;border:1.5px solid #142731}
 .mount-key-chip {width:9px;height:9px;background:#f7ad37;border:1px solid #714912;margin-left:8px}
 .mount-readback {border-top:1px solid #dbe3e6; padding-top:12px; display:flex;align-items:baseline;gap:10px; flex-wrap:wrap;font-size:13px}

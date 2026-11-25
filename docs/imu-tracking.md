@@ -28,7 +28,7 @@ Another window requires a deliberate stationary restart.
 
 ## Deliberate stationary origin
 
-With a configured protocol 2.23 [shared IMU mount](protocol-v2.md#shared-imu-mounting), supply the measured installation in Platform setup. Keep the chassis stationary for each cold start, confirm the installation and pass zero for the legacy yaw. The firmware maps the rigid mounted IMU to the chassis tracking origin.
+With a configured protocol 2.24 [shared IMU mount](protocol-v2.md#shared-imu-mounting), supply the measured installation in Platform setup. Keep the chassis stationary for each cold start, confirm the installation and pass zero for the legacy yaw. The firmware maps the rigid mounted IMU to the chassis tracking origin.
 
 For legacy geometry, use a rigid, level mount with **sensor +Z up** and the IMU centered at the chassis
 reference point. Chassis axes are forward, left, up. Declare `mounting_yaw_rad`

@@ -254,6 +254,13 @@ export const BOARD_PROFILES = [
     }
   },
   {
+    "imu_geometry": {
+      "underside_center_to_imu_um": [
+        -15373,
+        26953,
+        2075
+      ]
+    },
     "board": {
       "model": 1,
       "revision": "0.4.0"

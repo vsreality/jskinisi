@@ -35,9 +35,21 @@ class ProfileTests(unittest.TestCase):
             lambda b: b['boards'][3].update(power={'driver_sleep': 1}),
             lambda b: b['boards'][3].update(power={'driver_sleep': True, 'sleep_pin': 'PA0'}),
             lambda b: b['boards'][3]['power'].update(board_idle=1),
+            lambda b: next(p for p in b['boards'] if 'imu_geometry' in p)['imu_geometry'].update(underside_center_to_imu_um=[0, 1.5, 2]),
         ):
             bundle = deepcopy(self.bundle); mutate(bundle)
             with self.assertRaises(ValueError): updater.generate(bundle)
+
+    def test_generated_profile_tracks_the_mini_intrinsic(self):
+        profiles = [board for board in self.bundle['boards'] if 'imu_geometry' in board]
+        self.assertEqual([p['board']['revision'] for p in profiles], ['0.4.0'])
+        geometry = profiles[0]['imu_geometry']
+        self.assertEqual(geometry['underside_center_to_imu_um'], [-15373, 26953, 2075])
+        before = updater.generate(self.bundle)
+        geometry['underside_center_to_imu_um'][1] = 26954
+        after = updater.generate(self.bundle)
+        self.assertNotEqual(before, after)
+        self.assertIn('26954', after)
 
     def test_power_capabilities_are_explicit_for_exact_profiles(self):
         self.assertEqual({p['board']['revision']: p['power'] for p in self.bundle['boards']}, {

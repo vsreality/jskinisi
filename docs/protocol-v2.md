@@ -492,21 +492,25 @@ stationary sensor-axis mounting declaration, bounded horizon and diagnostics.
 
 ## Shared IMU mounting
 
-A ready Kinisi Mini v0.4.0 with protocol 2.23+ and the `imu_mounting` capability accepts one installation for IMU-only, passive fused and experimental fused tracking. In **Platform → IMU mounting**, select the face orientation or enter roll, pitch and yaw. Measure the signed distance from the chassis tracking origin to **U601 (BMI088)** in chassis coordinates. Positive X is forward, positive Y is left and positive Z is up. A chip 100 mm to the right has Y = −0.100 m even when the board is vertical.
+A ready Kinisi Mini v0.4.0 with protocol 2.24+ and the `imu_mounting` capability accepts one installation for IMU-only, passive fused and experimental fused tracking. In **Platform → IMU mounting**, select the face orientation or enter roll, pitch and yaw. Measure from the chassis tracking origin to the **geometric center of the PCB underside**, halfway across the board outline on the face opposite the components. Exclude the connectors, standoffs and enclosure. Positive X is forward, positive Y is left and positive Z is up. A board center 100 mm to the right has Y = −0.100 m even when the board is vertical. A centered board has X/Y/Z = 0 at every angle.
 
-Board +X points away from the USB-C connector J501, parallel to the board's long dimension. Board +Y points toward the long edge closest to U601. Board +Z points out of the component face. Rotation maps board vectors into chassis axes by `Rz(yaw) × Ry(pitch) × Rx(roll)`. Apply roll first, then pitch, then yaw about the fixed axes. Positive angles follow the right-hand rule. At roll +90° with pitch and yaw zero, board +Z points to chassis right. The firmware applies the fixed sensor-to-board rotation internally. The screen locates the chip and USB using their PCB placement. [Bosch BMI088 datasheet, figures 6 and 12](https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi088-ds001.pdf)
+Board +X points away from the USB-C connector J501, parallel to the board's long dimension. Board +Y points toward the long edge closest to U601. Board +Z points out of the component face. Rotation maps board vectors into chassis axes by `Rz(yaw) × Ry(pitch) × Rx(roll)`. Apply roll first, then pitch, then yaw about the fixed axes. Positive angles follow the right-hand rule. At roll +90° with pitch and yaw zero, board +Z points to chassis right. The firmware applies the fixed sensor-to-board rotation internally. The preview shows the tracking origin, underside center, USB and U601. Firmware rotates the board-specific center-to-sensor vector and adds the entered chassis offset. For the Mini the vector is (−15.373, +26.953, +2.075) mm. Its Z component uses the nominal package midpoint above the 1.6 mm PCB. [Bosch BMI088 datasheet, figures 6 and 12](https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi088-ds001.pdf)
 
 The preview changes as you edit. **Apply mounting** writes all six fields together and reads the board back. Stop and disarm motion first. If the board reports `SOURCE_SWITCH_UNSAFE`, allow its stationary encoder check to complete and retry explicitly. A changed installation requires fresh producer initialization. **Save configuration** persists applied mounting geometry, including standalone configuration before platform setup. Reboot restores geometry and requires fresh motion initialization.
 
 ```js
-if (controller.supportsImuMounting()) {
-  await controller.set_imu_mount_geometry(90, 0, 0, 0, -0.100, 0);
-  const applied = await controller.get_imu_mount_geometry();
+if (controller.supportsBoardMounting()) {
+  await controller.set_board_mount_geometry(90, 0, 0, 0, -0.100, 0);
+  const applied = await controller.get_board_mount_geometry();
   // applied.configured === true, applied.roll_deg === 90, applied.y_m === -0.1
 }
 ```
 
-The six positional arguments are roll, pitch and yaw in degrees followed by X, Y and Z in metres. Roll and yaw accept ±180°, pitch ±90° and offsets ±10 m per axis. The setter rounds to 0.01° and 1 µm, with exact ties rounded away from zero. Readback returns `roll_deg`, `pitch_deg`, `yaw_deg`, `x_m`, `y_m`, `z_m` and `configured`. The raw `set_imu_mount` and `get_imu_mount` methods use integer centidegrees and micrometres.
+The six positional arguments are roll, pitch and yaw in degrees followed by X, Y and Z in metres. Roll and yaw accept ±180°, pitch ±90° and offsets ±10 m per axis. The setter rounds to 0.01° and 1 µm, with exact ties rounded away from zero. Readback returns `roll_deg`, `pitch_deg`, `yaw_deg`, `x_m`, `y_m`, `z_m` and `configured`. The raw `set_board_mount` and `get_board_mount` methods use integer centidegrees and micrometres.
+
+On protocol 2.23, **Platform** and **Sensors** show the saved board angles and signed chassis-origin-to-U601 offsets in a read-only panel. Use **Retry mounting read** if the read fails. Upgrade to protocol 2.24 or later to edit using the PCB underside center.
+
+Existing protocol 2.23 callers use the chip-reference methods `set_imu_mount`, `get_imu_mount`, `set_imu_mount_geometry` and `get_imu_mount_geometry`. These continue to use the coordinates of U601. After upgrading, read the existing installation with `get_board_mount_geometry()` to obtain its equivalent underside-center offset. A converted readback can exceed ±10 m by up to 0.031098 m per axis. Software preserves the returned value. New writes still accept ±10 m per axis.
 
 When `configured` is true, each producer uses the shared geometry. Send zero for the legacy yaw in its explicit start or confirmation command. When `configured` is false, IMU-only retains sensor-axis yaw and fusion retains board-axis yaw for their centered, level installations. Older firmware uses those same legacy conventions.
 

@@ -1,6 +1,7 @@
 import PositionControl from '../PositionControl/PositionControl';
 import ConfigurationSave from './ConfigurationSave';
 import ImuMounting from './ImuMounting';
+import MountReadback from '../MountReadback';
 import useImuMount from '../../hooks/useImuMount';
 import PlatformLayout from './PlatformLayout';
 import FusionExperiment from './FusionExperiment';
@@ -479,7 +480,8 @@ function PlatformTab({ isActive = true }) {
     return (
         <div id="tabPlatform" className="platform-tab page-layout">
             {commandError && <p className="conn-error" role="alert">{commandError}</p>}
-            {mounting.supported && <ImuMounting model={mounting} platform={mountPreviewSession === controller?.boardInfo ? {
+            {mounting.supported && !mounting.boardCenter && <MountReadback mounting={mounting}/>}
+            {mounting.boardCenter && <ImuMounting model={mounting} platform={mountPreviewSession === controller?.boardInfo ? {
                 type: platformType, track: Number(differentialWheelBase), length: Number(mecanumLength),
                 width: Number(mecanumWidth), radius: Number(omniRadius),
                 diameter: Number({ omni: omniWheelDiameter, differential: differentialWheelDiameter, mecanum: mecanumWheelDiameter }[platformType])

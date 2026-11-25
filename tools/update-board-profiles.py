@@ -30,7 +30,13 @@ def validate(bundle):
     identities = set()
     for profile in bundle['boards']:
         fields(profile, ('board', 'resources', 'motor_features', 'sensors') +
-               tuple(key for key in ('pwm_frequency', 'power', 'capabilities') if key in profile), 'board profile')
+               tuple(key for key in ('pwm_frequency', 'power', 'capabilities', 'imu_geometry') if key in profile), 'board profile')
+        if 'imu_geometry' in profile:
+            geometry = profile['imu_geometry']
+            fields(geometry, ('underside_center_to_imu_um',), 'imu_geometry')
+            vector = geometry['underside_center_to_imu_um']
+            require(isinstance(vector, list) and len(vector) == 3 and
+                    all(integer(v, -(2**31), 2**31 - 1) for v in vector), 'Invalid intrinsic IMU vector')
         if 'capabilities' in profile:
             fields(profile['capabilities'], ('fusion_experiment',) + tuple(key for key in ('imu_tracking', 'feedback_source_selector', 'feedback_source_health', 'imu_mounting') if key in profile['capabilities']), 'capabilities')
             if 'imu_mounting' in profile['capabilities']:

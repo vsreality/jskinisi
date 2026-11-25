@@ -12,6 +12,63 @@ function session() {
 }
 
 describe('shared physical IMU mount', () => {
+  it('accepts a zero unconfigured board pose and rejects any nonzero angle or offset', async () => {
+    const board = session();
+    board.boardInfo = {...identity, protocol_minor:24};
+    const padded = new Uint8Array(21).fill(255);
+    const reply = padded.subarray(1,20);
+    reply.fill(0);
+    board._sendRequest.mockResolvedValue(reply);
+    expect(await board.get_board_mount_geometry()).toEqual({
+      roll_deg:0, pitch_deg:0, yaw_deg:0, x_m:0, y_m:0, z_m:0, configured:false,
+    });
+    for (const index of [0, 2, 4, 6, 10, 14]) {
+      reply[index] = 1;
+      await expect(board.get_board_mount()).rejects.toThrow(/unconfigured board pose/);
+      reply[index] = 0;
+    }
+  });
+  it('uses distinct board-center commands and retains the 2.23 chip interface', async () => {
+    const board = session();
+    await expect(board.get_board_mount()).rejects.toThrow(/2.24/);
+    await expect(board.set_board_mount_geometry(0,0,0,0,0,0)).rejects.toThrow(/2.24/);
+    expect(board._sendRequest).not.toHaveBeenCalled();
+    board.boardInfo = {...identity, protocol_minor:24};
+    expect(board.supportsBoardMounting()).toBe(true);
+    board._sendRequest.mockResolvedValue(new ArrayBuffer(0));
+    await board.set_board_mount_geometry(90,-1.25,0,0,-.1,0);
+    const [command, payload] = board._sendRequest.mock.calls[0];
+    expect(command).toBe(0x85);
+    expect([...new Uint8Array(payload)]).toEqual([40,35,131,255,0,0,0,0,0,0,96,121,254,255,0,0,0,0]);
+    await board.set_imu_mount_geometry(90,-1.25,0,0,-.1,0);
+    expect(board._sendRequest.mock.calls[1][0]).toBe(0x6e);
+    const reply = new Uint8Array(19);
+    reply.set(new Uint8Array(payload));
+    reply[18] = 1;
+    const view = new DataView(reply.buffer);
+    view.setInt32(14,-10031098,true);
+    board._sendRequest.mockResolvedValue(reply);
+    for (const [read, code] of [[() => board.get_board_mount_geometry(),0x86], [() => board.get_imu_mount_geometry(),0x6f]]) {
+      const result = await read();
+      expect(result).toEqual({roll_deg:90,pitch_deg:-1.25,yaw_deg:0,x_m:0,y_m:-.1,z_m:-10.031098,configured:true});
+      expect(board._sendRequest.mock.lastCall[0]).toBe(code);
+    }
+    view.setInt32(14,-10031099,true);
+    await expect(board.get_board_mount()).rejects.toThrow(/z_um/);
+    await expect(board.get_imu_mount()).rejects.toThrow(/z_um/);
+    view.setInt32(14,0,true);
+    reply[18] = 2;
+    await expect(board.get_board_mount()).rejects.toThrow(/flag/);
+    const count = board._sendRequest.mock.calls.length;
+    await expect(board.set_board_mount_geometry(0,0,0,0,0,10.000001)).rejects.toThrow();
+    await expect(board.set_board_mount(0,0,0,0,0,10000001)).rejects.toThrow();
+    for (const override of [{protocol_minor:23},{board_patch:1},{board_model:2},{protocol_major:3}]) {
+      board.boardInfo = {...identity, protocol_minor:24, ...override};
+      expect(board.supportsBoardMounting()).toBe(false);
+      await expect(board.get_board_mount()).rejects.toThrow();
+    }
+    expect(board._sendRequest).toHaveBeenCalledTimes(count);
+  });
   it('quantizes signed metric input, sends one atomic request and decodes wire readback', async () => {
     const board = session();
     board._sendRequest.mockResolvedValue(new ArrayBuffer(0));

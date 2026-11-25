@@ -126,3 +126,8 @@ export function supportsImuMounting(info) {
     profile.capabilities?.imu_mounting === true && info.protocol_major === 2 &&
     Number.isInteger(info.protocol_minor) && info.protocol_minor >= 23 && info.protocol_minor <= 255;
 }
+
+/** The board-center mount contract begins in protocol 2.24. */
+export function supportsBoardMounting(info) {
+  return supportsImuMounting(info) && info.protocol_minor >= 24;
+}
