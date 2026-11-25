@@ -1408,7 +1408,7 @@ export class Commands {
     await this._request(BRAKE_MOTOR, payload, 0);
   }
 
-  /** This command sets the controller for the specified motor. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels), so it cannot create a competing controller on a platform wheel. Firmware 2.3.1 uses direct P+I+D PWM output with saturation anti-windup; retune gains from earlier builds. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, INIT_REQUIRED. */
+  /** This command sets the controller for the specified motor. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels), so it cannot create a competing controller on a platform wheel. Firmware 2.3.1 uses direct P+I+D PWM output with saturation anti-windup; retune gains from earlier builds. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, INIT_REQUIRED, ENCODER_NOT_INITIALIZED, SAMPLE_NOT_AVAILABLE. */
   async initialize_motor_controller(motor_index, is_reversed, encoder_index, is_encoder_reversed, encoder_resolution, kp, ki, kd, integral_limit) {
     if (!['number', 'string'].includes(typeof kp) || String(kp).trim() === '' || !Number.isFinite(Number(kp)) || Number(kp) < 0) throw new RangeError('kp must be finite and nonnegative');
     if (!['number', 'string'].includes(typeof ki) || String(ki).trim() === '' || !Number.isFinite(Number(ki)) || Number(ki) < 0) throw new RangeError('ki must be finite and nonnegative');
@@ -1429,7 +1429,7 @@ export class Commands {
     await this._request(INITIALIZE_MOTOR_CONTROLLER, payload, 0);
   }
 
-  /** This command sets the target speed for the specified motor in radians. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels); use SET_PLATFORM_TARGET_VELOCITY to drive platform wheels. Suspends position mode; a new SET_MOTOR_POSITION reactivates it. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, CONTROLLER_NOT_INITIALIZED, INIT_REQUIRED. */
+  /** This command sets the target speed for the specified motor in radians. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels); use SET_PLATFORM_TARGET_VELOCITY to drive platform wheels. Suspends position mode; a new SET_MOTOR_POSITION reactivates it. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, CONTROLLER_NOT_INITIALIZED, INIT_REQUIRED, ENCODER_NOT_INITIALIZED, SAMPLE_NOT_AVAILABLE. */
   async set_motor_target_speed(motor_index, speed) {
     const payload = new ArrayBuffer(9);
     const requestView = new DataView(payload);
@@ -1657,7 +1657,7 @@ export class Commands {
     await this._request(SET_PLATFORM_VELOCITY, payload, 0);
   }
 
-  /** This command sets the controller for the platform. Firmware 2.3.1 uses direct P+I+D PWM output with saturation anti-windup; retune gains from earlier builds. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, ENCODER_NOT_INITIALIZED, PLATFORM_NOT_INITIALIZED, INIT_REQUIRED. */
+  /** This command sets the controller for the platform. Firmware 2.3.1 uses direct P+I+D PWM output with saturation anti-windup; retune gains from earlier builds. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, ENCODER_NOT_INITIALIZED, PLATFORM_NOT_INITIALIZED, INIT_REQUIRED, SAMPLE_NOT_AVAILABLE. */
   async start_platform_controller(kp, ki, kd, integral_limit) {
     if (!['number', 'string'].includes(typeof kp) || String(kp).trim() === '' || !Number.isFinite(Number(kp)) || Number(kp) < 0) throw new RangeError('kp must be finite and nonnegative');
     if (!['number', 'string'].includes(typeof ki) || String(ki).trim() === '' || !Number.isFinite(Number(ki)) || Number(ki) < 0) throw new RangeError('ki must be finite and nonnegative');
@@ -1673,7 +1673,7 @@ export class Commands {
     await this._request(START_PLATFORM_CONTROLLER, payload, 0);
   }
 
-  /** This command set the target velocity for the platform in meters per second. Cancels platform position control; initialize it again before another pose target. With an active fusion experiment, rejects invalid or stale feedback and targets fenced by an earlier fault with SAMPLE_NOT_AVAILABLE; both experimental modes require 100 ms of observed unchanged configured counters for initial rest arming. Once armed, ordinary target updates remain accepted while moving. Wait for healthy feedback and submit a fresh target; stopped cold configuration can ACK while still WAITING. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, PLATFORM_NOT_INITIALIZED, CONTROLLER_NOT_INITIALIZED, INIT_REQUIRED, SAMPLE_NOT_AVAILABLE. */
+  /** This command set the target velocity for the platform in meters per second. Cancels platform position control; initialize it again before another pose target. With an active fusion experiment, rejects invalid or stale feedback and targets fenced by an earlier fault with SAMPLE_NOT_AVAILABLE; both experimental modes require 100 ms of observed unchanged configured counters for initial rest arming. Once armed, ordinary target updates remain accepted while moving. Wait for healthy feedback and submit a fresh target; stopped cold configuration can ACK while still WAITING. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, PLATFORM_NOT_INITIALIZED, CONTROLLER_NOT_INITIALIZED, INIT_REQUIRED, SAMPLE_NOT_AVAILABLE, ENCODER_NOT_INITIALIZED. */
   async set_platform_target_velocity(x, y, t) {
     const payload = new ArrayBuffer(24);
     const requestView = new DataView(payload);
@@ -1797,7 +1797,7 @@ export class Commands {
     await this._request(POLL_TELEMETRY, payload, 0);
   }
 
-  /** Initialize a bounded proportional position loop over an already running motor velocity controller. Zero is the current encoder position; initially holds zero. Stop/delete/reinitialize of velocity control discards position tuning. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, MOTOR_OWNED. */
+  /** Initialize a bounded proportional position loop over an already running motor velocity controller. Zero is the current encoder position; initially holds zero. Stop/delete/reinitialize of velocity control discards position tuning. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, MOTOR_OWNED, ENCODER_NOT_INITIALIZED, SAMPLE_NOT_AVAILABLE. */
   async initialize_motor_position_controller(motor_index, kp, max_speed, tolerance) {
     if (typeof motor_index !== 'number' || !Number.isFinite(motor_index)) throw new TypeError('motor_index must be a finite number');
     if (!Number.isInteger(motor_index) || motor_index < 0 || motor_index > 3) throw new RangeError('motor_index must be 0..3');
@@ -1826,7 +1826,7 @@ export class Commands {
     await this._request(RESET_MOTOR_POSITION, payload, 0);
   }
 
-  /** Set an absolute multi-turn angle in radians relative to the last position initialization/reset. Requires initialized position and velocity controllers. Reactivates position mode after a velocity override. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, MOTOR_OWNED. */
+  /** Set an absolute multi-turn angle in radians relative to the last position initialization/reset. Requires initialized position and velocity controllers. Reactivates position mode after a velocity override. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, MOTOR_OWNED, ENCODER_NOT_INITIALIZED, SAMPLE_NOT_AVAILABLE. */
   async set_motor_position(motor_index, position) {
     if (typeof motor_index !== 'number' || !Number.isFinite(motor_index)) throw new TypeError('motor_index must be a finite number');
     if (!Number.isInteger(motor_index) || motor_index < 0 || motor_index > 3) throw new RangeError('motor_index must be 0..3');
@@ -1850,7 +1850,7 @@ export class Commands {
     return view.getFloat64(0, true);
   }
 
-  /** Initialize bounded pose control after START_PLATFORM_CONTROLLER. Starts odometry if needed, preserves its world frame and zeros velocity targets. No motion until SET_PLATFORM_POSITION. Supports omni, mecanum and differential bases. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, PLATFORM_NOT_INITIALIZED, ENCODER_NOT_INITIALIZED. */
+  /** Initialize bounded pose control after START_PLATFORM_CONTROLLER. Starts odometry if needed, preserves its world frame and zeros velocity targets. No motion until SET_PLATFORM_POSITION. Supports omni, mecanum and differential bases. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, PLATFORM_NOT_INITIALIZED, ENCODER_NOT_INITIALIZED, SAMPLE_NOT_AVAILABLE. */
   async initialize_platform_position_controller(linear_kp, angular_kp, max_linear_speed, max_angular_speed, position_tolerance, heading_tolerance) {
     if (typeof linear_kp !== 'number' || !Number.isFinite(linear_kp)) throw new TypeError('linear_kp must be a finite number');
     if (linear_kp <= 0) throw new RangeError('linear_kp must be positive');
@@ -1881,7 +1881,7 @@ export class Commands {
     await this._request(RESET_PLATFORM_POSITION, payload, 0);
   }
 
-  /** Set absolute (x,y,t) in the current odometry world frame: meters, meters, radians. Heading uses the shortest angular path. Requires initialized position control and fresh odometry. Differential bases approach the point before aligning final heading. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, PLATFORM_NOT_INITIALIZED, ODOMETRY_NOT_INITIALIZED, SAMPLE_NOT_AVAILABLE. */
+  /** Set absolute (x,y,t) in the current odometry world frame: meters, meters, radians. Heading uses the shortest angular path. Requires initialized position control and fresh odometry. Differential bases approach the point before aligning final heading. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, PLATFORM_NOT_INITIALIZED, ODOMETRY_NOT_INITIALIZED, SAMPLE_NOT_AVAILABLE, ENCODER_NOT_INITIALIZED. */
   async set_platform_position(x, y, t) {
     if (typeof x !== 'number' || !Number.isFinite(x)) throw new TypeError('x must be a finite number');
     if (typeof y !== 'number' || !Number.isFinite(y)) throw new TypeError('y must be a finite number');
@@ -1894,7 +1894,7 @@ export class Commands {
     await this._request(SET_PLATFORM_POSITION, payload, 0);
   }
 
-  /** Initialize a position PID over the existing velocity controller. Initialize a bounded position PID loop over an already running motor velocity controller. Zero is the current encoder position; initially holds zero. Stop/delete/reinitialize of velocity control discards position tuning. Clears position PID history. Ki and Kd may be zero to disable I and D. Integral limits bound the integral velocity contribution. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, MOTOR_OWNED. */
+  /** Initialize a position PID over the existing velocity controller. Initialize a bounded position PID loop over an already running motor velocity controller. Zero is the current encoder position; initially holds zero. Stop/delete/reinitialize of velocity control discards position tuning. Clears position PID history. Ki and Kd may be zero to disable I and D. Integral limits bound the integral velocity contribution. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, MOTOR_OWNED, ENCODER_NOT_INITIALIZED, SAMPLE_NOT_AVAILABLE. */
   async initialize_motor_position_pid_controller(motor_index, kp, max_speed, tolerance, ki, kd, integral_limit) {
     if (typeof motor_index !== 'number' || !Number.isFinite(motor_index)) throw new TypeError('motor_index must be a finite number');
     if (!Number.isInteger(motor_index) || motor_index < 0 || motor_index > 3) throw new RangeError('motor_index must be 0..3');
@@ -1922,7 +1922,7 @@ export class Commands {
     await this._request(INITIALIZE_MOTOR_POSITION_PID_CONTROLLER, payload, 0);
   }
 
-  /** Initialize a position PID over the existing velocity controller. Initialize bounded pose control after START_PLATFORM_CONTROLLER. Starts odometry if needed, preserves its world frame and zeros velocity targets. No motion until SET_PLATFORM_POSITION. Supports omni, mecanum and differential bases. Clears position PID history. Ki and Kd may be zero to disable I and D. Integral limits bound the integral velocity contribution. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, PLATFORM_NOT_INITIALIZED, ENCODER_NOT_INITIALIZED. */
+  /** Initialize a position PID over the existing velocity controller. Initialize bounded pose control after START_PLATFORM_CONTROLLER. Starts odometry if needed, preserves its world frame and zeros velocity targets. No motion until SET_PLATFORM_POSITION. Supports omni, mecanum and differential bases. Clears position PID history. Ki and Kd may be zero to disable I and D. Integral limits bound the integral velocity contribution. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, PLATFORM_NOT_INITIALIZED, ENCODER_NOT_INITIALIZED, SAMPLE_NOT_AVAILABLE. */
   async initialize_platform_position_pid_controller(linear_kp, angular_kp, max_linear_speed, max_angular_speed, position_tolerance, heading_tolerance, linear_ki, linear_kd, linear_integral_limit, angular_ki, angular_kd, angular_integral_limit) {
     if (typeof linear_kp !== 'number' || !Number.isFinite(linear_kp)) throw new TypeError('linear_kp must be a finite number');
     if (linear_kp <= 0) throw new RangeError('linear_kp must be positive');
