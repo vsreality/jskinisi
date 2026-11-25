@@ -3,6 +3,7 @@ import { supportsFeedbackSourceSelector, supportsFeedbackSourceHealth } from '..
 import { FeedbackSource, FeedbackSourceReason, FusionFault, ImuTrackingFault } from '../../commands/kinisi_commands';
 import ImuTracking from '../SensorsTab/ImuTracking';
 import TrackingHealth from './TrackingHealth';
+import { sameMount, verifyMount } from '../../commands/imu_mount';
 import './TrackingSource.css';
 
 const sources = [
@@ -24,12 +25,16 @@ function Vector({ title, frame, sample, units }) {
   </div>;
 }
 
-function ConnectedTracking({ controller }) {
+function ConnectedTracking({ controller, mounting }) {
   const [snapshot, setSnapshot] = useState(null);
   const [mount, setMount] = useState(null);
   const [choice, setChoice] = useState('');
   const [yaw, setYaw] = useState('');
   const [confirmed, setConfirmed] = useState(false);
+  const [confirmedMount, setConfirmedMount] = useState(null);
+  const physical = mounting?.mount;
+  const shared = physical?.configured;
+  const mountConfirmed = confirmed && (!mounting?.supported || sameMount(physical, confirmedMount));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [historical, setHistorical] = useState(false);
@@ -128,7 +133,12 @@ function ConnectedTracking({ controller }) {
     await read(() => controller.set_feedback_source(Number(choice)));
   };
   const confirmMount = async () => {
-    await read(() => controller.set_feedback_fusion_mount(Number(yaw)));
+    await read(async () => {
+      const generation = operation.current.generation;
+      await verifyMount(controller, physical);
+      if (operation.current.generation !== generation) return;
+      await controller.set_feedback_fusion_mount(shared ? 0 : Number(yaw));
+    });
     setConfirmed(false);
   };
   const selector = <>
@@ -171,24 +181,26 @@ function ConnectedTracking({ controller }) {
     {supportsFeedbackSourceHealth(controller.boardInfo)
       ? <TrackingHealth controller={controller}>{selector}</TrackingHealth> : selector}
     {fused && <fieldset className="tracking-mount"><legend>Passive fused tracking</legend>
-      <p>Use initialized platform geometry and running odometry. Enter the board +X direction relative to chassis forward, positive counterclockwise. Confirm the board mount after each restart. Keep the platform still for calibration.</p>
+      <p>Use initialized platform geometry and running odometry. Confirm the installation after restart and keep the platform still for calibration.</p>
       {mount?.error ? <p role="alert">Mount readback unavailable. {mount.error}</p> :
-        mount && <p>Board mounting declaration {mount.confirmed ? `confirmed at ${mount.mounting_yaw_rad} rad` : 'unconfirmed'}</p>}
-      <label>Board +X angle in chassis XY (radians)
-        <input type="number" step="any" min={-Math.PI} max={Math.PI} value={yaw} onChange={event => { setYaw(event.target.value); setConfirmed(false); }} /></label>
-      <label><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} /> I confirm a rigid, level, centered mount with board +Z up.</label>
-      <button className="k-button" disabled={busy || !confirmed || !validYaw} type="button" onClick={confirmMount}>Confirm fused mount</button>
+        mount && <p>Board mounting declaration {mount.confirmed ? shared ? 'confirmed using the shared IMU mount' : `confirmed at ${mount.mounting_yaw_rad} rad` : 'unconfirmed'}</p>}
+      {!shared && <label>Board +X angle in chassis XY (radians)
+        <input type="number" step="any" min={-Math.PI} max={Math.PI} value={yaw} onChange={event => { setYaw(event.target.value); setConfirmed(false); }} /></label>}
+      <label><input type="checkbox" checked={mountConfirmed} disabled={mounting?.supported && !physical} onChange={event => {
+        setConfirmedMount(physical); setConfirmed(event.target.checked);
+      }} /> {shared ? 'I confirm the applied IMU mount and a stationary chassis.' : 'I confirm a rigid, level, centered mount with board +Z up.'}</label>
+      <button className="k-button" disabled={busy || !mountConfirmed || (!shared && !validYaw)} type="button" onClick={confirmMount}>Confirm fused mount</button>
     </fieldset>}
     {imu && <>
       <p>IMU-only tracking requires a stationary cold start and expires after one second of tracking. Start a new window explicitly for each measurement.</p>
       <button className="k-button" type="button" aria-expanded={showImu} onClick={() => setShowImu(!showImu)}>IMU tracking controls</button>
-      {showImu && <ImuTracking controller={controller} isConnected />}
+      {showImu && <ImuTracking controller={controller} isConnected mounting={mounting}/>}
     </>}
     <p className="section-help">To restore this preference at startup, <a href="#configurationSaveTitle">save the running board configuration</a>. Restore keeps motors stopped and requires a fresh origin and any required producer setup.</p>
   </>;
 }
 
-export default function TrackingSource({ controller, isConnected, isActive = true }) {
+export default function TrackingSource({ controller, isConnected, isActive = true, mounting }) {
   const connection = controller?.boardInfo;
   const [session, setSession] = useState({ controller, connection, number: 0 });
   if (session.controller !== controller || session.connection !== connection)
@@ -196,7 +208,7 @@ export default function TrackingSource({ controller, isConnected, isActive = tru
   const available = isConnected && controller?.ready && supportsFeedbackSourceSelector(connection);
   return <section className="panel-card tracking-source" aria-labelledby="trackingSourceTitle">
     <h2 id="trackingSourceTitle">Position and velocity tracking</h2>
-    {available ? isActive && <ConnectedTracking key={session.number} controller={controller} /> :
+    {available ? isActive && <ConnectedTracking key={session.number} controller={controller} mounting={mounting}/> :
       <p className="section-help">Source selection requires a ready Kinisi v0.4.0 board with tracking-source support and protocol 2.21 or newer.</p>}
   </section>;
 }

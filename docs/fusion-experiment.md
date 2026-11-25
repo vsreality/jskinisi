@@ -12,7 +12,9 @@ mode 0 retains the release path. This is not a general odometry-source selector
 and has no IMU-only mode. Comparative accuracy and physical performance remain
 unmeasured until separately reported.
 
-The caller must declare a rigid, level mount, component side up, with the IMU
+On protocol 2.23+ an applied [shared IMU mount](protocol-v2.md#shared-imu-mounting) supplies the board orientation and displacement to U601 for fused tracking. Verify the installation, confirm stationarity and pass zero for the legacy yaw when enabling the producer.
+
+For legacy geometry the caller must declare a rigid, level mount, component side up, with the IMU
 at the chassis reference point. Tilted or offset installations are unsupported.
 Chassis axes are +X forward, +Y left, +Z up. `mounting_yaw_rad` is the angle of
 board +X expressed in chassis XY, counterclockwise about chassis +Z, in [-pi, pi].
@@ -82,7 +84,7 @@ Timestamps remain BigInt. Invalid selectors/yaw reject without I/O; typed
 the following vector is available.
 
 The Platform page has an experiment panel with explicit mounting acknowledgement
-and yaw, separate comparator/fusion actions, and a legacy-path action. It sends
+and legacy yaw when applicable, separate comparator/fusion actions, and a legacy-path action. It sends
 no targets, controller starts or setup commands. Diagnostics show mode, health,
 fault, ages, flags, sequences and relative estimates. Missing vectors and
 sequence mismatches stay visible. Read failures clear the previous success;

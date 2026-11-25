@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supportsImuTracking } from '../../commands/board_profile';
+import { verifyMount, sameMount } from '../../commands/imu_mount';
 import { ImuTrackingAction, ImuTrackingState, ImuTrackingFault, ImuTrackingFlag, ImuTrackingVectorKind } from '../../commands/kinisi_commands';
 
 const label = (catalog, value) => Object.keys(catalog).find(key => catalog[key] === value) ?? `Unknown (${value})`;
@@ -10,7 +11,7 @@ const vectorText = (name, value) => {
 };
 
 /** Relative sensing only: no targets, control selection or automatic restart. */
-export default function ImuTracking({ controller, isConnected, isActive = true }) {
+export default function ImuTracking({ controller, isConnected, isActive = true, mounting }) {
   const connection = controller?.boardInfo;
   const available = isConnected && controller?.ready && supportsImuTracking(connection);
   const op = useRef({ id: 0, busy: false });
@@ -20,8 +21,11 @@ export default function ImuTracking({ controller, isConnected, isActive = true }
   const [poll, setPoll] = useState(false);
   const [now, setNow] = useState(() => performance.now());
   const current = available && result?.controller === controller && result.connection === connection ? result : null;
-  const declared = confirmed?.controller === controller && confirmed.connection === connection;
-  const validMount = declared && yaw.trim() !== '' && Number.isFinite(Number(yaw)) && Math.abs(Number(yaw)) <= Math.PI;
+  const physical = mounting?.mount;
+  const shared = physical?.configured;
+  const declared = confirmed?.controller === controller && confirmed.connection === connection &&
+    (!mounting?.supported || sameMount(confirmed.physical, physical));
+  const validMount = declared && (shared || (yaw.trim() !== '' && Number.isFinite(Number(yaw)) && Math.abs(Number(yaw)) <= Math.PI));
   const read = useCallback(async (action = null) => {
     if (!available || op.current.busy || (action !== null && action !== ImuTrackingAction.STOP && !validMount)) return;
     const id = ++op.current.id;
@@ -31,7 +35,9 @@ export default function ImuTracking({ controller, isConnected, isActive = true }
     try {
       if (action !== null) {
         setConfirmed(null);
-        await controller.set_imu_tracking(action, action === ImuTrackingAction.STOP ? 0 : 1, action === ImuTrackingAction.STOP ? 0 : Number(yaw));
+        if (action !== ImuTrackingAction.STOP) await verifyMount(controller, physical);
+        if (op.current.id !== id) return;
+        await controller.set_imu_tracking(action, action === ImuTrackingAction.STOP ? 0 : 1, action === ImuTrackingAction.STOP || shared ? 0 : Number(yaw));
         acknowledged = true;
       }
       if (op.current.id !== id) return;
@@ -55,7 +61,7 @@ export default function ImuTracking({ controller, isConnected, isActive = true }
         action === null ? 'Diagnostics unavailable.' : 'Action is not confirmed. Read state before explicitly retrying.';
       if (op.current.id === id) setResult({ controller, connection, error: `${message} ${error.message || ''}` });
     } finally { if (op.current.id === id) op.current.busy = false; }
-  }, [available, controller, connection, validMount, yaw]);
+  }, [available, controller, connection, validMount, yaw, shared, physical]);
   const reader = useRef(read);
   useEffect(() => { reader.current = read; }, [read]);
   useEffect(() => {
@@ -82,10 +88,11 @@ export default function ImuTracking({ controller, isConnected, isActive = true }
     <h2 id="imuTrackingTitle">IMU-only relative tracking</h2>
     <p>The one-second window begins at the first qualified estimate, even if the chassis stays still. The IMU estimates relative displacement and velocity. Starting this diagnostic leaves the selected control feedback unchanged.</p>
     <p>Start, reset and recalibrate each discard bias and pose and perform full cold calibration at a new origin. Remain truly stationary during calibration. IMU checks cannot distinguish rest from constant velocity. Faults and expiry require an explicit restart.</p>
-    <label htmlFor="imuTrackingYaw">Sensor +X angle in chassis XY (radians, −π to π)</label>
+    {!shared && <><label htmlFor="imuTrackingYaw">Sensor +X angle in chassis XY (radians, −π to π)</label>
     <input id="imuTrackingYaw" type="number" step="any" value={yaw} onChange={event => { setYaw(event.target.value); setConfirmed(null); }} />
-    <label><input type="checkbox" checked={!!declared} onChange={event => setConfirmed(event.target.checked ? { controller, connection } : null)} /> I confirm zero velocity and a rigid, level, centered mount with sensor +Z up.</label>
-    <p>Chassis axes are forward, left, up; yaw is counterclockwise about chassis +Z. Use the sensor axes, not the board outline. A backwards sensor requires π radians.</p>
+    <p>Legacy yaw uses sensor +X in chassis XY, counterclockwise about +Z. A backwards sensor requires π radians.</p></>}
+    <label><input type="checkbox" checked={!!declared} disabled={mounting?.supported && !physical}
+      onChange={event => setConfirmed(event.target.checked ? { controller, connection, physical } : null)} /> {shared ? 'I confirm zero velocity and the applied IMU mounting geometry.' : 'I confirm zero velocity and a rigid, level, centered mount with sensor +Z up.'}</label>
     <div className="action-row">
       <button className="k-button" disabled={current?.busy} onClick={() => read()}>Read tracking diagnostics</button>
       {[['Start tracking', ImuTrackingAction.START], ['Reset relative origin', ImuTrackingAction.RESET], ['Recalibrate tracking', ImuTrackingAction.RECALIBRATE]].map(([name, action]) => <button className="k-button" key={name} disabled={current?.busy || !validMount} onClick={() => read(action)}>{name}</button>)}
@@ -102,7 +109,7 @@ export default function ImuTracking({ controller, isConnected, isActive = true }
         <dt>Snapshot</dt><dd>Sequence {current.status.sequence}; joint timestamp {String(current.status.timestamp_us)} µs</dd>
         <dt>Elapsed / configured horizon</dt><dd>{current.status.elapsed_us} / {current.configuration.window_us} µs</dd>
         <dt>Accel / gyro ages</dt><dd>{age(current.status.accel_age_us)} / {age(current.status.gyro_age_us)}</dd>
-        <dt>Mounting yaw</dt><dd>{current.configuration.mounting_yaw_rad} rad from sensor +X</dd>
+        <dt>Mounting</dt><dd>{shared ? 'Shared IMU mounting geometry' : `${current.configuration.mounting_yaw_rad} rad from sensor +X`}</dd>
       </dl>
       <ul>{current.vectors.map(({ name, value, error }) => <li key={name}>{name}: {error || `${vectorText(name, value)} (sequence ${value.sequence}; ${value.sequence !== current.status.sequence ? 'Different snapshot; separate historical observation, not associated with displayed status or timestamp' : usable ? 'matches tracking snapshot' : 'matches status; diagnostic only'})`}</li>)}</ul>
       <p>Pose: m, m, rad. Body twist: m/s, m/s, rad/s. Bias: m/s², m/s², rad/s. These explicit snapshots age even when display refresh is off; reads never restart tracking.</p>

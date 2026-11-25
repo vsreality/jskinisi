@@ -28,12 +28,14 @@ Another window requires a deliberate stationary restart.
 
 ## Deliberate stationary origin
 
-Use a rigid, level mount with **sensor +Z up** and the IMU centered at the chassis
+With a configured protocol 2.23 [shared IMU mount](protocol-v2.md#shared-imu-mounting), supply the measured installation in Platform setup. Keep the chassis stationary for each cold start, confirm the installation and pass zero for the legacy yaw. The firmware maps the rigid mounted IMU to the chassis tracking origin.
+
+For legacy geometry, use a rigid, level mount with **sensor +Z up** and the IMU centered at the chassis
 reference point. Chassis axes are forward, left, up. Declare `mounting_yaw_rad`
 as the angle of **sensor +X**, counterclockwise about chassis +Z, in [-pi, pi].
 The transform is `Rz(yaw) * (sensor_x, sensor_y, sensor_z)`. This declaration uses
 sensor axes, not the board outline or the fusion experiment's board-axis angle.
-A backwards sensor requires pi radians. Tilt and lever-arm compensation are unsupported.
+A backwards sensor requires pi radians. Legacy yaw alone supports centered, level installations.
 
 `SET_IMU_TRACKING(action, stationary_mount_confirmed, mounting_yaw_rad)` supports:
 

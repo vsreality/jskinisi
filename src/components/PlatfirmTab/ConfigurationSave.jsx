@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ErrorCode } from '../../commands/kinisi_commands';
-import { supportsConfigurationPersistence, supportsFeedbackSourceSelector } from '../../commands/board_profile';
+import { supportsConfigurationPersistence, supportsFeedbackSourceSelector, supportsImuMounting } from '../../commands/board_profile';
 import { readRunningConfiguration } from '../../commands/configuration';
 
 function failureMessage(error, saving) {
@@ -56,6 +56,7 @@ export default function ConfigurationSave({ controller, isConnected, onLoaded, o
   };
   return <section className="control-section" aria-labelledby="configurationSaveTitle">
     <h3 id="configurationSaveTitle">Save setup on the board</h3>
+    {supportsImuMounting(connection) && <p className="section-help">Save includes the applied IMU geometry. Restart restores the installation and requires fresh stationary tracking initialization.</p>}
     {supportsFeedbackSourceSelector(connection) && <p className="section-help">The save includes the board's requested tracking source. After restart, check the requested source in Position and velocity tracking. The board establishes a new origin and requires fresh producer setup.</p>}
     <p className="section-help">Save the applied platform geometry, encoder setup, motor and encoder directions, and motor PWM frequency to onboard memory. Apply form changes first: Save does not apply these inputs or browser Settings.</p>
     <p className="section-help">On startup, saved setup is restored with motors stopped. Motion targets, PID controllers and driver current-limit settings are not restored. Reading the running setup does not initialize or move the platform.</p>
@@ -68,7 +69,7 @@ export default function ConfigurationSave({ controller, isConnected, onLoaded, o
           <p>Some platform encoders are not initialized. Open-loop platform setup can still be saved; configure encoders before starting velocity or position control.</p>}
         {current?.setup && new Set(current.setup.encoders.slice(0, current.setup.channelCount).map(encoder => encoder.resolution)).size > 1 &&
           <p>The running encoders use different resolutions. The form shows channel 0; Initialize applies that single resolution to every platform encoder. Save preserves the running values.</p>}
-        {current && !current.busy && Object.hasOwn(current, 'setup') && !current.setup && <p>No platform setup is running. Initialize the platform before saving.</p>}
+        {current && !current.busy && Object.hasOwn(current, 'setup') && !current.setup && <p>{supportsImuMounting(connection) ? 'No platform geometry is running. You can save an applied standalone IMU mount.' : 'No platform setup is running. Initialize the platform before saving.'}</p>}
         {current?.saved && <p role="status">Configuration saved and verified by the board. It will restore at startup with motors stopped.</p>}
         {current?.error && <p role="alert" className="conn-error">{current.error}</p>}
       </>}

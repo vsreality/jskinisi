@@ -1,5 +1,7 @@
 import PositionControl from '../PositionControl/PositionControl';
 import ConfigurationSave from './ConfigurationSave';
+import ImuMounting from './ImuMounting';
+import useImuMount from '../../hooks/useImuMount';
 import PlatformLayout from './PlatformLayout';
 import FusionExperiment from './FusionExperiment';
 import TrackingSource from './TrackingSource';
@@ -22,6 +24,7 @@ function PlatformTab({ isActive = true }) {
     const angleScale = angleUnit === 'deg' ? 180 / Math.PI : 1;
     const [commandError, runCommand] = useCommandAction();
     const { controller, isConnected} = useContext(ControllerContext);
+    const mounting = useImuMount(controller, isConnected && isActive);
     const [experimentOpen, setExperimentOpen] = useState(false);
     const pidDefaults = velocityPidDefaults(controller?.boardInfo);
 
@@ -34,6 +37,7 @@ function PlatformTab({ isActive = true }) {
 
     // States for platform type and settings
     const [platformType, setPlatformType] = useState('omni');
+    const [mountPreviewSession, setMountPreviewSession] = useState(null);
     const [isReversed, setIsReversed] = useState({
         mecanum: [false, false, false, false],
         omni: [false, false, false],
@@ -99,6 +103,7 @@ function PlatformTab({ isActive = true }) {
     const [odometryFrequency, setOdometryFrequency] = useState('50');
 
     const loadRunningSetup = useCallback(setup => {
+        setMountPreviewSession(setup ? controller?.boardInfo : null);
         setIsPlatformInitialized(Boolean(setup));
         const ready = Boolean(setup && setup.encoders.slice(0, setup.channelCount)
             .every(encoder => encoder.resolution > 0));
@@ -125,6 +130,7 @@ function PlatformTab({ isActive = true }) {
     // Handlers for changes in form elements
     const handlePlatformTypeChange = (event) => {
         setPlatformType(event.target.value);
+        setMountPreviewSession(controller?.boardInfo);
     };
 
     const handleReverseChange = (platform, index) => (event) => {
@@ -323,6 +329,7 @@ function PlatformTab({ isActive = true }) {
         }
 
         setIsPlatformInitialized(true);
+        setMountPreviewSession(controller?.boardInfo);
         setEncoderSetup({ controller, connection: controller?.boardInfo, ready: Number(encoderResolution) > 0 });
         setConfigurationGeneration(value => value + 1);
         setIsControllerInitialized(false);
@@ -472,12 +479,17 @@ function PlatformTab({ isActive = true }) {
     return (
         <div id="tabPlatform" className="platform-tab page-layout">
             {commandError && <p className="conn-error" role="alert">{commandError}</p>}
-            <TrackingSource controller={controller} isConnected={isConnected} isActive={isActive} />
+            {mounting.supported && <ImuMounting model={mounting} platform={mountPreviewSession === controller?.boardInfo ? {
+                type: platformType, track: Number(differentialWheelBase), length: Number(mecanumLength),
+                width: Number(mecanumWidth), radius: Number(omniRadius),
+                diameter: Number({ omni: omniWheelDiameter, differential: differentialWheelDiameter, mecanum: mecanumWheelDiameter }[platformType])
+            } : null}/>}
+            <TrackingSource controller={controller} isConnected={isConnected} isActive={isActive} mounting={mounting}/>
             {supportsFeedbackSourceSelector(controller?.boardInfo) ?
               <details onToggle={event => setExperimentOpen(event.currentTarget.open)}>
                 <summary>Experimental motion feedback controls</summary>
-                {experimentOpen && <FusionExperiment controller={controller} isConnected={isConnected} isActive={isActive} />}
-              </details> : <FusionExperiment controller={controller} isConnected={isConnected} isActive={isActive} />}
+                {experimentOpen && <FusionExperiment controller={controller} isConnected={isConnected} isActive={isActive} mounting={mounting}/>}
+              </details> : <FusionExperiment controller={controller} isConnected={isConnected} isActive={isActive} mounting={mounting}/>}
             <div className="platform-setup-grid">
                 <section className="panel-card platform-hardware">
                 <h2>Platform setup</h2>

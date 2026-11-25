@@ -119,3 +119,10 @@ export function supportsImuTracking(info) {
     profile.capabilities?.imu_tracking === true && info?.protocol_major === 2 &&
     Number.isInteger(info.protocol_minor) && info.protocol_minor >= 20 && info.protocol_minor <= 255;
 }
+
+export function supportsImuMounting(info) {
+  const profile = getBoardProfile(info);
+  return profile?.board.model === 1 && profile.board.revision === '0.4.0' &&
+    profile.capabilities?.imu_mounting === true && info.protocol_major === 2 &&
+    Number.isInteger(info.protocol_minor) && info.protocol_minor >= 23 && info.protocol_minor <= 255;
+}

@@ -490,6 +490,26 @@ compact diagnostics and examples](fusion-experiment.md).
 See [IMU-only relative tracking](imu-tracking.md) for the protocol 2.20 opt-in,
 stationary sensor-axis mounting declaration, bounded horizon and diagnostics.
 
+## Shared IMU mounting
+
+A ready Kinisi Mini v0.4.0 with protocol 2.23+ and the `imu_mounting` capability accepts one installation for IMU-only, passive fused and experimental fused tracking. In **Platform → IMU mounting**, select the face orientation or enter roll, pitch and yaw. Measure the signed distance from the chassis tracking origin to **U601 (BMI088)** in chassis coordinates. Positive X is forward, positive Y is left and positive Z is up. A chip 100 mm to the right has Y = −0.100 m even when the board is vertical.
+
+Board +X points away from the USB-C connector J501, parallel to the board's long dimension. Board +Y points toward the long edge closest to U601. Board +Z points out of the component face. Rotation maps board vectors into chassis axes by `Rz(yaw) × Ry(pitch) × Rx(roll)`. Apply roll first, then pitch, then yaw about the fixed axes. Positive angles follow the right-hand rule. At roll +90° with pitch and yaw zero, board +Z points to chassis right. The firmware applies the fixed sensor-to-board rotation internally. The screen locates the chip and USB using their PCB placement. [Bosch BMI088 datasheet, figures 6 and 12](https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi088-ds001.pdf)
+
+The preview changes as you edit. **Apply mounting** writes all six fields together and reads the board back. Stop and disarm motion first. If the board reports `SOURCE_SWITCH_UNSAFE`, allow its stationary encoder check to complete and retry explicitly. A changed installation requires fresh producer initialization. **Save configuration** persists applied mounting geometry, including standalone configuration before platform setup. Reboot restores geometry and requires fresh motion initialization.
+
+```js
+if (controller.supportsImuMounting()) {
+  await controller.set_imu_mount_geometry(90, 0, 0, 0, -0.100, 0);
+  const applied = await controller.get_imu_mount_geometry();
+  // applied.configured === true, applied.roll_deg === 90, applied.y_m === -0.1
+}
+```
+
+The six positional arguments are roll, pitch and yaw in degrees followed by X, Y and Z in metres. Roll and yaw accept ±180°, pitch ±90° and offsets ±10 m per axis. The setter rounds to 0.01° and 1 µm, with exact ties rounded away from zero. Readback returns `roll_deg`, `pitch_deg`, `yaw_deg`, `x_m`, `y_m`, `z_m` and `configured`. The raw `set_imu_mount` and `get_imu_mount` methods use integer centidegrees and micrometres.
+
+When `configured` is true, each producer uses the shared geometry. Send zero for the legacy yaw in its explicit start or confirmation command. When `configured` is false, IMU-only retains sensor-axis yaw and fusion retains board-axis yaw for their centered, level installations. Older firmware uses those same legacy conventions.
+
 ## Tracking source selector
 
 A ready model 1 board with hardware 0.4.0 and protocol 2.21+ can report encoder,
@@ -501,7 +521,8 @@ a control loop. Prepare the required producer explicitly.
 
 - Encoder and passive fused tracking require initialized platform odometry.
 - The passive observer additionally needs an explicit `set_feedback_fusion_mount(yaw)`
-  declaration for a rigid, centered, level board with +Z up. Yaw is the angle of
+  declaration. With an applied shared mount, confirm stationarity and send zero for yaw.
+  With a legacy rigid, centered, level board with +Z up, yaw is the angle of
   board +X in chassis XY, counterclockwise about chassis +Z, in radians. Read
   `get_feedback_fusion_mount()` to confirm it. Mount declarations are volatile.
 - IMU-only tracking requires the stationary mounting declaration and cold calibration

@@ -1,6 +1,6 @@
 // Generated from tools/commands.json by tools/sdkgenerator.py. Do not edit.
 export const SDK_VERSION = Object.freeze([2, 6, 0]);
-export const PROTOCOL_VERSION = Object.freeze([2, 22, 0]);
+export const PROTOCOL_VERSION = Object.freeze([2, 23, 0]);
 export const GET_TEMPERATURE = 0x50;
 export const GET_IMU = 0x51;
 export const GET_MOTOR_CURRENT = 0x52;
@@ -103,6 +103,8 @@ export const SET_FEEDBACK_FUSION_MOUNT = 0x6a;
 export const GET_FEEDBACK_FUSION_MOUNT = 0x6b;
 export const GET_FEEDBACK_SOURCE_HEALTH = 0x6c;
 export const GET_FEEDBACK_IMU_CHANNELS = 0x6d;
+export const SET_IMU_MOUNT = 0x6e;
+export const GET_IMU_MOUNT = 0x6f;
 export const ErrorCode = Object.freeze({
   INCOMPATIBLE_PROTOCOL: 1,
   INVALID_ARGUMENT: 2,
@@ -1287,6 +1289,55 @@ export class FeedbackImuChannels {
   }
 }
 
+/** Signed board orientation and displacement to the chip in chassis axes. */
+export class ImuMountConfiguration {
+  /** Store one decoded payload. */
+  constructor(roll_cdeg, pitch_cdeg, yaw_cdeg, x_um, y_um, z_um, configured) {
+    this.roll_cdeg = roll_cdeg;
+    this.pitch_cdeg = pitch_cdeg;
+    this.yaw_cdeg = yaw_cdeg;
+    this.x_um = x_um;
+    this.y_um = y_um;
+    this.z_um = z_um;
+    this.configured = configured;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 19; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(ImuMountConfiguration.getSize());
+    const view = new DataView(buffer);
+    view.setInt16(0, this.roll_cdeg, true);
+    view.setInt16(2, this.pitch_cdeg, true);
+    view.setInt16(4, this.yaw_cdeg, true);
+    view.setInt32(6, this.x_um, true);
+    view.setInt32(10, this.y_um, true);
+    view.setInt32(14, this.z_um, true);
+    view.setUint8(18, this.configured);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, ImuMountConfiguration.getSize());
+    if (view.getInt16(0, true) < -18000 || view.getInt16(0, true) > 18000) throw new Error('Invalid mount roll_cdeg');
+    if (view.getInt16(2, true) < -9000 || view.getInt16(2, true) > 9000) throw new Error('Invalid mount pitch_cdeg');
+    if (view.getInt16(4, true) < -18000 || view.getInt16(4, true) > 18000) throw new Error('Invalid mount yaw_cdeg');
+    if (view.getInt32(6, true) < -10000000 || view.getInt32(6, true) > 10000000) throw new Error('Invalid mount x_um');
+    if (view.getInt32(10, true) < -10000000 || view.getInt32(10, true) > 10000000) throw new Error('Invalid mount y_um');
+    if (view.getInt32(14, true) < -10000000 || view.getInt32(14, true) > 10000000) throw new Error('Invalid mount z_um');
+    if (view.getUint8(18) > 1) throw new Error('Invalid mount configured flag');
+    return new ImuMountConfiguration(
+      view.getInt16(0, true),
+      view.getInt16(2, true),
+      view.getInt16(4, true),
+      view.getInt32(6, true),
+      view.getInt32(10, true),
+      view.getInt32(14, true),
+      Boolean(view.getUint8(18)),
+    );
+  }
+}
+
 /** Stable uint8 telemetry topic enum. */
 export const Topic = Object.freeze({
   ENCODER_ODOMETRY: 1,
@@ -2075,7 +2126,7 @@ export class Commands {
     return view.getUint32(0, true);
   }
 
-  /** Save the complete running platform setup and motor PWM frequency to onboard FRAM. Available on v0.4 with protocol 2.14 or later. ACK confirms a durable save. A subsequent boot restores the setup with outputs stopped. Errors: INVALID_LENGTH, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, PLATFORM_NOT_INITIALIZED, INVALID_ARGUMENT, INTERNAL_ERROR. */
+  /** Save the complete running platform setup and motor PWM frequency to onboard FRAM. Available on v0.4 with protocol 2.14 or later. ACK confirms a durable save. A subsequent boot restores the setup with outputs stopped. Protocol 2.23+ also saves the applied physical IMU mount and accepts an explicitly configured mount before platform commissioning. Errors: INVALID_LENGTH, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, PLATFORM_NOT_INITIALIZED, INVALID_ARGUMENT, INTERNAL_ERROR. */
   async save_configuration() {
     const payload = new ArrayBuffer(0);
     await this._request(SAVE_CONFIGURATION, payload, 0);
@@ -2130,7 +2181,7 @@ export class Commands {
     return idle;
   }
 
-  /** Configure the volatile v0.4 experiment only while motion is stopped and all commanded targets and motor outputs are zero; initialized controllers with idle zero targets are allowed. Mode 0 retains the legacy encoder path (boot default), 1 uses encoder feedback with the common chassis correction, and 2 uses fused feedback with that same correction. No IMU-only mode. For modes 1/2 the caller declares a rigid, level board with component side up, IMU at the chassis reference point, and mounting_yaw_rad as the angle of board +X expressed in chassis XY, counterclockwise about chassis +Z. Sensor-to-board axes are (-x,-y,+z); chassis axes are forward/left/up. Reject nonfinite or out-of-range yaw, any observed configured encoder movement in the preceding 100 ms, or a counter change since a fresh sample. Stopped cold setup may ACK in WAITING; ACK does not establish readiness. Both experimental modes require 100 ms of observed unchanged configured counters for initial rest arming before accepting a motion target; once armed, ordinary target updates remain accepted while moving; fused bias calibration may run within that window. Reconfiguration cancels old targets. Sources may requalify automatically after an ordinary sensor fault, but healthy inputs and a fresh target are required before control resumes. Does not save to FRAM or start motion. Requires READY, exact v0.4.0 fusion capability and protocol 2.19. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, BOARD_IDLE, DRIVERS_ASLEEP, PLATFORM_NOT_INITIALIZED. */
+  /** Configure the volatile v0.4 experiment only while motion is stopped and all commanded targets and motor outputs are zero; initialized controllers with idle zero targets are allowed. Mode 0 retains the legacy encoder path (boot default), 1 uses encoder feedback with the common chassis correction, and 2 uses fused feedback with that same correction. No IMU-only mode. Without a configured physical mount, modes 1/2 require a rigid, level board with component side up, IMU at the chassis reference point, and mounting_yaw_rad as the angle of board +X expressed in chassis XY, counterclockwise about chassis +Z. Sensor-to-board axes are (-x,-y,+z); chassis axes are forward/left/up. Reject nonfinite or out-of-range yaw, any observed configured encoder movement in the preceding 100 ms, or a counter change since a fresh sample. Stopped cold setup may ACK in WAITING; ACK does not establish readiness. Both experimental modes require 100 ms of observed unchanged configured counters for initial rest arming before accepting a motion target; once armed, ordinary target updates remain accepted while moving; fused bias calibration may run within that window. Reconfiguration cancels old targets. Sources may requalify automatically after an ordinary sensor fault, but healthy inputs and a fresh target are required before control resumes. Does not save to FRAM or start motion. Requires READY, exact v0.4.0 fusion capability and protocol 2.19. On protocol 2.23+, a configured physical mount takes precedence over legacy yaw. Read GET_IMU_MOUNT for the applied geometry. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, BOARD_IDLE, DRIVERS_ASLEEP, PLATFORM_NOT_INITIALIZED. */
   async set_fusion_experiment(mode, mounting_yaw_rad) {
     if (!Number.isInteger(mode) || mode < 0 || mode > 2) throw new RangeError('Invalid fusion experiment mode');
     if (typeof mounting_yaw_rad !== 'number' || !Number.isFinite(mounting_yaw_rad) || Math.abs(mounting_yaw_rad) > Math.PI) throw new RangeError('Mounting yaw must be finite radians within [-pi, pi]');
@@ -2162,7 +2213,7 @@ export class Commands {
     return sample;
   }
 
-  /** Read the volatile experiment mode and declared mounting yaw without changing state. Reset selects legacy encoder mode; SAVE_CONFIGURATION does not persist this experiment. Requires READY, exact v0.4.0 fusion capability and protocol 2.19. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
+  /** Read the volatile experiment mode and declared mounting yaw without changing state. Reset selects legacy encoder mode; SAVE_CONFIGURATION does not persist this experiment. Requires READY, exact v0.4.0 fusion capability and protocol 2.19. On protocol 2.23+, a configured physical mount takes precedence over legacy yaw. Read GET_IMU_MOUNT for the applied geometry. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
   async get_fusion_configuration() {
     const payload = new ArrayBuffer(0);
     const response = await this._request(GET_FUSION_CONFIGURATION, payload, 9);
@@ -2171,7 +2222,7 @@ export class Commands {
     return sample;
   }
 
-  /** Control volatile IMU-only relative tracking. START=0, RESET=2 and RECALIBRATE=3 are accepted from any state with stationary_mount_confirmed=1 and finite yaw in [-pi,pi]; all discard prior bias and pose and begin full cold stationary calibration at a new relative origin. The caller confirms true zero velocity, rigid level sensor-+Z-up mounting with IMU at the chassis reference point. Yaw is the angle of sensor +X in chassis XY, counterclockwise about chassis +Z. Sensor-to-chassis transform is Rz(yaw)*(x,y,z), axes forward/left/up. IMU stationarity checks cannot establish zero constant velocity. STOP=1 requires confirmation=0 and yaw=0 and stops integration. ACK confirms the action, not a valid estimate. Fault, expiry or interruption requires deliberate restart; no automatic recovery. Not saved to FRAM. Requires READY, exact model 1 hardware 0.4.0 with imu_tracking capability and protocol 2.20+. Independent of platform, encoders and fusion; never commands motion or changes control feedback. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, BOARD_IDLE, DRIVERS_ASLEEP. */
+  /** Control volatile IMU-only relative tracking. START=0, RESET=2 and RECALIBRATE=3 are accepted from any state with stationary_mount_confirmed=1 and finite yaw in [-pi,pi]; all discard prior bias and pose and begin full cold stationary calibration at a new relative origin. The caller confirms true zero velocity and the actual rigid installation. Without a configured physical mount, use a level sensor with +Z up at the tracking origin. Legacy yaw is the angle of sensor +X in chassis XY, counterclockwise about chassis +Z. The legacy sensor-to-chassis transform is Rz(yaw)*(x,y,z), axes forward/left/up. IMU stationarity checks cannot establish zero constant velocity. STOP=1 requires confirmation=0 and yaw=0 and stops integration. ACK confirms the action, not a valid estimate. Fault, expiry or interruption requires deliberate restart; no automatic recovery. Not saved to FRAM. Requires READY, exact model 1 hardware 0.4.0 with imu_tracking capability and protocol 2.20+. Independent of platform, encoders and fusion; never commands motion or changes control feedback. On protocol 2.23+, a configured physical mount takes precedence over legacy yaw. Read GET_IMU_MOUNT for the applied geometry. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, BOARD_IDLE, DRIVERS_ASLEEP. */
   async set_imu_tracking(action, stationary_mount_confirmed, mounting_yaw_rad) {
     if (!Number.isInteger(action) || action < 0 || action > 3 || !Number.isInteger(stationary_mount_confirmed) || stationary_mount_confirmed < 0 || stationary_mount_confirmed > 1) throw new RangeError('Invalid IMU tracking action or confirmation');
     if (!Number.isFinite(mounting_yaw_rad) || Math.abs(mounting_yaw_rad) > Math.PI || (action === 1 ? stationary_mount_confirmed !== 0 || mounting_yaw_rad !== 0 : stationary_mount_confirmed !== 1)) throw new RangeError('Invalid IMU tracking mounting declaration');
@@ -2204,7 +2255,7 @@ export class Commands {
     return sample;
   }
 
-  /** Read mounting yaw and the actual bounded tracking horizon in microseconds. This v0.4 release reports 1000000 us for a one-second motion-onset diagnostic. Always use readback for the connected board horizon. The eligible source interval is [origin, origin + window_us); at 100 Hz it contains 100 source stamps including origin and excluding the end. No estimate at or beyond the source end is published. Reset clears volatile tracking state; reconnect does not start or re-anchor tracking. Requires READY, exact model 1 hardware 0.4.0 with imu_tracking capability and protocol 2.20+. Independent of platform, encoders and fusion; never commands motion or changes control feedback. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
+  /** Read mounting yaw and the actual bounded tracking horizon in microseconds. This v0.4 release reports 1000000 us for a one-second motion-onset diagnostic. Always use readback for the connected board horizon. The eligible source interval is [origin, origin + window_us); at 100 Hz it contains 100 source stamps including origin and excluding the end. No estimate at or beyond the source end is published. Reset clears volatile tracking state; reconnect does not start or re-anchor tracking. Requires READY, exact model 1 hardware 0.4.0 with imu_tracking capability and protocol 2.20+. Independent of platform, encoders and fusion; never commands motion or changes control feedback. On protocol 2.23+, a configured physical mount takes precedence over legacy yaw. Read GET_IMU_MOUNT for the applied geometry. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
   async get_imu_tracking_configuration() {
     const payload = new ArrayBuffer(0);
     const response = await this._request(GET_IMU_TRACKING_CONFIGURATION, payload, 12);
@@ -2246,7 +2297,7 @@ export class Commands {
     return sample;
   }
 
-  /** Confirm a rigid centered level board mount for passive fused telemetry, with finite board yaw in [-pi,pi]. Requires stopped outputs and disarmed controllers. Each successful command discards prior passive calibration and pose; the observer requires fresh stationary observations. This volatile setting applies only to passive telemetry. Requires READY, exact v0.4 and protocol 2.21+. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SOURCE_SWITCH_UNSAFE. */
+  /** Declare the legacy centered, level board orientation for passive fused telemetry, with finite board yaw in [-pi,pi]. Requires stopped outputs and disarmed controllers. Each successful command discards prior passive calibration and pose; the observer requires fresh stationary observations. This volatile setting applies only to passive telemetry. Requires READY, exact v0.4 and protocol 2.21+. On protocol 2.23+, a configured physical mount takes precedence over legacy yaw. Read GET_IMU_MOUNT for the applied geometry. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SOURCE_SWITCH_UNSAFE. */
   async set_feedback_fusion_mount(mounting_yaw_rad) {
     if (!Number.isFinite(mounting_yaw_rad) || Math.abs(mounting_yaw_rad) > Math.PI) throw new RangeError('Invalid fusion mounting yaw');
     const payload = new ArrayBuffer(8);
@@ -2255,7 +2306,7 @@ export class Commands {
     await this._request(SET_FEEDBACK_FUSION_MOUNT, payload, 0);
   }
 
-  /** Read the explicit volatile passive fusion mounting confirmation and board yaw. Reset clears confirmation. Requires READY, exact v0.4 and protocol 2.21+. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
+  /** Read the explicit volatile passive fusion mounting confirmation and board yaw. Reset clears confirmation. Requires READY, exact v0.4 and protocol 2.21+. On protocol 2.23+, a configured physical mount takes precedence over legacy yaw. Read GET_IMU_MOUNT for the applied geometry. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
   async get_feedback_fusion_mount() {
     const payload = new ArrayBuffer(0);
     const response = await this._request(GET_FEEDBACK_FUSION_MOUNT, payload, 9);
@@ -2284,5 +2335,31 @@ export class Commands {
     const sample = FeedbackImuChannels.decode(response);
     if ((!sample.accel_timestamp_us && sample.accel_age_us !== 0xffffffff) || (!sample.gyro_timestamp_us && sample.gyro_age_us !== 0xffffffff)) throw new Error('Invalid feedback IMU channel provenance');
     return sample;
+  }
+
+  /** Set the complete rigid mount for IMU-only and fused tracking on a stopped, disarmed v0.4. The board-to-chassis rotation is Rz(yaw) Ry(pitch) Rx(roll). A changed mount requires fresh tracking initialization. SAVE_CONFIGURATION persists this geometry. Requires READY and protocol 2.23+ with imu_mounting. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SOURCE_SWITCH_UNSAFE. */
+  async set_imu_mount(roll_cdeg, pitch_cdeg, yaw_cdeg, x_um, y_um, z_um) {
+    if (!Number.isInteger(roll_cdeg) || roll_cdeg < -18000 || roll_cdeg > 18000) throw new RangeError('Invalid mount roll_cdeg');
+    if (!Number.isInteger(pitch_cdeg) || pitch_cdeg < -9000 || pitch_cdeg > 9000) throw new RangeError('Invalid mount pitch_cdeg');
+    if (!Number.isInteger(yaw_cdeg) || yaw_cdeg < -18000 || yaw_cdeg > 18000) throw new RangeError('Invalid mount yaw_cdeg');
+    if (!Number.isInteger(x_um) || x_um < -10000000 || x_um > 10000000) throw new RangeError('Invalid mount x_um');
+    if (!Number.isInteger(y_um) || y_um < -10000000 || y_um > 10000000) throw new RangeError('Invalid mount y_um');
+    if (!Number.isInteger(z_um) || z_um < -10000000 || z_um > 10000000) throw new RangeError('Invalid mount z_um');
+    const payload = new ArrayBuffer(18);
+    const requestView = new DataView(payload);
+    requestView.setInt16(0, roll_cdeg, true);
+    requestView.setInt16(2, pitch_cdeg, true);
+    requestView.setInt16(4, yaw_cdeg, true);
+    requestView.setInt32(6, x_um, true);
+    requestView.setInt32(10, y_um, true);
+    requestView.setInt32(14, z_um, true);
+    await this._request(SET_IMU_MOUNT, payload, 0);
+  }
+
+  /** Read the shared physical mount. When configured is false, IMU-only uses its legacy sensor yaw and fusion its legacy board yaw. Requires READY and protocol 2.23+ with imu_mounting. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
+  async get_imu_mount() {
+    const payload = new ArrayBuffer(0);
+    const response = await this._request(GET_IMU_MOUNT, payload, 19);
+    return ImuMountConfiguration.decode(response);
   }
 }
