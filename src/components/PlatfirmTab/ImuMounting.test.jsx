@@ -29,7 +29,7 @@ function Panel({ controller }) {
 }
 const click = name => fireEvent.click(screen.getByRole('button',{name}));
 describe('mounting setup', () => {
-  it.each([['Platform',PlatformTab],['Sensors',SensorsTab]])('shows legacy U601 readback and retries a failed read in %s', async (tab, Tab) => {
+  it.each([['Platform',PlatformTab],['Sensors',SensorsTab]])('shows legacy IMU sensor readback and retries a failed read in %s', async (tab, Tab) => {
     const client = board();
     client.boardInfo = {...info,protocol_minor:23};
     client.supportsBoardMounting = () => false;
@@ -39,13 +39,13 @@ describe('mounting setup', () => {
       .mockResolvedValueOnce({roll_cdeg:1234,pitch_cdeg:-4500,yaw_cdeg:0,x_um:-9000,y_um:100000,z_um:-1000,configured:true})
       .mockResolvedValueOnce(flat);
     render(<ControllerContext.Provider value={{controller:client,isConnected:true}}><Tab/></ControllerContext.Provider>);
-    const readback = within(screen.getByRole('region',{name:'Legacy U601 mounting'}));
+    const readback = within(screen.getByRole('region',{name:'Legacy IMU sensor mounting'}));
     expect(await readback.findByRole('alert')).toHaveTextContent('Read timed out');
-    expect(readback.getByText(/Protocol 2.23 uses the U601/)).toHaveTextContent('Upgrade to protocol 2.24');
+    expect(readback.getByText(/Protocol 2.23 measures the offset to the IMU sensor/)).toHaveTextContent('Upgrade to protocol 2.24');
     if (tab === 'Sensors') expect(screen.getByLabelText(/I confirm zero velocity/)).toBeDisabled();
     fireEvent.click(readback.getByRole('button',{name:'Retry mounting read'}));
     await readback.findByText('12.34 / -45 / 0°');
-    expect(readback.getByText('Tracking origin to U601 chip · X / Y / Z')).toBeVisible();
+    expect(readback.getByText('Tracking origin to IMU sensor · X / Y / Z')).toBeVisible();
     expect(readback.getByText('-0.009 / 0.1 / -0.001 m')).toBeVisible();
     if (tab === 'Sensors') expect(screen.getByLabelText(/I confirm zero velocity/)).toBeEnabled();
     fireEvent.click(readback.getByRole('button',{name:'Read mounting'}));
@@ -57,13 +57,18 @@ describe('mounting setup', () => {
     expect(client.set_imu_mount).not.toHaveBeenCalled();
     expect(client.set_board_mount).not.toHaveBeenCalled();
   });
-  it('pivots about the entered underside center and uses the profile to locate U601', () => {
+  it('pivots about the entered underside center and uses the profile to locate the IMU sensor', () => {
     const profile = getBoardProfile(info);
     const diagram = (roll, boardProfile=profile) => <MountDiagram boardProfile={boardProfile}
       values={[roll,0,0,0,0,0]} platform={platform}/>;
     const {container, rerender} = render(diagram(0));
+    const svg = screen.getByRole('img', { name: /PCB underside center and IMU sensor.*USB-C port/ });
+    expect(within(svg).getByText('USB-C port')).toBeVisible();
+    expect(within(svg).getByText('IMU sensor')).toBeVisible();
+    expect(container.querySelector('figcaption')).toHaveTextContent('IMU sensor');
+    expect(container.querySelector('figcaption')).toHaveTextContent('USB-C port');
     const rear = () => container.querySelector('[aria-label="Rear-view geometry"]');
-    const marker = root => root.querySelector('[aria-label="U601 sensing point"]');
+    const marker = root => root.querySelector('[aria-label="IMU sensor"]');
     const center = root => root.querySelector('[aria-label="PCB underside center"]').getAttribute('transform');
     const xy = mark => ['cx','cy'].map(key=>Number(mark.getAttribute(key)));
     const [chipX, chipY] = xy(marker(container));
@@ -129,7 +134,7 @@ describe('mounting setup', () => {
     const {container} = render(<MountDiagram boardProfile={getBoardProfile(info)} values={[83,45,-35,0,.1,z]} platform={platform}/>);
     const rear=container.querySelector('g[aria-label="Rear-view geometry"]');
     const [,ox,oy]=rear.getAttribute('transform').match(/translate\(([\d.]+) ([\d.]+)\)/).map(Number);
-    const marker=rear.querySelector('[aria-label="U601 sensing point"]');
+    const marker=rear.querySelector('[aria-label="IMU sensor"]');
     const cx=Number(marker.getAttribute('cx')),cy=Number(marker.getAttribute('cy'));
     expect(Math.sign(cy)).toBe(-Math.sign(z));
     const points=rear.querySelector('polygon').getAttribute('points').split(' ').map(point=>point.split(',').map(Number));

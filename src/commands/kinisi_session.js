@@ -274,12 +274,12 @@ export class KinisiSession extends Commands {
   supportsFeedbackSourceHealth() { return this.ready && supportsFeedbackSourceHealth(this.boardInfo); }
   supportsImuMounting() { return this.ready && supportsImuMounting(this.boardInfo); }
 
-  /** Legacy chip-reference setter (2.23). Positions refer to U601. */
+  /** Legacy chip-reference setter (2.23). Positions refer to the IMU sensor. */
   async set_imu_mount_geometry(roll_deg, pitch_deg, yaw_deg, x_m, y_m, z_m) {
     await this.set_imu_mount(...mountToWire([roll_deg, pitch_deg, yaw_deg, x_m, y_m, z_m]));
   }
 
-  /** Legacy chip-reference readback (2.23). Positions refer to U601. */
+  /** Legacy chip-reference readback (2.23). Positions refer to the IMU sensor. */
   async get_imu_mount_geometry() {
     return mountGeometry(await this.get_imu_mount());
   }

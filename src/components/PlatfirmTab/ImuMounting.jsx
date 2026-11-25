@@ -20,7 +20,7 @@ export default function ImuMounting({ model, platform }) {
       value={values[i]} onChange={event=>edit(i,event.target.value)}/></label>;
   return <section className="panel-card mount-card" aria-label="IMU mounting">
     <h2>IMU mounting</h2>
-    <p className="section-help">Measure from the chassis tracking origin to the center of the PCB underside, opposite the components. Exclude connectors and standoffs. Both IMU-only and fused tracking use this installation.</p>
+    <p className="section-help">The inertial measurement unit (IMU) senses acceleration and rotation. Measure from the chassis tracking origin to the center of the PCB underside, opposite the components. Exclude connectors and standoffs. Both IMU-only and fused tracking use this installation.</p>
     <div className="mount-editor">
       <div className="mount-inputs">
         <fieldset disabled={busy || !mount}><legend>Board orientation</legend>
@@ -43,7 +43,7 @@ export default function ImuMounting({ model, platform }) {
     </div>
     {unchangedReadback && !wire && <p>Converted board readback exceeds the ±10 m write range. Enter an offset within range to apply a new installation.</p>}
     <div className="mount-readback">
-      <strong>Board-center readback</strong>
+      <strong>PCB underside center readback</strong>
       {busy ? <span role="status">Reading mounting geometry…</span> : mount ? <span>{mount.configured ?
         `Configured · roll / pitch / yaw ${mountValues(mount).slice(0,3).join(' / ')}° · X / Y / Z ${mountValues(mount).slice(3).join(' / ')} m` :
         'Legacy per-mode yaw is active. Apply an installation to use the shared mount.'}</span> : <span>Geometry unavailable</span>}

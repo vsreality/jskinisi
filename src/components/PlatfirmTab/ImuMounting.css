@@ -13,6 +13,7 @@
 .mount-key-center {width:8px;height:8px;border:2px solid #0a6783;transform:rotate(45deg);margin-left:8px}
 .mount-key-origin {width:10px;height:10px;border:1.5px solid #142731}
 .mount-key-chip {width:9px;height:9px;background:#f7ad37;border:1px solid #714912;margin-left:8px}
+.mount-key-port {width:11px;height:7px;background:#c9d5db;border:1px solid #263c3e;margin-left:8px}
 .mount-readback {border-top:1px solid #dbe3e6; padding-top:12px; display:flex;align-items:baseline;gap:10px; flex-wrap:wrap;font-size:13px}
 .mount-actions {display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:14px 0 10px}
 .mount-actions span {font-size:13px}

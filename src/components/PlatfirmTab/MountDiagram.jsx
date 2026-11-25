@@ -33,7 +33,7 @@ function MountPoints({ project, chip }) {
     <path aria-label="PCB underside center" transform={`translate(${cx} ${cy})`}
       d="M0 -6 L6 0 L0 6 L-6 0 Z" fill="none" stroke="white" strokeWidth="4"/>
     <path d={`M${cx} ${cy-6}l6 6-6 6-6-6Z`} fill="none" stroke="#0a6783" strokeWidth="2"/>
-    <circle aria-label="U601 sensing point" cx={ix} cy={iy} r="3.5" fill="#f7ad37" stroke="#714912"/>
+    <circle aria-label="IMU sensor" cx={ix} cy={iy} r="3.5" fill="#f7ad37" stroke="#714912"/>
   </>;
 }
 
@@ -91,7 +91,7 @@ export default function MountDiagram({ values, platform, boardProfile }) {
   const usbPoint = iso(usb), chipPoint = iso(chip);
   return <figure className="mount-diagram">
     <svg viewBox="0 0 590 332" role="img" aria-labelledby={id}>
-      <title id={id}>Robot top and rear views with tracking origin, PCB underside center and U601, and an enlarged oriented Kinisi Mini board</title>
+      <title id={id}>Robot top and rear views show the tracking origin, PCB underside center and IMU sensor. The enlarged board shows its orientation and USB-C port.</title>
       <rect width="590" height="332" rx="10" fill="#f4f8f9"/>
       <g className="mount-view-caption"><text x="16" y="24">ROBOT · TOP</text><text x="316" y="24">BOARD ORIENTATION</text></g>
       <path d="M294 12v306" stroke="#cbd9dd"/>
@@ -124,8 +124,8 @@ export default function MountDiagram({ values, platform, boardProfile }) {
         <path d={`M${usbPoint.join(' ')} L350 214 H319`} />
         <path d={`M${chipPoint.join(' ')} L510 202 H565`}/>
       </g>
-      <text x="319" y="229">J501 · USB-C</text>
-      <text x="565" y="218" textAnchor="end">U601 · BMI088</text>
+      <text x="319" y="229">USB-C port</text>
+      <text x="565" y="218" textAnchor="end">IMU sensor</text>
       {['X','Y','Z'].map((name,i)=>{
         const start=iso([0,0,0]);
         const vector=[0,0,0];vector[i]=32;
@@ -135,9 +135,10 @@ export default function MountDiagram({ values, platform, boardProfile }) {
       })}
       <MountPoints project={iso} chip={chip}/>
       <text x="316" y="272" className="mount-view-caption">BOARD AXES</text>
-      <text x="316" y="293">X away from USB-C · Y toward the IMU edge</text>
-      <text x="316" y="312">Z out of the component face</text>
+      <text x="316" y="289">X away from USB-C port</text>
+      <text x="316" y="306">Y toward the IMU sensor edge</text>
+      <text x="316" y="323">Z out of the component face</text>
     </svg>
-    <figcaption><span className="mount-key-origin"/> Tracking origin <span className="mount-key-center"/> PCB underside center <span className="mount-key-chip"/> U601 <span>{layout.name} · board detail enlarged</span></figcaption>
+    <figcaption><span className="mount-key-origin"/> Tracking origin <span className="mount-key-center"/> PCB underside center <span className="mount-key-chip"/> IMU sensor <span className="mount-key-port"/> USB-C port <span>{layout.name} · board detail enlarged</span></figcaption>
   </figure>;
 }
