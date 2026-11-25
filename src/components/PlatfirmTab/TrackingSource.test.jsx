@@ -152,7 +152,7 @@ describe('board tracking source', () => {
     await act(async()=>{click('Read board status');});
     expect(screen.queryByText('Relative pose')).toBeNull();
     expect(screen.queryByText('Historical relative pose')).toBeNull();
-    expect(reading('Board reason')).toBe('not started');
+    expect(reading('Selected estimate reason')).toBe('not started');
   });
   it('classifies a delayed first delivery as historical without altering the native sample age',async()=>{
     vi.useFakeTimers();

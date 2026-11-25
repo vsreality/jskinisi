@@ -24,6 +24,11 @@
 .tracking-mount input[type=number] { width: 9rem; }
 
 .tracking-health { margin: 20px 0; }
+.tracking-diagnosis { margin: 12px 0 18px; padding: 12px 16px; border-left: 4px solid #46657c; background: #f2f6f9; }
+.tracking-diagnosis.warning { border-color: #98610a; background: #fff7e8; }
+.tracking-diagnosis h3 { margin: 0; font-size: .9rem; }
+.tracking-diagnosis p { margin: 5px 0 0; }
+.tracking-diagnosis .tracking-diagnosis-title { font-size: 1.1rem; font-weight: 650; }
 .tracking-health h3 { margin-bottom: 6px; }
 .tracking-health-cards { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,200px),1fr)); gap: 12px; }
 .tracking-health-card { padding: 12px; border: 1px solid #d0d7de; border-radius: 6px; }

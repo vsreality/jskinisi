@@ -131,7 +131,7 @@ function ConnectedTracking({ controller }) {
     await read(() => controller.set_feedback_fusion_mount(Number(yaw)));
     setConfirmed(false);
   };
-  return <>
+  const selector = <>
     <p className="section-help">Choose the source for position and velocity telemetry. Stop the platform and disarm its controllers before switching. The first valid sample establishes a new relative origin.</p>
     <div className="tracking-actions">
       <label>Tracking preference
@@ -150,7 +150,7 @@ function ConnectedTracking({ controller }) {
         <div><dt>Requested</dt><dd>{sourceName(status.requested)}</dd></div>
         <div><dt>Active at board read</dt><dd>{sourceName(status.active)}</dd></div>
         <div><dt>Validity at board read</dt><dd>{status.valid ? 'Valid' : 'Unavailable'}</dd></div>
-        <div><dt>Board reason</dt><dd>{enumName(FeedbackSourceReason, status.reason)}</dd></div>
+        <div><dt>Selected estimate reason</dt><dd>{enumName(FeedbackSourceReason, status.reason)}</dd></div>
         <div><dt>Sample age at read</dt><dd>{status.age_us === 0xffffffff ? 'Unavailable' : `${status.age_us} µs`}</dd></div>
         <div><dt>Board freshness limit</dt><dd>{status.max_age_ms ? `${status.max_age_ms} ms` : 'Unavailable'}</dd></div>
         <div><dt>Source timestamp</dt><dd>{status.timestamp_us ? `${status.timestamp_us} µs` : 'Unavailable'}</dd></div>
@@ -166,7 +166,10 @@ function ConnectedTracking({ controller }) {
         </div>}
       <p className="section-help">+X forward, +Y left, yaw counterclockwise. Compare positions within one origin and board boot.</p>
     </>}
-    {supportsFeedbackSourceHealth(controller.boardInfo) && <TrackingHealth controller={controller} />}
+  </>;
+  return <>
+    {supportsFeedbackSourceHealth(controller.boardInfo)
+      ? <TrackingHealth controller={controller}>{selector}</TrackingHealth> : selector}
     {fused && <fieldset className="tracking-mount"><legend>Passive fused tracking</legend>
       <p>Use initialized platform geometry and running odometry. Enter the board +X direction relative to chassis forward, positive counterclockwise. Confirm the board mount after each restart. Keep the platform still for calibration.</p>
       {mount?.error ? <p role="alert">Mount readback unavailable. {mount.error}</p> :

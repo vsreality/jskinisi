@@ -134,4 +134,54 @@ describe('tracking input health',()=>{
     expect(screen.queryByText('No disagreement reported')).toBeNull();
     expect(c.set_feedback_source).not.toHaveBeenCalled();
   });
+  it('places the board diagnosis before the controls and preserves the limit of the remaining input',async()=>{
+    vi.useFakeTimers();
+    const c=controller();
+    c.get_feedback_source_health.mockImplementation(async id=>id===0
+      ? {...sample(0),max_age_us:30000}
+      : {...sample(id,F.PROVENANCE),health:2,reason:3,detail:3});
+    render(<TrackingHealth controller={c}><button>Source controls</button></TrackingHealth>);
+    await act(async()=>{});
+    const element=screen.getByRole('region',{name:'Tracking diagnosis'});
+    const summary=within(element);
+    expect(element.compareDocumentPosition(screen.getByRole('button',{name:'Source controls'})) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(summary.getByText('Physical IMU input was unavailable.')).toBeVisible();
+    expect(summary.getByText('Encoder odometry was available at the separate board read.')).toBeVisible();
+    expect(summary.getByText(/Healthy inputs within.*Encoders/)).toBeVisible();
+    expect(card('Physical IMU').getByText('Input acquisition reason')).toBeVisible();
+    expect(card('Passive fused estimate').getByText('Estimate reason')).toBeVisible();
+    await act(async()=>vi.advanceTimersByTimeAsync(21));
+    expect(summary.getByText(/Healthy inputs within.*None confirmed/)).toBeVisible();
+    expect(summary.getByText(/Historical healthy readings: Encoders/)).toBeVisible();
+  });
+
+  it('attributes disagreement to its own board read and keeps unmatched later updates separate',async()=>{
+    vi.useFakeTimers();
+    const c=controller();
+    let updated=false, finish;
+    c.get_feedback_source_health.mockImplementation(id=>{
+      if (id===0 && updated) return new Promise(resolve=>{finish=resolve;});
+      if (id===2) return Promise.resolve({...sample(2,0),health:2,reason:1});
+      const flags=F.PROVENANCE|F.FRESH|F.COMPARISON_AVAILABLE|(id===0?F.DISAGREEMENT:0);
+      return Promise.resolve({...sample(id,flags),max_age_us:35000,health:id===0?3:0});
+    });
+    render(<TrackingHealth controller={c}/>);
+    await act(async()=>{});
+    const summary=within(screen.getByRole('region',{name:'Tracking diagnosis'}));
+    expect(summary.getByText('Encoder and IMU motion disagree. The board cannot identify which input caused it.')).toBeVisible();
+    expect(summary.getByText(/separate board reads gave different comparison results/)).toBeVisible();
+    expect(summary.getByText(/sample behind this read is within/)).toBeVisible();
+    await act(async()=>vi.advanceTimersByTimeAsync(26));
+    expect(summary.getByText(/sample behind this read is now historical/)).toBeVisible();
+    updated=true;
+    await act(async()=>vi.advanceTimersByTimeAsync(474));
+    expect(summary.queryByText(/motion disagree/)).toBeNull();
+    expect(summary.getByText(/other input is unconfirmed/)).toBeVisible();
+    await act(async()=>finish({...sample(0,F.PROVENANCE|F.TIMESTAMP_FAULT),health:2,reason:6,detail:5}));
+    expect(summary.getByText('Encoder input was unavailable.')).toBeVisible();
+    expect(summary.getByText('Physical IMU samples were available at the separate board read.')).toBeVisible();
+    expect(summary.getByText(/separate one-second tracking window/)).toBeVisible();
+    expect(c.set_feedback_source).not.toHaveBeenCalled();
+  });
+
 });
