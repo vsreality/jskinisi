@@ -12,6 +12,7 @@ export default function ImuMounting({ model, platform }) {
   const preset = mountPresets.findIndex(([, ...angles]) => angles.every((n,i) => String(n) === values[i]));
   const edit = (i, v) => setDraft({ base: mount, values: values.map((old,j) => i === j ? v : old) });
   const changed = mount && wire && (!mount.configured || mountFields.some(({ key }, i) => mount[key] !== wire[i]));
+  const edited = draft && draft.base === mount && (!wire || mountFields.some(({key},i) => wire[i] !== mount[key]));
   const range = (field, i) => <label key={field.key}>{field.label}
     <input type="number" step={1/field.scale} min={-field.max} max={field.max}
       value={values[i]} onChange={event=>edit(i,event.target.value)}/></label>;
@@ -47,7 +48,8 @@ export default function ImuMounting({ model, platform }) {
     <div className="mount-actions">
       <button type="button" className="k-button" onClick={()=>model.read(wire)} disabled={!changed || busy}>Apply mounting</button>
       <button type="button" className="k-button" onClick={()=>model.read()} disabled={busy}>Read mounting</button>
-      {error ? <span role="alert">{error}</span> : applied && <span role="status">Applied and verified on the board.</span>}
+      {error ? <span role="alert">{error}</span> : edited ? <span role="status">Preview has unapplied edits.</span> :
+        applied && <span role="status">Applied and verified on the board.</span>}
     </div>
     <p className="section-help">Stop and disarm before applying. Changes require fresh tracking initialization. Use Save configuration in Platform setup to restore the mount after power cycling.</p>
   </section>;

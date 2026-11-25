@@ -43,12 +43,28 @@ describe('mounting setup', () => {
     expect(screen.getByLabelText('Y · Left')).toHaveValue(-.1);
     click('Apply mounting'); await screen.findByText('Applied and verified on the board.');
     expect(client.set_imu_mount).toHaveBeenLastCalledWith(9000,0,0,0,-100000,0);
+    fireEvent.change(screen.getByLabelText('Z · Up'),{target:{value:'-0.15'}});
+    expect(screen.getByText(/Preview has unapplied edits/)).toBeInTheDocument();
+    expect(screen.queryByText('Applied and verified on the board.')).toBeNull();
     expect(screen.queryByLabelText(/Sensor \+X angle/)).toBeNull();
     fireEvent.click(screen.getByLabelText(/I confirm zero velocity/));
     client.value.x_um = 1000;
     click('Start tracking');
     await screen.findByText(/Mounting changed or readback is unavailable/);
     expect(client.set_imu_tracking).not.toHaveBeenCalled();
+  });
+  it.each([-10,-.15,.15,10])('fits the chip and rotated board in the rear view with Z=%s m', z=>{
+    const {container} = render(<MountDiagram values={[83,45,-35,0,.1,z]} platform={platform}/>);
+    const rear=container.querySelector('g[aria-label="Rear-view geometry"]');
+    const [,ox,oy]=rear.getAttribute('transform').match(/translate\(([\d.]+) ([\d.]+)\)/).map(Number);
+    const [marker]=rear.querySelectorAll('circle[cx]');
+    const cx=Number(marker.getAttribute('cx')),cy=Number(marker.getAttribute('cy'));
+    expect(Math.sign(cy)).toBe(-Math.sign(z));
+    const points=rear.querySelector('polygon').getAttribute('points').split(' ').map(point=>point.split(',').map(Number));
+    for (const [x,y] of [...points,[cx-4,cy-4],[cx+4,cy+4]]) {
+      expect(ox+x).toBeGreaterThan(0);expect(ox+x).toBeLessThan(294);
+      expect(oy+y).toBeGreaterThan(260);expect(oy+y).toBeLessThan(332);
+    }
   });
   it('discards stale connection readback and only starts deliberately with current geometry',async () => {
     const first = board(), second = board(); second.value.configured = true;

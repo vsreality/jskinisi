@@ -54,7 +54,12 @@ export default function MountDiagram({ values, platform }) {
   const [x,y,z] = values.slice(3).map(n => Number(n)*1000);
   const layout = platformLayout(platform);
   const { halfWidth, halfLength, diameter, wheels } = layout;
-  const scale = Math.min(.8, 94/(halfWidth+diameter*.5), 92/(halfLength+diameter*.5), 94/(Math.abs(y)+62), 94/(Math.abs(x)+62), 46/(Math.abs(z)+55));
+  // The farthest physical PCB corner is 82.1 mm from U601. Fit every
+  // projected board corner as well as the chip and chassis in each view.
+  const boardReach = 83;
+  const scale = Math.min(.8, 94/(halfWidth+diameter*.5), 92/(halfLength+diameter*.5),
+    94/(Math.abs(y)+boardReach), 94/(Math.abs(x)+boardReach));
+  const rearScale = Math.min(scale, 28/(Math.abs(z)+boardReach), 28/Math.max(1,diameter*.3));
   const origin = [147,150];
   const plan = ([dx,dy]) => [origin[0]-(y+dy)*scale, origin[1]-(x+dx)*scale];
   const [cx,cy] = plan([0,0]);
@@ -90,11 +95,11 @@ export default function MountDiagram({ values, platform }) {
       <circle cx={cx} cy={cy} r="5" fill="#f7ad37" stroke="#714912" strokeWidth="1.5"/>
       <g transform={`translate(${origin.join(' ')})`} fill="none" stroke="#142731" strokeWidth="1.5"><circle r="8"/><path d="M-12 0h7m10 0h7M0 -12v7m0 10v7"/></g>
       <text x="16" y="255" className="mount-view-caption">REAR VIEW · LOOKING FORWARD</text>
-      <g transform="translate(147 302)">
-        <rect x={-halfWidth*.93*scale} y={-7*scale} width={halfWidth*1.86*scale} height={14*scale} rx="3" fill="#d0dce0" stroke="#687e89"/>
-        {Array.from(new Set(wheels.map(w=>w[0]))).map(wx=><rect key={wx} x={(wx-diameter*.12)*scale} y={-diameter*.2*scale} width={diameter*.24*scale} height={diameter*.5*scale} rx="3" fill="#435664"/>)}
-        <Board project={point=>{const [,b,c]=rotate(point,angles);return [-(y+b)*scale,-(z+c)*scale];}} showParts={false}/>
-        <circle r="5" fill="none" stroke="#142731"/><circle cx={-y*scale} cy={-z*scale} r="3.5" fill="#f7ad37" stroke="#714912"/>
+      <g aria-label="Rear-view geometry" transform="translate(147 294)">
+        <rect x={-halfWidth*.93*rearScale} y={-7*rearScale} width={halfWidth*1.86*rearScale} height={14*rearScale} rx="3" fill="#d0dce0" stroke="#687e89"/>
+        {Array.from(new Set(wheels.map(w=>w[0]))).map(wx=><rect key={wx} x={(wx-diameter*.12)*rearScale} y={-diameter*.2*rearScale} width={diameter*.24*rearScale} height={diameter*.5*rearScale} rx="3" fill="#435664"/>)}
+        <Board project={point=>{const [,b,c]=rotate(point,angles);return [-(y+b)*rearScale,-(z+c)*rearScale];}} showParts={false}/>
+        <circle r="5" fill="none" stroke="#142731"/><circle cx={-y*rearScale} cy={-z*rearScale} r="3.5" fill="#f7ad37" stroke="#714912"/>
       </g>
       <text x="16" y="293" className="mount-annotation">+Z up ↑</text>
       <Board project={iso} showParts={faceVisible}/>
