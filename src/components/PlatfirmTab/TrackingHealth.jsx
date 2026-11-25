@@ -46,34 +46,40 @@ const inputs = sources.slice(0, 2);
 const inputNames = ['Encoder input', 'Physical IMU input'];
 const capabilities = ['Encoder odometry', 'Physical IMU samples'];
 
+function inputDiagnosis(id, sample) {
+  if (sample.flags & Flag.RECOVERING) return `${inputNames[id]} is recovering.`;
+  if (sample.health === Health.UNAVAILABLE) return `${inputNames[id]} was unavailable.`;
+  if (sample.health === Health.SUSPECT) return `The board flagged the ${inputNames[id].toLowerCase()} as suspect.`;
+  return `The board could not confirm ${inputNames[id].toLowerCase()} health.`;
+}
+
 function summarizeReads(records) {
   const round = Math.max(0, ...sources.map(([id]) => records[id]?.round ?? 0));
   const latest = sources.filter(([id]) => records[id]?.round === round && records[id].sample);
   const compared = latest.filter(([id]) => records[id].sample.flags & Flag.COMPARISON_AVAILABLE);
   const conflict = compared.find(([id]) => records[id].sample.flags & Flag.DISAGREEMENT);
+  const physical = latest.filter(([id]) => id !== FeedbackSource.FUSED);
   if (conflict) {
     const mixed = compared.some(([id]) => !(records[id].sample.flags & Flag.DISAGREEMENT));
     const observation = records[conflict[0]];
     const provenance = observation.historical ? 'The sample behind this read is now historical.' :
       (observation.sample.flags & Flag.FRESH) ? 'The sample behind this read is within its board age limit.' : '';
+    const directFaults = physical.filter(([id]) => {
+      const sample = records[id].sample;
+      return sample.reason !== FeedbackSourceReason.OK && (sample.health === Health.SUSPECT || sample.health === Health.UNAVAILABLE);
+    });
     return {
       title: 'Encoder and IMU motion disagree. The board cannot identify which input caused it.',
+      inputReport: directFaults.map(([id]) => inputDiagnosis(id, records[id].sample)).join(' '),
       note: mixed ? 'The separate board reads gave different comparison results. See each source below.' :
         `The board reported this at the ${conflict[1].toLowerCase()} read.`,
       provenance,
       severity: 'warning',
     };
   }
-  const physical = latest.filter(([id]) => id !== FeedbackSource.FUSED);
   const limited = physical.filter(([id]) => records[id].sample.health !== Health.HEALTHY);
   if (limited.length) {
-    const observations = limited.map(([id]) => {
-      const sample = records[id].sample;
-      if (sample.flags & Flag.RECOVERING) return `${inputNames[id]} is recovering.`;
-      if (sample.health === Health.UNAVAILABLE) return `${inputNames[id]} was unavailable.`;
-      if (sample.health === Health.SUSPECT) return `The board flagged the ${inputNames[id].toLowerCase()} as suspect.`;
-      return `The board could not confirm ${inputNames[id].toLowerCase()} health.`;
-    });
+    const observations = limited.map(([id]) => inputDiagnosis(id, records[id].sample));
     const remaining = physical.find(([id]) => records[id].sample.health === Health.HEALTHY && (records[id].sample.flags & Flag.FRESH));
     const note = remaining ? `${capabilities[remaining[0]]} ${remaining[0] === FeedbackSource.ENCODER ? 'was' : 'were'} available at the separate board read.` :
       'Check the individual input reports below.';
@@ -96,6 +102,7 @@ function HealthSummary({ records }) {
   return <section aria-label="Tracking diagnosis" className={`tracking-diagnosis ${diagnosis.severity ?? ''}`}>
     <h3>Last board diagnosis</h3>
     <p className="tracking-diagnosis-title">{diagnosis.title}</p>
+    {diagnosis.inputReport && <p>{diagnosis.inputReport} The board reported input health separately.</p>}
     {diagnosis.note && <p>{diagnosis.note}</p>}
     {diagnosis.provenance && <p>{diagnosis.provenance}</p>}
     <p>Healthy inputs within their board age limits: {available.map(([, title]) => title).join(', ') || 'None confirmed'}.</p>

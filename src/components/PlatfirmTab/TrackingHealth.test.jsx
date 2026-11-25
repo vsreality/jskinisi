@@ -16,6 +16,16 @@ function controller() {
 const card=name=>within(screen.getByRole('article',{name}));
 afterEach(()=>vi.useRealTimers());
 describe('tracking input health',()=>{
+  it('retains a direct input fault alongside a separately reported disagreement', async()=>{
+    const c = controller();
+    c.get_feedback_source_health.mockImplementation(async id => id === 1
+      ? {...sample(id,F.PROVENANCE),health:2,reason:3,detail:3}
+      : {...sample(id,F.PROVENANCE|F.FRESH|F.COMPARISON_AVAILABLE|F.DISAGREEMENT),health:3});
+    render(<TrackingHealth controller={c}/>);
+    const summary = within(screen.getByRole('region',{name:'Tracking diagnosis'}));
+    expect(await summary.findByText(/Physical IMU input was unavailable/)).toBeVisible();
+    expect(summary.getByText('Encoder and IMU motion disagree. The board cannot identify which input caused it.')).toBeVisible();
+  });
   it('labels the remaining healthy input and renders both acquisition clocks after IMU failure',async()=>{
     const c=controller();
     c.get_feedback_source_health.mockImplementation(async source=>source===0?sample(0):
