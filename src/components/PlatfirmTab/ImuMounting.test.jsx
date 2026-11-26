@@ -100,7 +100,7 @@ describe('mounting setup', () => {
     await screen.findByText('Applied and verified on the board.');
     expect(client.set_board_mount).toHaveBeenCalledExactlyOnceWith(0,0,0,10000000,0,0);
   });
-  it.each([['differential',2,'Differential'], ['omni',3,'Omni'], ['mecanum',4,'Mecanum'], ['custom',0,'Generic chassis']])(
+  it.each([['differential',2,'Differential'], ['omni',3,'Omni'], ['mecanum',4,'Mecanum'], [undefined,0,'Generic chassis']])(
     'draws the %s platform layout', (type,count,label) => {
       const {container} = render(<MountDiagram boardProfile={getBoardProfile(info)} values={[0,0,0,0,0,0]} platform={{...platform,type,radius:.15,width:.3,length:.4}}/>);
       expect(container.querySelectorAll('g[aria-label^="Wheel "]')).toHaveLength(count);

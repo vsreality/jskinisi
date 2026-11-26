@@ -56,7 +56,7 @@ function platformLayout(platform) {
       return { name:'Mecanum', halfWidth:w, halfLength:l+diameter*.3, diameter, wheels:[[w,-l,0],[w,l,0],[-w,l,0],[-w,-l,0]] };
     }
   }
-  return { name:'Generic chassis · unconfigured or custom', halfWidth:100, halfLength:120, diameter:0, wheels:[] };
+  return { name:'Generic chassis · platform geometry unavailable', halfWidth:100, halfLength:120, diameter:0, wheels:[] };
 }
 
 export default function MountDiagram({ values, platform, boardProfile }) {

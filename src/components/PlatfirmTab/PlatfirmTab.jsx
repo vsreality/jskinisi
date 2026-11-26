@@ -656,7 +656,7 @@ function PlatformTab({ isActive = true }) {
                 <ConfigurationSave key={configurationGeneration} controller={controller} isConnected={isConnected}
                     onLoaded={loadRunningSetup} onBusy={setConfigurationBusy} />
                 </section>
-                <PlatformLayout key={platformType} platformType={platformType} />
+                <PlatformLayout platformType={platformType} />
                 <section className="panel-card platform-manual">
                     <h2>Manual driving</h2>
                     <p className="section-help">Set PWM output directly, or enable keyboard driving below.</p>
