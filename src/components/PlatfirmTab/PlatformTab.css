@@ -1,16 +1,9 @@
 .platform-tab { gap: 24px; }
 .platform-setup-grid { display: grid; grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); gap: 20px; align-items: start; }
-.platform-layout-reference h2 { margin: 0; }
-.platform-layout-reference figure { margin: 14px 0 0; }
+.platform-layout-reference figure { max-width: 440px; margin: 0 auto; }
 .platform-layout-reference img { display: block; width: 100%; height: auto; }
-.platform-layout-reference figcaption { margin-top: 8px; color: #57606a; font-size: 13px; }
-.platform-layout-reference p, .platform-layout-fields { font-size: 14px; line-height: 1.5; }
-.platform-layout-reference h3 { margin: 18px 0 0; font-size: 15px; }
-.platform-layout-fields { margin: 0; }
-.platform-layout-fields > div { padding: 9px 0; border-bottom: 1px solid #e5e9ed; }
-.platform-layout-fields > div:last-child { border: 0; padding-bottom: 0; }
-.platform-layout-fields dt { font-weight: 600; }
-.platform-layout-fields dd { margin: 2px 0 0; }
+.platform-layout-reference figcaption { margin-top: 8px; color: #57606a; font-size: 13px; line-height: 1.5; }
+.platform-layout-links { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 4px; }
 .platform-control-grid { display: grid; grid-template-columns: minmax(300px, 0.85fr) minmax(0, 1.4fr); gap: 24px; align-items: start; }
 .platform-position, .platform-position .position-workspace { display: contents; }
 .platform-position .position-chart { grid-column: 1 / -1; margin: 0; }
@@ -21,11 +14,11 @@
 .platform-tab .platform-initialize { width: 100%; margin-top: 16px; }
 .platform-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
 .platform-fields:disabled { opacity: 0.6; }
-.platform-hardware h2:not(:first-child) { font-size: 14px; margin: 20px 0 12px; }
 .platform-hardware input[type=number] { margin-bottom: 12px; }
 .platform-hardware .k-button { width: 100%; margin-top: 6px; }
 .platform-hardware label:not(.checkbox-label) { display: block; margin-top: 12px; }
 .platform-hardware .span-check { display: inline-flex; align-items: center; gap: 6px; margin: 8px 12px 8px 0; }
+.platform-reversals { margin-top: 12px; }
 .platform-tab .k-check { width: 16px; height: 16px; top: 0; }
 .platform-manual label[for^=platformVelocity] { display: flex; justify-content: space-between; gap: 12px; }
 .platform-manual output { font-weight: 600; font-variant-numeric: tabular-nums; }

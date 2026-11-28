@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { it, expect, vi } from 'vitest';
 import { ErrorCode } from '../../commands/kinisi_commands';
@@ -16,17 +16,20 @@ const client = () => ({ boardInfo, ready: true,
   initialize_differential_platform: vi.fn(), start_platform_controller: vi.fn() });
 const click = name => fireEvent.click(screen.getByRole('button', { name }));
 
-it('offers only the three configurable layouts and shows each drawing and worked example', () => {
+it('offers the three configurable layouts with accessible drawings and links to worked examples', () => {
   render(<SettingsProvider><ControllerContext.Provider value={{ controller: null, isConnected: false }}><PlatformTab /></ControllerContext.Provider></SettingsProvider>);
   const selector = screen.getByLabelText('Platform:');
   expect(Array.from(selector.options, option => option.value).sort()).toEqual(['differential', 'mecanum', 'omni']);
   expect(screen.queryByRole('button', { name: /custom layout/i })).not.toBeInTheDocument();
-  for (const [preset, field] of [['omni', 'R · Platform radius'], ['differential', 'B · Wheel base'], ['mecanum', 'L · Platform length']]) {
+  for (const [preset, field] of [['omni', 'Platform radius (meters)'], ['differential', 'Wheel base (meters)'], ['mecanum', 'Platform length (meters)']]) {
     fireEvent.change(selector, { target: { value: preset } });
-    const region = screen.getByRole('region', { name: new RegExp(preset + ' layout', 'i') });
-    expect(region).toHaveTextContent(field);
-    expect(screen.getByRole('img', { name: new RegExp(preset + ' chassis', 'i') })).toHaveAttribute('src', expect.stringContaining(preset + '.svg'));
-    expect(region).toHaveTextContent('Motor and encoder reversal');
+    const drawing = within(screen.getByRole('region', { name: new RegExp(preset + ' layout', 'i') }));
+    expect(screen.getByLabelText(field)).toBeInTheDocument();
+    expect(drawing.getByRole('img', { name: new RegExp(preset + ' chassis.*W0.*positive yaw', 'i') }))
+      .toHaveAttribute('src', expect.stringContaining(preset + '.svg'));
+    expect(drawing.queryByText('Example setup')).not.toBeInTheDocument();
+    expect(drawing.getByRole('link', { name: 'First-drive guide' })).toHaveAttribute(
+      'href', 'https://vsreality.com/docs/kinisi-motor-controller/tutorials/first-drive/');
   }
 });
 
@@ -46,7 +49,8 @@ it('loads applied setup on opening Platform without initialization and saves onl
   await screen.findByText(/Configuration saved and verified by the board/);
   expect(c.save_configuration).toHaveBeenCalledExactlyOnceWith();
   expect(c.initialize_differential_platform).not.toHaveBeenCalled();
-  expect(screen.getByText(/Save does not apply these inputs or browser Settings/)).toBeInTheDocument();
+  const panel = within(screen.getByRole('region', { name: 'Save setup on the board' }));
+  expect(panel.getByText('Save stores the setup currently running on the board.')).toBeInTheDocument();
 });
 
 it('waits for ACK, suppresses duplicate saves, and replaces success with actionable failure', async () => {

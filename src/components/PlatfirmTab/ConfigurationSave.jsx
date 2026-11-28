@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ErrorCode } from '../../commands/kinisi_commands';
-import { supportsConfigurationPersistence, supportsFeedbackSourceSelector, supportsImuMounting } from '../../commands/board_profile';
+import { supportsConfigurationPersistence, supportsImuMounting } from '../../commands/board_profile';
 import { readRunningConfiguration } from '../../commands/configuration';
 
 function failureMessage(error, saving) {
@@ -57,20 +57,17 @@ export default function ConfigurationSave({ controller, isConnected, onReadStart
   };
   return <section className="control-section" aria-labelledby="configurationSaveTitle">
     <h3 id="configurationSaveTitle">Save setup on the board</h3>
-    {supportsImuMounting(connection) && <p className="section-help">Save includes the applied IMU geometry. Restart restores the installation and requires fresh stationary tracking initialization.</p>}
-    {supportsFeedbackSourceSelector(connection) && <p className="section-help">The save includes the board's requested tracking source. After restart, check the requested source in Position and velocity tracking. The board establishes a new origin and requires fresh producer setup.</p>}
-    <p className="section-help">Save the applied platform geometry, encoder setup, motor and encoder directions, and motor PWM frequency to onboard memory. Apply form changes first: Save does not apply these inputs or browser Settings.</p>
-    <p className="section-help">On startup, saved setup is restored with motors stopped. Motion targets, PID controllers and driver current-limit settings are not restored. Reading the running setup does not initialize or move the platform.</p>
-    {!supported ? <p>Requires a known Kinisi v0.4 board and firmware protocol 2.14 or newer.</p>
-      : !available ? <p>Connect and wait for the controller to be ready.</p> : <>
+    {!supported ? <p>Requires a known Kinisi v0.4 board and protocol 2.14 or newer.</p>
+      : !available ? <p>Connect and wait for the board to be ready.</p> : <>
+        <p className="section-help">Save stores the setup currently running on the board.</p>
         <button type="button" className="k-button" disabled={current?.busy} onClick={() => read()}>Read running setup</button>
         <button type="button" className="k-button" disabled={current?.busy} onClick={save}>{current?.busy ? 'Working…' : 'Save configuration'}</button>
-        {current?.setup && <p role="status">Running {current.setup.platform} setup loaded. PWM: {current.setup.pwmHz / 1000} kHz. This read does not confirm a saved copy.</p>}
+        {current?.setup && <p role="status">Running {current.setup.platform} setup loaded · {current.setup.pwmHz / 1000} kHz PWM</p>}
         {current?.setup && current.setup.encoders.slice(0, current.setup.channelCount).some(encoder => encoder.resolution === 0) &&
-          <p>Some platform encoders are not initialized. Open-loop platform setup can still be saved; configure encoders before starting velocity or position control.</p>}
+          <p>Some platform encoders are not initialized. Configure them before closed-loop control or odometry.</p>}
         {current?.setup && new Set(current.setup.encoders.slice(0, current.setup.channelCount).map(encoder => encoder.resolution)).size > 1 &&
-          <p>The running encoders use different resolutions. The form shows channel 0; Initialize applies that single resolution to every platform encoder. Save preserves the running values.</p>}
-        {current && !current.busy && Object.hasOwn(current, 'setup') && !current.setup && <p>{supportsImuMounting(connection) ? 'No platform geometry is running. You can save an applied standalone IMU mount.' : 'No platform setup is running. Initialize the platform before saving.'}</p>}
+          <p>The running encoders use different resolutions. Save keeps them. Initialize applies the form’s resolution to every wheel.</p>}
+        {current && !current.busy && Object.hasOwn(current, 'setup') && !current.setup && <p>{supportsImuMounting(connection) ? 'No platform geometry is running. You can save an applied IMU mount.' : 'No platform setup is running. Initialize it before saving.'}</p>}
         {current?.saved && <p role="status">Configuration saved and verified by the board. It will restore at startup with motors stopped.</p>}
         {current?.error && <p role="alert" className="conn-error">{current.error}</p>}
       </>}

@@ -567,7 +567,6 @@ function PlatformTab({ isActive = true }) {
 
                 {platformType === 'mecanum' && (
                     <div id="mecanumPlatform">
-                        <h2>Mecanum Platform</h2>
                         <label htmlFor="rollerOrientation">Roller arrangement</label>
                         <select id="rollerOrientation" value={rollerOrientation} disabled={isConnected && !oriented}
                             onChange={event => editOrientation('mecanum', Number(event.target.value))}>
@@ -579,7 +578,7 @@ function PlatformTab({ isActive = true }) {
                             onClick={() => runCommand(() => loadOrientation('mecanum'))}>Read running roller arrangement</button>}
                         {isConnected && oriented && rollerDraft?.connection === connection && rollerDraft?.read &&
                             <p role="status">Running roller arrangement: {mirrored ? 'Mirrored (O)' : 'Standard (X)'}.</p>}
-                        <div>
+                        <div className="platform-reversals">
                             Motor setup (is reversed):<br/>
                             {Array.from({ length: 4 }).map((_, index) => (
                                 <React.Fragment key={index}>
@@ -630,7 +629,6 @@ function PlatformTab({ isActive = true }) {
 
                 {platformType === 'omni' && (
                     <div id="omniPlatform">
-                        <h2>Omni Platform</h2>
                         <label htmlFor="wheelOrientation">Single wheel position</label>
                         <select id="wheelOrientation" value={wheelOrientation} disabled={isConnected && !orientedOmni}
                             onChange={event => editOrientation('omni', Number(event.target.value))}>
@@ -642,7 +640,7 @@ function PlatformTab({ isActive = true }) {
                             onClick={() => runCommand(() => loadOrientation('omni'))}>Read running wheel arrangement</button>}
                         {isConnected && orientedOmni && omniDraft?.connection === connection && omniDraft?.read &&
                             <p role="status">Running wheel arrangement: {frontWheel ? 'Front (W2)' : 'Rear (W2)'}.</p>}
-                        <div>
+                        <div className="platform-reversals">
                             Motor setup (is reversed):<br/>
                             {Array.from({ length: 3 }).map((_, index) => (
                                 <React.Fragment key={index}>
@@ -690,8 +688,7 @@ function PlatformTab({ isActive = true }) {
 
                 {platformType === 'differential' && (
                     <div id="differentialPlatform">
-                        <h2>Differential Platform</h2>
-                        <div>
+                        <div className="platform-reversals">
                             Motor setup (is reversed):<br/>
                             {Array.from({ length: 2 }).map((_, index) => (
                                 <React.Fragment key={index}>
@@ -744,7 +741,6 @@ function PlatformTab({ isActive = true }) {
                 <PlatformLayout platformType={platformType} mirrored={mirrored} frontWheel={frontWheel} />
                 <section className="panel-card platform-manual">
                     <h2>Manual driving</h2>
-                    <p className="section-help">Set PWM output directly, or enable keyboard driving below.</p>
                 <div className={!isPlatformInitialized ? 'disabled-div' : ''}>
                     <label htmlFor="platformVelocityX">X <output>{velocity.x}%</output></label>
                     <input 
