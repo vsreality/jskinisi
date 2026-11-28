@@ -1,4 +1,4 @@
-import { MecanumRollerOrientation } from '../../commands/kinisi_commands';
+import { MecanumRollerOrientation, OmniWheelOrientation } from '../../commands/kinisi_commands';
 import { useId } from 'react';
 
 // Millimetres in board axes, with the PCB underside center at (0, 0, 0).
@@ -49,8 +49,9 @@ function platformLayout(platform) {
     }
     if (platform.type === 'omni' && valid(platform.radius)) {
       const r = mm(platform.radius);
+      const sign = platform.wheelOrientation === OmniWheelOrientation.FRONT ? -1 : 1;
       return { name:'Omni', halfWidth:r, halfLength:r, diameter,
-        wheels:[[r*Math.sqrt(3)/2,-r/2,-30],[-r*Math.sqrt(3)/2,-r/2,30],[0,r,90]] };
+        wheels:[[sign*r*Math.sqrt(3)/2,-sign*r/2,-30],[-sign*r*Math.sqrt(3)/2,-sign*r/2,30],[0,sign*r,90]] };
     }
     if (platform.type === 'mecanum' && valid(platform.length) && valid(platform.width)) {
       const l=mm(platform.length)/2,w=mm(platform.width)/2;

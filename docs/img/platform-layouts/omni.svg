@@ -1,12 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="440" height="412" viewBox="0 0 440 412" role="img" aria-labelledby="title description">
-  <title id="title">Three-wheel omni layout</title>
+  <title id="title">Three-wheel omni layout with W2 at the rear</title>
   <desc id="description">W0 is front-right, W1 front-left and W2 rear. The positive rolling arrows run tangent counterclockwise around the origin. Platform radius runs from the origin to the center of each wheel. The wheel centers are equally spaced by 120 degrees.</desc>
   <rect x="0" y="0" width="440" height="412" rx="0" fill="white" stroke="none" stroke-width="1.6" />
   <g font-family="Arial, Helvetica, sans-serif">
-    <text x="16" y="24" font-size="16" fill="#243746" text-anchor="start" font-weight="700">Top view</text>
+    <text x="16" y="24" font-size="16" fill="#243746" text-anchor="start" font-weight="700">Top view · W2 rear</text>
     <line x1="280" y1="19" x2="304" y2="19" stroke="#087451" stroke-width="2.7" />
     <polygon points="304,19 295,15 295,23" fill="#087451" />
     <text x="313" y="24" font-size="15" fill="#087451" text-anchor="start" font-weight="400">Positive roll</text>
+    <g fill="#243746" font-family="Arial, Helvetica, sans-serif">
+      <path d="M42 78V54m-7 8 7-8 7 8" fill="none" stroke="#243746" stroke-width="2.5"/>
+      <text x="42" y="97" text-anchor="middle" font-size="13" font-weight="700">FRONT</text>
+    </g>
     <circle cx="220" cy="160" r="88" fill="#f6f9fa" stroke="#acbdc6" stroke-width="1.5" />
     <line x1="220" y1="54" x2="220" y2="248" stroke="#71828c" stroke-width="1" stroke-dasharray="5 4" />
     <line x1="220" y1="160" x2="143.79" y2="116" stroke="#71828c" stroke-width="1" stroke-dasharray="5 4" />

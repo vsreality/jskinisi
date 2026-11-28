@@ -34,6 +34,17 @@ class GeneratorTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 generate_js_code(schema)
 
+    def test_omni_orientation_catalog_and_layout(self):
+        for mutate in (
+                lambda s: s.pop('omni_wheel_orientations'),
+                lambda s: s['omni_wheel_orientations'][1].update(id=True),
+                lambda s: s['omni_wheel_orientations'][1].update(name='UNKNOWN'),
+                lambda s: next(c for c in s['commands'] if c['command'] == 'INITIALIZE_OMNI_PLATFORM_ORIENTED')['properties'].pop()):
+            schema = deepcopy(self.schema)
+            mutate(schema)
+            with self.assertRaises(ValueError):
+                generate_js_code(schema)
+
     def test_pwm_catalog_and_layout(self):
         for mutate in (
                 lambda s: s.pop('pwm_frequencies'),

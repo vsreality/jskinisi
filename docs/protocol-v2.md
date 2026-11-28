@@ -385,6 +385,27 @@ The original `initialize_mecanum_platform(...)` keeps its 12 arguments and
 always selects Standard. Earlier firmware supports only that initializer.
 Configuration storage and fields 0–6 retain their original v0.4 requirements.
 
+Protocol 2.26 adds `initialize_omni_platform_oriented(...)` and field 8, index 0,
+on every controller. Import `OmniWheelOrientation` from `kinisi_session.js`.
+Use `REAR` for W0 front-right, W1 front-left and W2 rear. Use `FRONT` for
+W0 rear-left, W1 rear-right and W2 front. Both assume +X forward and +Y left.
+Positive wheel speed on all three gives positive counterclockwise yaw.
+
+```js
+if (controller.supportsOmniOrientation()) {
+  await controller.initialize_omni_platform_oriented(
+    false, false, false, false, false, false, // M0–M2, then E0–E2 reversal
+    0.10, 0.15, 2048, OmniWheelOrientation.FRONT // diameter, radius, ticks/rev
+  );
+  const applied = await controller.getOmniWheelOrientation();
+}
+```
+
+The original nine-argument `initialize_omni_platform(...)` always selects
+`REAR`. Choose this initializer for older firmware. A running Omni setup
+includes `wheelOrientation` in the configuration snapshot. v0.4 can save
+and restore either layout. Older saved Omni setups restore as `REAR`.
+
 An encoder resolution of zero denotes an uninitialized encoder and is valid for
 open-loop platform setup; it does not prevent saving. Separately configured
 channels outside the active platform are included in the readback. Velocity and

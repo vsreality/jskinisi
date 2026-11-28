@@ -118,3 +118,59 @@ it('reads the running orientation only for a 2.25+ Mecanum configuration', async
   expect((await readRunningConfiguration(c)).rollerOrientation).toBe(0);
   expect(c.get_configuration_field).not.toHaveBeenCalledWith(7,0);
 });
+it('sends the original Omni geometry followed by W2 position and reads field 8 on every 2.26 board', async () => {
+  const c = new KinisiSession();
+  c.ready = true;
+  c._sendRequest = vi.fn();
+  const flags = [true, false, false, false, true, false];
+  const geometry = [...flags, .1, .15, 2048];
+  for (const version of [{protocol_minor:25}, {protocol_major:3, protocol_minor:26}]) {
+    c.boardInfo = {...info, ...version};
+    expect(c.supportsOmniOrientation()).toBe(false);
+    await expect(c.initialize_omni_platform_oriented(...geometry, 1)).rejects.toThrow('2.26');
+    await expect(c.getOmniWheelOrientation()).rejects.toThrow('2.26');
+  }
+  c.boardInfo = {...info, board_minor:3, protocol_minor:26};
+  expect(c.supportsOmniOrientation()).toBe(true);
+  for (const bad of [true, '1', -1, 2, NaN]) {
+    await expect(c.initialize_omni_platform_oriented(...geometry, bad)).rejects.toThrow('wheel arrangement');
+  }
+  for (const [d,r,e] of [[0,.15,0],[.1,Infinity,0],[.1,.15,-1],[Number.MIN_VALUE,.15,0],[.1,Number.MIN_VALUE,0]]) {
+    await expect(c.initialize_omni_platform_oriented(...flags, d,r,e,1)).rejects.toThrow('dimensions');
+  }
+  await expect(c.initialize_omni_platform_oriented(2, ...geometry.slice(1), 1)).rejects.toThrow('reversal');
+  await expect(c.get_configuration_field(8, 1)).rejects.toThrow('index zero');
+  await expect(c.get_configuration_field(8, 256)).rejects.toThrow('unsigned bytes');
+  expect(c._sendRequest).not.toHaveBeenCalled();
+  for (const orientation of [0, 1]) {
+    c._sendRequest.mockResolvedValue(new ArrayBuffer(0));
+    await c.initialize_omni_platform_oriented(...geometry, orientation);
+    const [command, payload] = c._sendRequest.mock.lastCall;
+    expect(command).toBe(0x88);
+    expect(payload.byteLength).toBe(31);
+    expect([...new Uint8Array(payload,0,6)]).toEqual([1,0,0,0,1,0]);
+    const view = new DataView(payload);
+    expect([6,14,22].map(offset => view.getFloat64(offset,true))).toEqual([.1,.15,2048]);
+    expect(view.getUint8(30)).toBe(orientation);
+    const scalar = new ArrayBuffer(8);
+    new DataView(scalar).setFloat64(0, orientation, true);
+    c._sendRequest.mockResolvedValue(scalar);
+    expect(await c.getOmniWheelOrientation()).toBe(orientation);
+    expect(c._sendRequest).toHaveBeenLastCalledWith(GET_CONFIGURATION_FIELD,new Uint8Array([8,0]).buffer,8,false);
+  }
+  const badScalar = new ArrayBuffer(8);
+  new DataView(badScalar).setFloat64(0, NaN, true);
+  c._sendRequest.mockResolvedValue(badScalar);
+  await expect(c.getOmniWheelOrientation()).rejects.toThrow('unknown omni');
+});
+
+it('reads the applied Omni position on 2.26 and defaults to rear on 2.25', async () => {
+  const c = { boardInfo:{...info,protocol_minor:26}, get_pwm_frequency:vi.fn(async()=>25000),
+    get_configuration_field:vi.fn(async field=>[2,.1,0,.15,2048,0,0,0,1][field]) };
+  expect((await readRunningConfiguration(c)).wheelOrientation).toBe(1);
+  expect(c.get_configuration_field).toHaveBeenCalledWith(8,0);
+  c.get_configuration_field.mockClear();
+  c.boardInfo.protocol_minor = 25;
+  expect((await readRunningConfiguration(c)).wheelOrientation).toBe(0);
+  expect(c.get_configuration_field).not.toHaveBeenCalledWith(8,0);
+});

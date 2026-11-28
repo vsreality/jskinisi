@@ -157,3 +157,35 @@ describe('mounting setup', () => {
     await waitFor(()=>expect(second.set_imu_tracking).toHaveBeenCalledExactlyOnceWith(0,1,0));
   });
 });
+it('rotates the three Omni wheel positions while keeping the mounted board, chassis front and axes fixed', () => {
+  const diagram = wheelOrientation => <MountDiagram boardProfile={getBoardProfile(info)}
+    values={[12,-7,33,.02,.04,.03]} platform={{type:'omni', radius:.15, diameter:.1, wheelOrientation}}/>;
+  const {container,rerender} = render(diagram(0));
+  const wheelCentres = () => [...container.querySelectorAll('g[aria-label^="Wheel "]')].map(group =>
+    group.getAttribute('transform').match(/translate\(([^)]+)\)/)[1].split(' ').map(Number));
+  const positions = wheelCentres();
+  const markers = () => [...container.querySelectorAll('[aria-label="PCB underside center"], [aria-label="IMU sensor"], [aria-label="Tracking origin"]')]
+    .map(el => el.outerHTML);
+  const pose = markers();
+  expect(positions[0][0]).toBeGreaterThan(0);
+  expect(positions[0][1]).toBe(-75);
+  expect(positions[1]).toEqual([-positions[0][0],-75]);
+  expect(positions[2]).toEqual([0,150]);
+  rerender(diagram(1));
+  expect(wheelCentres()).toEqual(positions.map(([x,y])=>[-x || 0,-y]));
+  expect(markers()).toEqual(pose);
+  expect(screen.getByText('Front +X ↑')).toBeInTheDocument();
+  expect(screen.getByText('+Y left')).toBeInTheDocument();
+});
+it('shows the Omni mount preview when the installer chooses front on a fresh board', async () => {
+  const client = board();
+  client.boardInfo = {...info,protocol_minor:26};
+  client.get_configuration_field = vi.fn(async () => 0);
+  const {container} = render(<ControllerContext.Provider value={{controller:client,isConnected:true}}><PlatformTab/></ControllerContext.Provider>);
+  await screen.findByText(/No platform geometry is running/);
+  expect(container.querySelector('g[aria-label="Wheel 2"]')).toBeNull();
+  fireEvent.change(screen.getByLabelText('Single wheel position'),{target:{value:'1'}});
+  expect(container.querySelector('g[aria-label="Wheel 2"]')).toHaveAttribute('transform','translate(0 -150) rotate(90)');
+  expect(client.set_board_mount).not.toHaveBeenCalled();
+  expect(client.get_configuration_field).not.toHaveBeenCalledWith(8,0);
+});

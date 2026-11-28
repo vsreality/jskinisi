@@ -275,3 +275,52 @@ it.each([3, 4])('preserves a roller edit made during initialization on v0.%i', a
   expect(screen.getByLabelText('Roller arrangement')).toHaveValue('1');
   expect(screen.queryByText(/Running roller arrangement:/)).not.toBeInTheDocument();
 });
+it.each([3,4])('applies front-wheel Omni, reads the board, and protects newer drafts on v0.%i', async boardMinor => {
+  const c = client();
+  c.boardInfo = {...boardInfo, board_minor:boardMinor, protocol_minor:26};
+  let running = 0;
+  let acknowledge;
+  c.initialize_omni_platform_oriented = vi.fn((...args) => new Promise(resolve => {
+    acknowledge = () => { running = args[9]; resolve(); };
+  }));
+  c.get_configuration_field.mockImplementation(async field => [2,.1,0,.15,2048,0,0,0,running][field]);
+  render(<StrictMode><SettingsProvider><ControllerContext.Provider value={{controller:c,isConnected:true}}><PlatformTab /></ControllerContext.Provider></SettingsProvider></StrictMode>);
+  const confirmed = /Running wheel arrangement:/;
+  if (boardMinor === 4) await screen.findByText('Running wheel arrangement: Rear (W2).');
+  const select = value => fireEvent.change(screen.getByLabelText('Single wheel position'),{target:{value}});
+  select('1');
+  fireEvent.click(screen.getByLabelText('Reverse motor M0'));
+  fireEvent.click(screen.getByLabelText('Reverse encoder E1'));
+  expect(screen.getByRole('img',{name:/Omni chassis.*at the front/})).toHaveAttribute('src',expect.stringContaining('omni-front.svg'));
+  expect(c.initialize_omni_platform_oriented).not.toHaveBeenCalled();
+  click('Initialize');
+  expect(c.initialize_omni_platform_oriented).toHaveBeenLastCalledWith(true,false,false,false,true,false,.1,.15,boardMinor === 4 ? 2048 : 1425.1,1);
+  await act(async () => acknowledge());
+  await screen.findByText('Running wheel arrangement: Front (W2).');
+  expect(c.get_configuration_field).toHaveBeenCalledWith(8,0);
+  click('Initialize');
+  select('0');
+  await act(async () => acknowledge());
+  expect(screen.getByLabelText('Single wheel position')).toHaveValue('0');
+  expect(screen.queryByText(confirmed)).not.toBeInTheDocument();
+  const read = () => click(boardMinor === 4 ? 'Read running setup' : 'Read running wheel arrangement');
+  read();
+  await screen.findByText('Running wheel arrangement: Front (W2).');
+  c.get_configuration_field.mockRejectedValueOnce(new Error('Wheel read failed'));
+  read();
+  await screen.findByText(/Wheel read failed/);
+  expect(screen.queryByText(confirmed)).not.toBeInTheDocument();
+  expect(c.save_configuration).not.toHaveBeenCalled();
+});
+
+it('uses the original Omni initializer on older firmware and never requests field 8', async () => {
+  const c = client();
+  c.boardInfo = {...boardInfo, board_minor:3, protocol_minor:25};
+  c.initialize_omni_platform = vi.fn();
+  render(<SettingsProvider><ControllerContext.Provider value={{controller:c,isConnected:true}}><PlatformTab /></ControllerContext.Provider></SettingsProvider>);
+  expect(screen.getByLabelText('Single wheel position')).toBeDisabled();
+  expect(screen.getByLabelText('Single wheel position')).toHaveValue('0');
+  click('Initialize');
+  await waitFor(() => expect(c.initialize_omni_platform).toHaveBeenCalledExactlyOnceWith(false,false,false,false,false,false,.1,.15,1425.1));
+  expect(c.get_configuration_field).not.toHaveBeenCalled();
+});

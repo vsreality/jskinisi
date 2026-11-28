@@ -1,4 +1,5 @@
 import differentialDrawing from '../../../docs/img/platform-layouts/differential.svg';
+import omniFrontDrawing from '../../../docs/img/platform-layouts/omni-front.svg';
 import omniDrawing from '../../../docs/img/platform-layouts/omni.svg';
 import mecanumDrawing from '../../../docs/img/platform-layouts/mecanum.svg';
 
@@ -28,7 +29,7 @@ const presets = {
     },
 };
 
-function PresetExample({ preset }) {
+function PresetExample({ preset, wheels }) {
     const entries = [
         ['D · Wheel diameter', '0.10 m across the rolling surface of each wheel.'],
         ...preset.dimensions,
@@ -36,7 +37,7 @@ function PresetExample({ preset }) {
         ['Motor and encoder reversal', 'Leave all boxes clear in this example. Reverse a motor to flip its drive direction. Reverse an encoder separately to flip its count direction.'],
     ];
     return <>
-        <p>{preset.wheels} Each W index uses the matching motor M and encoder E channel.</p>
+        <p>{wheels} Each W index uses the matching motor M and encoder E channel.</p>
         <h3>Example setup</h3>
         <dl className="platform-layout-fields">
             {entries.map(([field, value]) =>
@@ -46,23 +47,27 @@ function PresetExample({ preset }) {
     </>;
 }
 
-export default function PlatformLayout({ platformType, mirrored = false }) {
+export default function PlatformLayout({ platformType, mirrored = false, frontWheel = false }) {
     const preset = presets[platformType];
     const mecanum = platformType === 'mecanum';
-    const drawing = mecanum && mirrored ? mirroredDrawing : preset.drawing;
+    const omni = platformType === 'omni';
+    const drawing = omni && frontWheel ? omniFrontDrawing : mecanum && mirrored ? mirroredDrawing : preset.drawing;
+    const wheels = omni && frontWheel
+        ? 'W0 is rear-left and rolls rearward-right. W1 is rear-right and rolls forward-right. W2 is at the front and rolls left. All three roll tangentially for positive counterclockwise yaw.'
+        : preset.wheels;
     const pattern = mirrored ? 'Mirrored (O)' : 'Standard (X)';
     return (
         <section className="panel-card platform-layout-reference" aria-labelledby="platform-layout-heading">
             <h2 id="platform-layout-heading">{preset.name} layout</h2>
             <figure>
-                <img src={drawing} alt={`${preset.name} chassis from above${mecanum ? `, ${pattern} rollers, front marked` : ''}, with wheel indices, rolling directions and dimensions.`} />
+                <img src={drawing} alt={`${preset.name} chassis from above${mecanum ? `, ${pattern} rollers, front marked` : omni ? `, W2 at the ${frontWheel ? 'front' : 'rear'}, front marked` : ''}, with wheel indices, rolling directions and dimensions.`} />
                 <figcaption>O marks the chassis origin. +X points forward, +Y points left, and positive yaw turns counterclockwise.{' '}
                     <a href={drawing} target="_blank" rel="noreferrer">Open full-size drawing in a new tab</a>
                 </figcaption>
             </figure>
             {mecanum && <p>Look down at the tops of the tires with the front pointing up. The orange stripes show
                 the visible roller axles. On W0 (front right), they slope {mirrored ? 'forward-left' : 'forward-right'}.</p>}
-            <PresetExample preset={preset} />
+            <PresetExample preset={preset} wheels={wheels} />
         </section>
     );
 }

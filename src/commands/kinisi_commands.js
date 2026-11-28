@@ -1,6 +1,6 @@
 // Generated from tools/commands.json by tools/sdkgenerator.py. Do not edit.
 export const SDK_VERSION = Object.freeze([2, 6, 0]);
-export const PROTOCOL_VERSION = Object.freeze([2, 25, 0]);
+export const PROTOCOL_VERSION = Object.freeze([2, 26, 0]);
 export const GET_TEMPERATURE = 0x50;
 export const GET_IMU = 0x51;
 export const GET_MOTOR_CURRENT = 0x52;
@@ -108,6 +108,7 @@ export const GET_IMU_MOUNT = 0x6f;
 export const SET_BOARD_MOUNT = 0x85;
 export const GET_BOARD_MOUNT = 0x86;
 export const INITIALIZE_MECANUM_PLATFORM_ORIENTED = 0x87;
+export const INITIALIZE_OMNI_PLATFORM_ORIENTED = 0x88;
 export const ErrorCode = Object.freeze({
   INCOMPATIBLE_PROTOCOL: 1,
   INVALID_ARGUMENT: 2,
@@ -193,6 +194,10 @@ export const PwmFrequency = Object.freeze({
 export const MecanumRollerOrientation = Object.freeze({
   STANDARD: 0,
   MIRRORED: 1,
+});
+export const OmniWheelOrientation = Object.freeze({
+  REAR: 0,
+  FRONT: 1,
 });
 export const FusionMode = Object.freeze({
   LEGACY_ENCODER: 0,
@@ -1725,7 +1730,7 @@ export class Commands {
     await this._request(INITIALIZE_MECANUM_PLATFORM, payload, 0);
   }
 
-  /** This command initializes an omni (3-wheel) platform and prepares it for use. It uses motor and encoder indices 0, 1 and 2 (one per wheel), which correspond to the is_reversed_0..2 and is_encoder_reversed_0..2 parameters. Motor index 3 is not used by this platform and stays free for other purposes. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
+  /** This command initializes an omni (3-wheel) platform and prepares it for use. It uses motor and encoder indices 0, 1 and 2 (one per wheel), which correspond to the is_reversed_0..2 and is_encoder_reversed_0..2 parameters. Motor index 3 is not used by this platform and stays free for other purposes. Selects the single-rear-wheel (REAR) orientation. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
   async initialize_omni_platform(is_reversed_0, is_reversed_1, is_reversed_2, is_encoder_reversed_0, is_encoder_reversed_1, is_encoder_reversed_2, wheels_diameter, robot_radius, encoder_resolution) {
     const payload = new ArrayBuffer(30);
     const requestView = new DataView(payload);
@@ -2189,8 +2194,9 @@ export class Commands {
     await this._request(SAVE_CONFIGURATION, payload, 0);
   }
 
-  /** Read a running configuration field. Fields 0 through 6 require v0.4. Field 7 is available on all boards with protocol 2.25 and a configured mecanum platform. Use GET_PWM_FREQUENCY for the board-wide switching frequency. Errors: INVALID_LENGTH, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INVALID_ARGUMENT, PLATFORM_NOT_INITIALIZED. */
+  /** Read a running configuration field. Fields 0 through 6 require v0.4. Field 7 is available on all boards with protocol 2.25 and a configured mecanum platform. Field 8 is available on all boards with protocol 2.26 and a configured Omni platform. Use GET_PWM_FREQUENCY for the board-wide switching frequency. Errors: INVALID_LENGTH, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INVALID_ARGUMENT, PLATFORM_NOT_INITIALIZED. */
   async get_configuration_field(field, index) {
+    if (![field, index].every(v => Number.isInteger(v) && v >= 0 && v <= 255)) throw new RangeError('Configuration field and index must be unsigned bytes');
     const payload = new ArrayBuffer(2);
     const requestView = new DataView(payload);
     requestView.setUint8(0, field);
@@ -2469,5 +2475,25 @@ export class Commands {
     requestView.setFloat64(32, encoder_resolution, true);
     requestView.setUint8(40, roller_orientation);
     await this._request(INITIALIZE_MECANUM_PLATFORM_ORIENTED, payload, 0);
+  }
+
+  /** Initialize a 120-degree, three-wheel Omni platform in the marked chassis frame (+X forward, +Y left, positive yaw counterclockwise). Requires READY and protocol 2.26. REAR places W0 front right, W1 front left and W2 rear. FRONT rotates the complete triangle 180 degrees: W0 rear left, W1 rear right and W2 front. Motor and encoder indices stay attached to those wheels, with independent reversal flags. Dimensions must be positive and encoder resolution nonnegative. Invalid requests leave the running setup unchanged. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CLOCK_NOT_READY. */
+  async initialize_omni_platform_oriented(is_reversed_0, is_reversed_1, is_reversed_2, is_encoder_reversed_0, is_encoder_reversed_1, is_encoder_reversed_2, wheels_diameter, robot_radius, encoder_resolution, wheel_orientation) {
+    if (![is_reversed_0, is_reversed_1, is_reversed_2, is_encoder_reversed_0, is_encoder_reversed_1, is_encoder_reversed_2].every(v => v === true || v === false || v === 0 || v === 1)) throw new RangeError('Invalid motor or encoder reversal');
+    if (!Object.values(OmniWheelOrientation).includes(wheel_orientation)) throw new RangeError('Unknown omni wheel arrangement');
+    if (![wheels_diameter, robot_radius].every(v => Number.isFinite(v) && v > 0) || !Number.isFinite(2 / wheels_diameter) || !Number.isFinite(1 / robot_radius) || !Number.isFinite(encoder_resolution) || encoder_resolution < 0) throw new RangeError('Enter positive dimensions and nonnegative encoder resolution');
+    const payload = new ArrayBuffer(31);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, is_reversed_0);
+    requestView.setUint8(1, is_reversed_1);
+    requestView.setUint8(2, is_reversed_2);
+    requestView.setUint8(3, is_encoder_reversed_0);
+    requestView.setUint8(4, is_encoder_reversed_1);
+    requestView.setUint8(5, is_encoder_reversed_2);
+    requestView.setFloat64(6, wheels_diameter, true);
+    requestView.setFloat64(14, robot_radius, true);
+    requestView.setFloat64(22, encoder_resolution, true);
+    requestView.setUint8(30, wheel_orientation);
+    await this._request(INITIALIZE_OMNI_PLATFORM_ORIENTED, payload, 0);
   }
 }

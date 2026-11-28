@@ -132,6 +132,11 @@ export function supportsBoardMounting(info) {
   return supportsImuMounting(info) && info.protocol_minor >= 24;
 }
 
+export function supportsOmniOrientation(info) {
+  return info?.protocol_major === 2 && Number.isInteger(info.protocol_minor) &&
+    info.protocol_minor >= 26 && info.protocol_minor <= 255;
+}
+
 /** Protocol-wide oriented initializer and running roller-arrangement readback. */
 export function supportsMecanumOrientation(info) {
   return info?.protocol_major === 2 && Number.isInteger(info.protocol_minor) &&

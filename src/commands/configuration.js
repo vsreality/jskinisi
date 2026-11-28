@@ -1,10 +1,10 @@
-import { MecanumRollerOrientation } from './kinisi_commands.js';
-import { supportsMecanumOrientation } from './board_profile.js';
+import { MecanumRollerOrientation, OmniWheelOrientation } from './kinisi_commands.js';
+import { supportsMecanumOrientation, supportsOmniOrientation } from './board_profile.js';
 
 /** Field IDs for protocol 2.14 GET_CONFIGURATION_FIELD (values are scalars). */
 export const ConfigurationField = Object.freeze({
   PLATFORM_TYPE: 0, WHEEL_DIAMETER: 1, TRACK_OR_LENGTH: 2, WIDTH_OR_RADIUS: 3,
-  ENCODER_RESOLUTION: 4, ENCODER_REVERSED: 5, MOTOR_REVERSED: 6, MECANUM_ROLLER_ORIENTATION: 7,
+  ENCODER_RESOLUTION: 4, ENCODER_REVERSED: 5, MOTOR_REVERSED: 6, MECANUM_ROLLER_ORIENTATION: 7, OMNI_WHEEL_ORIENTATION: 8,
 });
 
 const platforms = { 1: ['differential', 2], 2: ['omni', 3], 3: ['mecanum', 4] };
@@ -13,6 +13,12 @@ const platforms = { 1: ['differential', 2], 2: ['omni', 3], 3: ['mecanum', 4] };
 export async function readMecanumRollerOrientation(controller) {
   const value = await controller.get_configuration_field(ConfigurationField.MECANUM_ROLLER_ORIENTATION, 0);
   if (!Object.values(MecanumRollerOrientation).includes(value)) throw new Error('Board returned an unknown mecanum roller arrangement');
+  return value;
+}
+
+export async function readOmniWheelOrientation(controller) {
+  const value = await controller.get_configuration_field(ConfigurationField.OMNI_WHEEL_ORIENTATION, 0);
+  if (!Object.values(OmniWheelOrientation).includes(value)) throw new Error('Board returned an unknown omni wheel arrangement');
   return value;
 }
 
@@ -29,6 +35,9 @@ export async function readRunningConfiguration(controller) {
   let rollerOrientation;
   if (platform === 'mecanum') rollerOrientation = supportsMecanumOrientation(controller.boardInfo)
     ? await readMecanumRollerOrientation(controller) : MecanumRollerOrientation.STANDARD;
+  let wheelOrientation;
+  if (platform === 'omni') wheelOrientation = supportsOmniOrientation(controller.boardInfo)
+    ? await readOmniWheelOrientation(controller) : OmniWheelOrientation.REAR;
   const encoders = [], motorReversed = [];
   // All four slots matter: an unused platform wheel may still have separately
   // applied motor/encoder setup. Zero resolution means no initialized encoder.
@@ -45,5 +54,5 @@ export async function readRunningConfiguration(controller) {
   const dimensions = [wheelDiameter, trackOrLength, widthOrRadius].filter(value => value !== null);
   if (!dimensions.every(value => Number.isFinite(value) && value > 0) || !Number.isInteger(pwmHz) || pwmHz <= 0)
     throw new Error('Board returned invalid geometry or PWM frequency. Read again before saving.');
-  return { platform, channelCount: count, wheelDiameter, trackOrLength, widthOrRadius, encoders, motorReversed, pwmHz, rollerOrientation };
+  return { platform, channelCount: count, wheelDiameter, trackOrLength, widthOrRadius, encoders, motorReversed, pwmHz, rollerOrientation, wheelOrientation };
 }
