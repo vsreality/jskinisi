@@ -1,17 +1,24 @@
 // File: kinisi_session.js
 // Shared API-v2 framing, readiness and clock exchange for serial and proxy transports.
 import { Commands, INIT, READY, ERROR, TIME_SYNC_REQUEST, TIME_SYNC_RESPONSE,
-  SDK_VERSION, InitResponse, ErrorCode, ErrorDescriptions, GET_TEMPERATURE, GET_IMU, GET_MOTOR_CURRENT, GET_MOTOR_FAULTS, CLEAR_MOTOR_FAULTS, GET_PWM_FREQUENCY, SET_PWM_FREQUENCY, GET_MOTOR_CURRENT_LIMIT, SET_MOTOR_CURRENT_LIMIT,
+  INITIALIZE_MECANUM_PLATFORM_ORIENTED, INITIALIZE_OMNI_PLATFORM_ORIENTED, GET_IMU_MOUNT, SET_IMU_MOUNT, GET_BOARD_MOUNT, SET_BOARD_MOUNT,
+  GET_FEEDBACK_SOURCE_HEALTH, GET_FEEDBACK_IMU_CHANNELS, SET_FEEDBACK_FUSION_MOUNT, GET_FEEDBACK_FUSION_MOUNT, FeedbackSourceVectorKind, SET_FEEDBACK_SOURCE, GET_FEEDBACK_SOURCE_STATUS, GET_FEEDBACK_SOURCE_VECTOR,
+  SET_IMU_TRACKING, GET_IMU_TRACKING_STATUS, GET_IMU_TRACKING_VECTOR, GET_IMU_TRACKING_CONFIGURATION,
+  SET_FUSION_EXPERIMENT, GET_FUSION_STATUS, GET_FUSION_VECTOR, GET_FUSION_CONFIGURATION,
+  SDK_VERSION, InitResponse, ErrorCode, ErrorDescriptions, GET_TEMPERATURE, GET_IMU, GET_MOTOR_CURRENT, GET_MOTOR_FAULTS, CLEAR_MOTOR_FAULTS, GET_PWM_FREQUENCY, SET_PWM_FREQUENCY, GET_MOTOR_CURRENT_LIMIT, SET_MOTOR_CURRENT_LIMIT, SAVE_CONFIGURATION, GET_CONFIGURATION_FIELD, SET_DRIVER_SLEEP, GET_DRIVER_SLEEP, SET_BOARD_IDLE, GET_BOARD_IDLE,
   SET_HEARTBEAT_CONFIG, UNSUBSCRIBE_ODOMETRY, ENCODER_ODOMETRY_EVENT, PLATFORM_ODOMETRY_EVENT,
   SUBSCRIBE_ODOMETRY, SUBSCRIBE, SUBSCRIBE_WITH_MODE, SUBSCRIBE_CONFIGURED, UNSUBSCRIBE, TELEMETRY_EVENT, Topic, SubscriptionMode, SubscriptionTrigger, SubscriptionDelivery,
   decodeTelemetryEvent, EncoderOdometrySample, PlatformOdometrySample } from './kinisi_commands.js';
 import { POSITION_COMMANDS, supportsPositionControl, POSITION_PID_COMMANDS, supportsPositionPidControl } from './position_control.js';
 import { supportsTemperatureRead } from './temperature.js';
 import { supportsImuRead } from './imu.js';
-import { getBoardProfile, supportsBoardSensor, supportsMotorCurrent, supportsMotorFaults, getMotorCurrentLimitOptions, supportsMotorCurrentLimit, getPwmFrequencyOptions, supportsPwmFrequency } from './board_profile.js';
+import { supportsMecanumOrientation, supportsOmniOrientation, supportsBoardMounting, supportsImuMounting } from './board_profile.js';
+import { ConfigurationField, readMecanumRollerOrientation, readOmniWheelOrientation } from './configuration.js';
+import { mountToWire, mountGeometry } from './imu_mount.js';
+import { getBoardProfile, supportsBoardSensor, supportsMotorCurrent, supportsMotorFaults, getMotorCurrentLimitOptions, supportsMotorCurrentLimit, getPwmFrequencyOptions, supportsPwmFrequency, supportsConfigurationPersistence, supportsDriverSleep, supportsBoardIdle, supportsFusionExperiment, supportsImuTracking, supportsFeedbackSourceSelector, supportsFeedbackSourceHealth } from './board_profile.js';
 import { supportsTelemetry, supportsTopic } from './telemetry.js';
 
-export { PwmFrequency, Topic, SubscriptionMode, SubscriptionTrigger, SubscriptionDelivery } from './kinisi_commands.js';
+export { MecanumRollerOrientation, OmniWheelOrientation, PwmFrequency, Topic, SubscriptionMode, SubscriptionTrigger, SubscriptionDelivery } from './kinisi_commands.js';
 
 // Existing controls need 2.1; additive commands are gated separately.
 const MIN_PROTOCOL_VERSION = [2, 1, 0];
@@ -133,6 +140,9 @@ export class KinisiSession extends Commands {
   supportsTopic(topic, index = 0) { return supportsTopic(this.boardInfo, topic, index); }
   supportsMotorFaults(index = 0) { return supportsMotorFaults(this.boardInfo, index); }
   supportsMotorCurrent(index = 0) { return supportsMotorCurrent(this.boardInfo, index); }
+  supportsConfigurationPersistence() { return this.ready && supportsConfigurationPersistence(this.boardInfo); }
+  supportsDriverSleep() { return this.ready && supportsDriverSleep(this.boardInfo); }
+  supportsBoardIdle() { return this.ready && supportsBoardIdle(this.boardInfo); }
 
   /** Serialize changes to one source, including cleanup racing with a replacement. */
   _telemetryOperation(key, operation) {
@@ -159,13 +169,15 @@ export class KinisiSession extends Commands {
     if (!Object.values(SubscriptionMode).includes(mode)) throw new RangeError('Invalid subscription mode');
     if (typeof callback !== 'function') throw new TypeError('A sample callback is required');
     const key = topic + ':' + index;
+    const sendSubscription = () => configured
+      ? super.subscribe_configured(topic, index, pollIntervalMs, trigger, delivery, maxSilenceMs)
+      : mode === SubscriptionMode.PERIODIC ? super.subscribe(topic, index, intervalMs)
+        : super.subscribe_with_mode(topic, index, intervalMs, mode);
     return this._telemetryOperation(key, async () => {
       const entry = { callback, closing: false, session: this._session };
       this._telemetryCandidates.set(key, entry);
       try {
-        if (configured) await super.subscribe_configured(topic, index, pollIntervalMs, trigger, delivery, maxSilenceMs);
-        else if (mode === SubscriptionMode.PERIODIC) await super.subscribe(topic, index, intervalMs);
-        else await super.subscribe_with_mode(topic, index, intervalMs, mode);
+        await sendSubscription();
       }
       catch (error) {
         // A lost ACK may still have installed a stream. Cancel that source so
@@ -181,6 +193,24 @@ export class KinisiSession extends Commands {
       let closing;
       return Object.freeze({
         get active() { return !entry.closing && owner._session === entry.session && owner._telemetryListeners.get(key) === entry; },
+        // Rearm the exact stream without replacing its callback or handle. The
+        // firmware resets its baseline and acquires a new initial snapshot.
+        refresh: () => {
+          // Fence already scheduled callbacks immediately, before the queued
+          // request gets its turn on the transport.
+          entry.refreshing = true;
+          entry.latest = null;
+          entry.sampleEpoch = (entry.sampleEpoch ?? 0) + 1;
+          return this._telemetryOperation(key, async () => {
+            if (entry.closing || this._telemetryListeners.get(key) !== entry) throw new ProtocolError('Subscription is no longer active');
+            entry.refreshing = true;
+            this._telemetryCandidates.set(key, entry);
+            try { await sendSubscription(); }
+            finally {
+              if (this._telemetryCandidates.get(key) === entry) this._telemetryCandidates.delete(key);
+            }
+          });
+        },
         unsubscribe: () => {
           if (closing) return closing;
           if (this._telemetryListeners.get(key) !== entry || this._session !== entry.session) return Promise.resolve();
@@ -213,8 +243,17 @@ export class KinisiSession extends Commands {
     this._telemetryOperations.clear();
   }
 
+  _discardCachedTelemetry() {
+    this._subscriptionSamples.clear();
+    for (const entry of this._telemetryListeners.values()) {
+      entry.latest = null;
+      entry.sampleEpoch = (entry.sampleEpoch ?? 0) + 1;
+    }
+  }
+
   /** Keep at most the latest waiting sample while an asynchronous callback runs. */
   _deliverTelemetry(key, entry, sample) {
+    if (entry.refreshing) return;
     entry.latest = sample;
     if (entry.delivering) return;
     const deliver = () => {
@@ -222,9 +261,10 @@ export class KinisiSession extends Commands {
         entry.latest = null; entry.delivering = false; return;
       }
       const next = entry.latest;
+      const epoch = entry.sampleEpoch;
       entry.latest = null;
       Promise.resolve().then(() => {
-        if (!entry.closing && this._telemetryListeners.get(key) === entry) return entry.callback(next);
+        if (!entry.closing && entry.sampleEpoch === epoch && this._telemetryListeners.get(key) === entry) return entry.callback(next);
       }).catch(error => { this.lastTelemetryError = error; }).then(deliver);
     };
     entry.delivering = true;
@@ -232,8 +272,102 @@ export class KinisiSession extends Commands {
   }
 
   /** Generated commands cannot bypass the INIT/READY gate. */
+  supportsFeedbackSourceHealth() { return this.ready && supportsFeedbackSourceHealth(this.boardInfo); }
+  supportsImuMounting() { return this.ready && supportsImuMounting(this.boardInfo); }
+
+  /** Legacy chip-reference setter (2.23). Positions refer to the IMU sensor. */
+  async set_imu_mount_geometry(roll_deg, pitch_deg, yaw_deg, x_m, y_m, z_m) {
+    await this.set_imu_mount(...mountToWire([roll_deg, pitch_deg, yaw_deg, x_m, y_m, z_m]));
+  }
+
+  /** Legacy chip-reference readback (2.23). Positions refer to the IMU sensor. */
+  async get_imu_mount_geometry() {
+    return mountGeometry(await this.get_imu_mount());
+  }
+
+  supportsBoardMounting() { return this.ready && supportsBoardMounting(this.boardInfo); }
+
+  /** Set angles in degrees and chassis-origin to PCB underside center in chassis metres. */
+  async set_board_mount_geometry(roll_deg, pitch_deg, yaw_deg, x_m, y_m, z_m) {
+    await this.set_board_mount(...mountToWire([roll_deg, pitch_deg, yaw_deg, x_m, y_m, z_m]));
+  }
+
+  /** Read the applied board-center geometry in degrees and metres. */
+  async get_board_mount_geometry() {
+    return mountGeometry(await this.get_board_mount());
+  }
+  supportsFeedbackSourceSelector() { return this.ready && supportsFeedbackSourceSelector(this.boardInfo); }
+
+  /** Read one source episode and sample. All requests are read-only. */
+  async readFeedbackSourceSnapshot() {
+    const session = this._session;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const first = await this.get_feedback_source_status();
+      if (session !== this._session || !this.ready) throw new ConnectionClosedError('Controller session changed');
+      if (!first.valid) return { status: first, pose: null, twist: null };
+      let pose, twist;
+      try {
+        pose = await this.get_feedback_source_vector(FeedbackSourceVectorKind.POSE, first.origin_id, first.sequence);
+        twist = await this.get_feedback_source_vector(FeedbackSourceVectorKind.TWIST, first.origin_id, first.sequence);
+      } catch (error) {
+        if (error.code !== ErrorCode.SAMPLE_NOT_AVAILABLE) throw error;
+      }
+      const status = await this.get_feedback_source_status();
+      if (session !== this._session || !this.ready) throw new ConnectionClosedError('Controller session changed');
+      if (!status.valid) return { status, pose: null, twist: null };
+      if (pose?.sequence !== first.sequence || twist?.sequence !== first.sequence ||
+          status.requested !== first.requested || status.active !== first.active || status.origin_id !== first.origin_id) continue;
+      const advance = (status.sequence - first.sequence) >>> 0;
+      const tick = status.timestamp_us - first.timestamp_us;
+      if (advance >= 0x80000000 || tick < 0n || tick > 0xffffffffn || (advance === 0) !== (tick === 0n)) continue;
+      // Both timers come from the board. A newer status may describe another acquisition.
+      const ageAtCheck = Number(tick) + status.age_us;
+      const elapsed = ageAtCheck - first.age_us;
+      if (elapsed >= 0 && elapsed <= 50000 && ageAtCheck <= 1000 * Math.min(first.max_age_ms, status.max_age_ms)) {
+        first.age_us = ageAtCheck;
+        return { status: first, pose, twist };
+      }
+    }
+    throw new ProtocolError('Feedback source changed during read. No coherent snapshot available.');
+  }
+
+  getOmniWheelOrientation() { return readOmniWheelOrientation(this); }
+  supportsOmniOrientation() { return this.ready && supportsOmniOrientation(this.boardInfo); }
+  getMecanumRollerOrientation() { return readMecanumRollerOrientation(this); }
+  supportsMecanumOrientation() { return this.ready && supportsMecanumOrientation(this.boardInfo); }
+  supportsImuTracking() { return this.ready && supportsImuTracking(this.boardInfo); }
+  supportsFusionExperiment() { return this.ready && supportsFusionExperiment(this.boardInfo); }
+
   async _request(command, payload, responseLength) {
+    if ((command === GET_BOARD_MOUNT || command === SET_BOARD_MOUNT) && !this.supportsBoardMounting())
+      throw new ProtocolError('Board mounting requires READY, exact v0.4.0 capability and protocol 2.24+');
+    if ((command === GET_IMU_MOUNT || command === SET_IMU_MOUNT) && !this.supportsImuMounting())
+      throw new ProtocolError('IMU mounting requires READY, exact v0.4.0 capability and protocol 2.23+');
     if (!this.ready) throw new ProtocolError('Controller is not ready; complete INIT first');
+    if ([GET_FEEDBACK_SOURCE_HEALTH, GET_FEEDBACK_IMU_CHANNELS].includes(command) && !this.supportsFeedbackSourceHealth())
+      throw new ProtocolError('Tracking source health requires READY, exact v0.4.0 capability and protocol 2.22+');
+    if ([SET_FEEDBACK_SOURCE, GET_FEEDBACK_SOURCE_STATUS, GET_FEEDBACK_SOURCE_VECTOR, SET_FEEDBACK_FUSION_MOUNT, GET_FEEDBACK_FUSION_MOUNT].includes(command) && !this.supportsFeedbackSourceSelector())
+      throw new ProtocolError('Feedback source selector requires READY, exact v0.4.0 capability and protocol 2.21+');
+    if ([SET_IMU_TRACKING, GET_IMU_TRACKING_STATUS, GET_IMU_TRACKING_VECTOR, GET_IMU_TRACKING_CONFIGURATION].includes(command) && !this.supportsImuTracking())
+      throw new ProtocolError('IMU tracking requires READY, exact v0.4.0 capability and protocol 2.20+');
+    if ([SET_FUSION_EXPERIMENT, GET_FUSION_STATUS, GET_FUSION_VECTOR, GET_FUSION_CONFIGURATION].includes(command) && !this.supportsFusionExperiment())
+      throw new ProtocolError('Fusion experiment requires READY, exact v0.4.0 capability and protocol 2.19+');
+    if ([SET_BOARD_IDLE, GET_BOARD_IDLE].includes(command) && !this.supportsBoardIdle())
+      throw new ProtocolError('Board idle requires a known supported board and compatible firmware: v0.3/Nano protocol 2.18+, or v0.4 protocol 2.16+');
+    if ([SET_DRIVER_SLEEP, GET_DRIVER_SLEEP].includes(command) && !this.supportsDriverSleep())
+      throw new ProtocolError('Driver sleep requires a known supported board and compatible firmware: v0.3/Nano protocol 2.17+, or v0.4 protocol 2.15+');
+    const omniRead = command === GET_CONFIGURATION_FIELD && bytes(payload)[0] === ConfigurationField.OMNI_WHEEL_ORIENTATION;
+    if ((command === INITIALIZE_OMNI_PLATFORM_ORIENTED || omniRead) && !this.supportsOmniOrientation())
+      throw new ProtocolError('Omni wheel orientation requires firmware protocol 2.26 or newer');
+    if (omniRead && bytes(payload)[1] !== 0)
+      throw new RangeError('Omni wheel orientation requires field index zero');
+    const rollerRead = command === GET_CONFIGURATION_FIELD && bytes(payload)[0] === ConfigurationField.MECANUM_ROLLER_ORIENTATION;
+    if ((command === INITIALIZE_MECANUM_PLATFORM_ORIENTED || rollerRead) && !this.supportsMecanumOrientation())
+      throw new ProtocolError('Mecanum roller orientation requires firmware protocol 2.25 or newer');
+    if (rollerRead && bytes(payload)[1] !== 0)
+      throw new RangeError('Mecanum roller orientation requires field index zero');
+    if ((command === SAVE_CONFIGURATION || (command === GET_CONFIGURATION_FIELD && !rollerRead && !omniRead)) && !this.supportsConfigurationPersistence())
+      throw new ProtocolError('Configuration persistence requires a known v0.4 board and firmware protocol 2.14 or newer');
     if ([SUBSCRIBE, SUBSCRIBE_WITH_MODE, SUBSCRIBE_CONFIGURED, UNSUBSCRIBE].includes(command)) {
       if (!supportsTelemetry(this.boardInfo)) throw new ProtocolError('Subscriptions require firmware protocol 2.6 or newer');
       if (command === SUBSCRIBE_CONFIGURED && this.boardInfo.protocol_minor < 12)
@@ -296,9 +430,19 @@ export class KinisiSession extends Commands {
     if (POSITION_COMMANDS.has(command) && !supportsPositionControl(this.boardInfo))
       throw new ProtocolError('Position control requires firmware protocol 2.2 or newer');
     const session = this._session;
-    const response = await this._sendRequest(command, payload, responseLength, false);
+    if (command === SET_BOARD_IDLE) this._discardCachedTelemetry();
+    let response;
+    try { response = await this._sendRequest(command, payload, responseLength, false); }
+    catch (error) {
+      if (error.code === ErrorCode.BOARD_IDLE) this._discardCachedTelemetry();
+      throw error;
+    }
     if (this._session !== session) throw new ConnectionClosedError();
     const data = bytes(payload);
+    if (command === SET_BOARD_IDLE || (command === GET_BOARD_IDLE && bytes(response)[0] === 1)) {
+      // Keep subscription registrations, but discard cached pre-transition data.
+      this._discardCachedTelemetry();
+    }
     if (command === SET_HEARTBEAT_CONFIG) {
       const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
       this._heartbeatIntervalMs = data[0] ? view.getUint32(1, true) / 5 : null;
@@ -308,7 +452,10 @@ export class KinisiSession extends Commands {
       // Activate at the ACK boundary, before the reader dispatches a coalesced event.
       const key = data[0] + ':' + data[1];
       const entry = this._telemetryCandidates.get(key);
-      if (entry && !entry.closing && entry.session === session) this._telemetryListeners.set(key, entry);
+      if (entry && !entry.closing && entry.session === session) {
+        entry.refreshing = false;
+        this._telemetryListeners.set(key, entry);
+      }
       if (data[0] === Topic.ENCODER_ODOMETRY) this._subscriptionSamples.delete(data[1]);
       if (data[0] === Topic.PLATFORM_ODOMETRY) this._subscriptionSamples.delete(4);
     } else if (command === UNSUBSCRIBE) {

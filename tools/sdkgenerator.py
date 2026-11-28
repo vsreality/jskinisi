@@ -9,14 +9,119 @@ TYPES = {'bool':(1,'Uint8'), 'uint8_t':(1,'Uint8'), 'int8_t':(1,'Int8'),
          'int32_t':(4,'Int32'), 'uint64_t':(8,'BigUint64'), 'int64_t':(8,'BigInt64'), 'double':(8,'Float64')}
 # Additional user commands are generated freely; these support handwritten session behavior.
 # Sensor exports are required by the session even when connected firmware is older.
-SESSION_COMMANDS = {'PING', 'SET_HEARTBEAT_CONFIG', 'SUBSCRIBE_ODOMETRY',
+SESSION_COMMANDS = {'INITIALIZE_MECANUM_PLATFORM_ORIENTED', 'INITIALIZE_OMNI_PLATFORM_ORIENTED', 'PING', 'SET_HEARTBEAT_CONFIG', 'SUBSCRIBE_ODOMETRY',
+                    'SAVE_CONFIGURATION', 'GET_CONFIGURATION_FIELD', 'SET_DRIVER_SLEEP', 'GET_DRIVER_SLEEP', 'SET_BOARD_IDLE', 'GET_BOARD_IDLE',
                     'UNSUBSCRIBE_ODOMETRY', 'ENCODER_ODOMETRY_EVENT', 'PLATFORM_ODOMETRY_EVENT',
                     'GET_TEMPERATURE', 'GET_IMU', 'GET_MOTOR_CURRENT', 'GET_MOTOR_FAULTS', 'CLEAR_MOTOR_FAULTS', 'GET_PWM_FREQUENCY', 'SET_PWM_FREQUENCY', 'GET_MOTOR_CURRENT_LIMIT', 'SET_MOTOR_CURRENT_LIMIT', 'SUBSCRIBE', 'SUBSCRIBE_WITH_MODE', 'UNSUBSCRIBE', 'TELEMETRY_EVENT', 'SUBSCRIBE_CONFIGURED'}
 
 
 
 
+def validate_driver_sleep(schema):
+    commands = {c['command']: c for c in schema['commands']}
+    setter, getter = commands['SET_DRIVER_SLEEP'], commands['GET_DRIVER_SLEEP']
+    properties = setter.get('properties', [])
+    if (setter.get('direction') != 'client_to_controller' or
+            [(p.get('name'), p.get('type'), p.get('range')) for p in properties] != [('sleeping', 'uint8_t', [0, 1])] or
+            setter.get('response') or getter.get('direction') != 'client_to_controller' or getter.get('properties') or
+            getter.get('response', {}).get('type') != 'uint8_t'):
+        raise ValueError('Invalid driver sleep envelope')
+    setter, getter = commands['SET_BOARD_IDLE'], commands['GET_BOARD_IDLE']
+    if (setter.get('direction') != 'client_to_controller' or
+            [(p.get('name'), p.get('type'), p.get('range')) for p in setter.get('properties', [])] != [('idle', 'uint8_t', [0, 1])] or
+            setter.get('response') or getter.get('direction') != 'client_to_controller' or getter.get('properties') or
+            getter.get('response', {}).get('type') != 'uint8_t'):
+        raise ValueError('Invalid board idle envelope')
+
+
+
+FUSION_CATALOGS = [
+    ('fusion_modes', 'FusionMode', 'FUSION_MODE', ['LEGACY_ENCODER', 'ENCODER_CORRECTION', 'FUSED']),
+    ('fusion_health', 'FusionHealth', 'FUSION_HEALTH', ['DISABLED', 'WAITING', 'HEALTHY', 'FAULT']),
+    ('fusion_faults', 'FusionFault', 'FUSION_FAULT', ['NONE', 'MOUNT_INVALID', 'ENCODER_UNAVAILABLE', 'IMU_UNAVAILABLE', 'STALE', 'TIMESTAMP', 'SATURATION', 'BIAS_NOT_READY', 'DISCONTINUITY', 'INHIBITED']),
+    ('fusion_flags', 'FusionFlag', 'FUSION_FLAG', ['ESTIMATE_VALID', 'BIAS_READY', 'FRESH_TARGET_REQUIRED', 'CORRECTION_ACTIVE']),
+    ('fusion_vectors', 'FusionVectorKind', 'FUSION_VECTOR', ['ENCODER_POSE', 'ENCODER_TWIST', 'FUSED_POSE', 'FUSED_TWIST', 'BIAS']),
+]
+
+IMU_TRACKING_CATALOGS = [('imu_tracking_actions', 'ImuTrackingAction', 'IMU_TRACKING_ACTION', ['START', 'STOP', 'RESET', 'RECALIBRATE']), ('imu_tracking_states', 'ImuTrackingState', 'IMU_TRACKING_STATE', ['STOPPED', 'CALIBRATING', 'TRACKING', 'FAULT', 'EXPIRED']), ('imu_tracking_faults', 'ImuTrackingFault', 'IMU_TRACKING_FAULT', ['NONE', 'NOT_STATIONARY', 'IMU_UNAVAILABLE', 'STALE', 'TIMESTAMP', 'SATURATION', 'BIAS_NOT_READY', 'WINDOW_EXPIRED', 'INHIBITED', 'MOUNT_INVALID']), ('imu_tracking_flags', 'ImuTrackingFlag', 'IMU_TRACKING_FLAG', ['ESTIMATE_VALID', 'BIAS_READY', 'RESTART_REQUIRED', 'MOUNT_CONFIRMED']), ('imu_tracking_vectors', 'ImuTrackingVectorKind', 'IMU_TRACKING_VECTOR', ['POSE', 'TWIST', 'BIAS'])]
+
+FEEDBACK_CATALOGS = [
+    ('feedback_sources', 'FeedbackSource', 'FEEDBACK_SOURCE', ['ENCODER', 'IMU_ONLY', 'FUSED', 'NONE']),
+    ('feedback_source_reasons', 'FeedbackSourceReason', 'FEEDBACK_SOURCE_REASON',
+     ['OK', 'NOT_STARTED', 'CALIBRATING', 'UNAVAILABLE', 'STALE', 'EXPIRED', 'FAULT', 'INHIBITED', 'WAITING_SAMPLE', 'MOUNT_REQUIRED']),
+    ('feedback_source_vectors', 'FeedbackSourceVectorKind', 'FEEDBACK_SOURCE_VECTOR', ['POSE', 'TWIST']),
+]
+
+
+HEALTH_CATALOGS = [
+    ('feedback_source_health_states', 'FeedbackSourceHealthState', 'FEEDBACK_SOURCE_HEALTH',
+     ['HEALTHY', 'SUSPECT', 'UNAVAILABLE', 'INDETERMINATE']),
+    ('feedback_source_health_flags', 'FeedbackSourceHealthFlag', 'FEEDBACK_SOURCE_HEALTH',
+     ['PROVENANCE', 'FRESH', 'DISAGREEMENT', 'COMPARISON_AVAILABLE', 'RECOVERING', 'RESTART_REQUIRED',
+      'TIMESTAMP_FAULT', 'SATURATION']),
+]
+
+
+def validate_feedback_health(schema):
+    commands = {c['command']: c for c in schema['commands']}
+    expected = {'GET_FEEDBACK_SOURCE_HEALTH', 'GET_FEEDBACK_IMU_CHANNELS'}
+    if not (expected & commands.keys() or any(key in schema for key, *_ in HEALTH_CATALOGS)):
+        return
+    if not expected <= commands.keys():
+        raise ValueError('Incomplete feedback source health command family')
+    for key, _, _, names in HEALTH_CATALOGS:
+        ids = [1 << i for i in range(len(names))] if key.endswith('_flags') else range(len(names))
+        values = schema.get(key, [])
+        if [(v.get('id'), v.get('name')) for v in values] != list(zip(ids, names)) or any(type(v.get('id')) is not int for v in values):
+            raise ValueError('Invalid ' + key + ' catalog')
+
+
+def validate_feedback_source(schema):
+    required = {'SET_FEEDBACK_SOURCE', 'GET_FEEDBACK_SOURCE_STATUS', 'GET_FEEDBACK_SOURCE_VECTOR',
+                'SET_FEEDBACK_FUSION_MOUNT', 'GET_FEEDBACK_FUSION_MOUNT'}
+    commands = {c['command'] for c in schema['commands']}
+    if not required & commands and not any(key in schema for key, *_ in FEEDBACK_CATALOGS):
+        return
+    if not required <= commands:
+        raise ValueError('Incomplete feedback source command family')
+    for key, _, _, names in FEEDBACK_CATALOGS:
+        ids = [0, 1, 2, 255] if key == 'feedback_sources' else list(range(len(names)))
+        values = schema.get(key, [])
+        if [(v.get('id'), v.get('name')) for v in values] != list(zip(ids, names)) or any(type(v.get('id')) is not int for v in values):
+            raise ValueError('Invalid ' + key + ' catalog')
+
+
+def validate_imu_tracking(schema):
+    commands = {c["command"] for c in schema.get("commands", [])}
+    required = {"SET_IMU_TRACKING", "GET_IMU_TRACKING_STATUS", "GET_IMU_TRACKING_VECTOR", "GET_IMU_TRACKING_CONFIGURATION"}
+    if not commands & required and not any(key in schema for key, *_ in IMU_TRACKING_CATALOGS):
+        return
+    if not required <= commands:
+        raise ValueError("Incomplete IMU tracking command family")
+    for key, _, _, names in IMU_TRACKING_CATALOGS:
+        ids = [1, 2, 4, 8] if key.endswith("_flags") else list(range(len(names)))
+        values = schema.get(key, [])
+        if [(v.get("id"), v.get("name")) for v in values] != list(zip(ids, names)) or any(type(v.get("id")) is not int for v in values):
+            raise ValueError("Invalid " + key + " catalog")
+
+def validate_fusion(schema):
+    commands = {c['command'] for c in schema.get('commands', [])}
+    required = {'SET_FUSION_EXPERIMENT', 'GET_FUSION_STATUS', 'GET_FUSION_VECTOR', 'GET_FUSION_CONFIGURATION'}
+    if not commands & required and not any(key in schema for key, *_ in FUSION_CATALOGS):
+        return
+    if not required <= commands:
+        raise ValueError('Incomplete fusion command family')
+    for key, _, _, names in FUSION_CATALOGS:
+        ids = [1, 2, 4, 8] if key == 'fusion_flags' else list(range(len(names)))
+        values = schema.get(key, [])
+        if [(v.get('id'), v.get('name')) for v in values] != list(zip(ids, names)) or any(type(v.get('id')) is not int for v in values):
+            raise ValueError('Invalid ' + key + ' catalog')
+
 def validate_pwm_frequency(schema):
+    validate_fusion(schema)
+    validate_imu_tracking(schema)
+    validate_feedback_source(schema)
+    validate_feedback_health(schema)
     values = schema.get('pwm_frequencies', [])
     expected = [(v, 'KHZ_' + str(v // 1000)) for v in (10000, 20000, 25000, 50000, 100000)]
     if [(v.get('id'), v.get('name')) for v in values] != expected or any(type(v.get('id')) is not int for v in values):
@@ -99,8 +204,31 @@ def generate_js_code(schema, js_version='ES6'):
     missing = SESSION_COMMANDS - {c.get('command') for c in schema.get('commands', [])}
     if missing:
         raise ValueError('Schema is missing runtime commands: ' + ', '.join(sorted(missing)))
+    commands = {c['command']: c for c in schema['commands']}
+    oriented_omni = commands['INITIALIZE_OMNI_PLATFORM_ORIENTED']
+    omni_catalog = schema.get('omni_wheel_orientations')
+    if not isinstance(omni_catalog, list) or [
+            (v.get('name'), v.get('id'), type(v.get('id'))) for v in omni_catalog] != [
+            ('REAR', 0, int), ('FRONT', 1, int)]:
+        raise ValueError('Invalid omni wheel orientation catalog')
+    omni_legacy = commands['INITIALIZE_OMNI_PLATFORM']['properties']
+    if len(omni_legacy) != 9 or [(v['name'], v['type']) for v in oriented_omni['properties']] != [
+            (v['name'], v['type']) for v in omni_legacy] + [('wheel_orientation', 'uint8_t')]:
+        raise ValueError('Invalid oriented omni initializer payload')
+    oriented = commands.get('INITIALIZE_MECANUM_PLATFORM_ORIENTED')
+    orientations = schema.get('mecanum_roller_orientations')
+    if oriented or orientations is not None:
+        if not oriented or not isinstance(orientations, list) or [
+                (v.get('name'), v.get('id'), type(v.get('id'))) for v in orientations] != [
+                ('STANDARD', 0, int), ('MIRRORED', 1, int)]:
+            raise ValueError('Invalid mecanum roller orientation catalog')
+        legacy = commands.get('INITIALIZE_MECANUM_PLATFORM', {}).get('properties', [])
+        fields = [(v['name'], v['type']) for v in oriented['properties']]
+        if len(legacy) != 12 or fields != [(v['name'], v['type']) for v in legacy] + [('roller_orientation', 'uint8_t')]:
+            raise ValueError('Invalid oriented mecanum initializer payload')
     validate_retirement(schema)
     validate_pwm_frequency(schema)
+    validate_driver_sleep(schema)
     validate_subscription_settings(schema)
     modes = schema.get('subscription_modes', [])
     if [(m.get('id'), m.get('name')) for m in modes] != [(0, 'PERIODIC'), (1, 'ON_CHANGE')] or any(type(m.get('id')) is not int for m in modes):
@@ -170,6 +298,15 @@ def generate_js_code(schema, js_version='ES6'):
     for e in schema['error_codes']:
         lines.append(f"  {e['code']}: {json.dumps(e['description'])},\n")
     lines.append('''});
+/** A response for a different producer cannot describe the requested source. */
+export class FeedbackSourceMismatchError extends Error {
+  constructor(requested, received) {
+    super(`Expected health for feedback source ${requested}, received ${received}`);
+    this.name = 'FeedbackSourceMismatchError';
+    this.requested = requested;
+    this.received = received;
+  }
+}
 /** Preserve uint64/int64 precision instead of silently accepting rounded Numbers. */
 function exactBigInt(value) {
   if (typeof value === 'number' && !Number.isSafeInteger(value)) throw new TypeError('64-bit values require a bigint or a safe integer');
@@ -183,7 +320,7 @@ function payloadView(buffer, size) {
     : new DataView(buffer);
 }
 ''')
-    for key, name in [('subscription_triggers', 'SubscriptionTrigger'), ('subscription_deliveries', 'SubscriptionDelivery'), ('pwm_frequencies', 'PwmFrequency')]:
+    for key, name in [('subscription_triggers', 'SubscriptionTrigger'), ('subscription_deliveries', 'SubscriptionDelivery'), ('pwm_frequencies', 'PwmFrequency'), ('mecanum_roller_orientations', 'MecanumRollerOrientation'), ('omni_wheel_orientations', 'OmniWheelOrientation')] + [(key, name) for key, name, _, _ in FUSION_CATALOGS + IMU_TRACKING_CATALOGS + FEEDBACK_CATALOGS + HEALTH_CATALOGS]:
         lines.append(f'export const {name} = Object.freeze({{\n')
         for item in schema.get(key, []):
             lines.append(f"  {item['name']}: {item['id']},\n")
@@ -204,6 +341,16 @@ function payloadView(buffer, size) {
             lines.append('    '+write(p['type'],offset,'this.'+p['name'])+'\n'); offset+=size(p['type'])
         lines.append('    return buffer;\n  }\n')
         validation = ''
+        if o['name'] in ('imu_mount_configuration', 'board_mount_configuration'):
+            for p in props:
+                pos = sum(size(field['type']) for field in props[:props.index(p)])
+                if p['type'] == 'bool':
+                    validation += f"    if (view.getUint8({pos}) > 1) throw new Error('Invalid mount configured flag');\n"
+                    if o['name'] == 'board_mount_configuration':
+                        validation += f"    if (!view.getUint8({pos}) && new Uint8Array(view.buffer, view.byteOffset, {pos}).some(byte => byte !== 0)) throw new Error('Unexpected unconfigured board pose');\n"
+                elif 'range' in p:
+                    lo, hi = p['range']
+                    validation += f"    if ({read(p['type'],pos)} < {lo} || {read(p['type'],pos)} > {hi}) throw new Error('Invalid mount {p['name']}');\n"
         if o['name'] == 'motor_current_limit':
             validation = "    if (view.getUint8(0) > 1 || view.getUint16(1, true) === 0) throw new Error('Invalid current-limit setting');\n"
         if o['name'] in ('motor_fault_status', 'motor_fault_sample'):
@@ -272,6 +419,45 @@ export function decodeTelemetryEvent(payload) {
             lines.append("    if (!Number.isInteger(motor_index) || motor_index < 0 || motor_index > 3) throw new RangeError('motor_index must be 0..3');\n")
         if c['command'] == 'SET_MOTOR_CURRENT_LIMIT':
             lines.append("    if (typeof enabled !== 'boolean' || !Number.isInteger(threshold_ma) || threshold_ma < 1 || threshold_ma > 65535) throw new RangeError('Expected enabled boolean and threshold_ma integer from 1 to 65535');\n")
+        if c['command'] == 'SET_DRIVER_SLEEP':
+            lines.append("    if (sleeping !== 0 && sleeping !== 1) throw new RangeError('sleeping must be 0 (awake) or 1 (asleep)');\n")
+        if c['command'] == 'SET_FEEDBACK_FUSION_MOUNT':
+            lines.append("    if (!Number.isFinite(mounting_yaw_rad) || Math.abs(mounting_yaw_rad) > Math.PI) throw new RangeError('Invalid fusion mounting yaw');\n")
+        if c['command'] == 'GET_CONFIGURATION_FIELD':
+            lines.append("    if (![field, index].every(v => Number.isInteger(v) && v >= 0 && v <= 255)) throw new RangeError('Configuration field and index must be unsigned bytes');\n")
+        if c['command'] == 'INITIALIZE_OMNI_PLATFORM_ORIENTED':
+            flags = ', '.join(p['name'] for p in props[:6])
+            lines.append(f"    if (![{flags}].every(v => v === true || v === false || v === 0 || v === 1)) throw new RangeError('Invalid motor or encoder reversal');\n")
+            lines.append("    if (!Object.values(OmniWheelOrientation).includes(wheel_orientation)) throw new RangeError('Unknown omni wheel arrangement');\n")
+            lines.append("    if (![wheels_diameter, robot_radius].every(v => Number.isFinite(v) && v > 0) || !Number.isFinite(2 / wheels_diameter) || !Number.isFinite(1 / robot_radius) || !Number.isFinite(encoder_resolution) || encoder_resolution < 0) throw new RangeError('Enter positive dimensions and nonnegative encoder resolution');\n")
+        if c['command'] == 'INITIALIZE_MECANUM_PLATFORM_ORIENTED':
+            flags = ', '.join(p['name'] for p in props[:8])
+            lines.append(f"    if (![{flags}].every(v => v === true || v === false || v === 0 || v === 1)) throw new RangeError('Invalid motor or encoder reversal');\n")
+            lines.append("    if (!Object.values(MecanumRollerOrientation).includes(roller_orientation)) throw new RangeError('Unknown mecanum roller arrangement');\n")
+            lines.append("    if (![length, width, wheels_diameter].every(v => Number.isFinite(v) && v > 0) || !Number.isFinite(encoder_resolution) || encoder_resolution < 0) throw new RangeError('Enter positive dimensions and nonnegative encoder resolution');\n")
+            lines.append("    const lever = width * 0.5 + (roller_orientation === MecanumRollerOrientation.MIRRORED ? -length : length) * 0.5;\n")
+            lines.append("    if (!Number.isFinite(1 / lever) || !Number.isFinite(2 / wheels_diameter)) throw new RangeError('Unusable mecanum geometry: check wheel diameter and wheel-center spacings. Mirrored rollers require unequal length and width for yaw');\n")
+        if c['command'] in ('SET_IMU_MOUNT', 'SET_BOARD_MOUNT'):
+            for p in props:
+                name, (lo, hi) = p['name'], p['range']
+                lines.append(f"    if (!Number.isInteger({name}) || {name} < {lo} || {name} > {hi}) throw new RangeError('Invalid mount {name}');\n")
+        if c['command'] in {'SET_FEEDBACK_SOURCE', 'GET_FEEDBACK_SOURCE_HEALTH'}:
+            lines.append("    if (!Number.isInteger(source) || source < 0 || source > 2) throw new RangeError('Invalid feedback source');\n")
+        if c['command'] == 'GET_FEEDBACK_SOURCE_VECTOR':
+            lines.append("    if (!Number.isInteger(kind) || kind < 0 || kind > 1) throw new RangeError('Invalid feedback vector kind');\n")
+            lines.append("    if (![origin_id, sequence].every(value => Number.isInteger(value) && value >= 0 && value <= 0xffffffff)) throw new RangeError('Invalid feedback sample key');\n")
+        if c['command'] == 'SET_IMU_TRACKING':
+            lines.append("    if (!Number.isInteger(action) || action < 0 || action > 3 || !Number.isInteger(stationary_mount_confirmed) || stationary_mount_confirmed < 0 || stationary_mount_confirmed > 1) throw new RangeError('Invalid IMU tracking action or confirmation');\n")
+            lines.append("    if (!Number.isFinite(mounting_yaw_rad) || Math.abs(mounting_yaw_rad) > Math.PI || (action === 1 ? stationary_mount_confirmed !== 0 || mounting_yaw_rad !== 0 : stationary_mount_confirmed !== 1)) throw new RangeError('Invalid IMU tracking mounting declaration');\n")
+        if c['command'] == 'GET_IMU_TRACKING_VECTOR':
+            lines.append("    if (!Number.isInteger(kind) || kind < 0 || kind > 2) throw new RangeError('Invalid IMU tracking vector kind');\n")
+        if c['command'] == 'SET_FUSION_EXPERIMENT':
+            lines.append("    if (!Number.isInteger(mode) || mode < 0 || mode > 2) throw new RangeError('Invalid fusion experiment mode');\n")
+            lines.append("    if (typeof mounting_yaw_rad !== 'number' || !Number.isFinite(mounting_yaw_rad) || Math.abs(mounting_yaw_rad) > Math.PI) throw new RangeError('Mounting yaw must be finite radians within [-pi, pi]');\n")
+        if c['command'] == 'GET_FUSION_VECTOR':
+            lines.append("    if (!Number.isInteger(kind) || kind < 0 || kind > 4) throw new RangeError('Invalid fusion vector kind');\n")
+        if c['command'] == 'SET_BOARD_IDLE':
+            lines.append("    if (idle !== 0 && idle !== 1) throw new RangeError('idle must be 0 (active) or 1 (idle)');\n")
         if c['command'] in {'INITIALIZE_MOTOR_CONTROLLER', 'START_PLATFORM_CONTROLLER'}:
             # These existing APIs also accept numeric strings from UI controls.
             for name in ('kp', 'ki', 'kd', 'integral_limit'):
@@ -300,7 +486,32 @@ export function decodeTelemetryEvent(payload) {
         if r:
             t=r['name'] if r['type']=='object' else r['type']
             lines.append(f'    const response = await this._request({c["command"]}, payload, {size(t)});\n')
-            if c['command'] == 'GET_IMU':
+            if c['command'].startswith(('GET_FUSION_', 'GET_IMU_TRACKING_', 'GET_FEEDBACK_')):
+                lines.append(f'    const sample = {class_name(t)}.decode(response);\n')
+                if c['command'] == 'GET_FEEDBACK_FUSION_MOUNT':
+                    lines.append("    if (sample.confirmed > 1 || !Number.isFinite(sample.mounting_yaw_rad) || Math.abs(sample.mounting_yaw_rad) > Math.PI) throw new Error('Invalid feedback fusion mount');\n")
+                elif c['command'] == 'GET_FEEDBACK_SOURCE_HEALTH':
+                    lines.append("    if (sample.source !== source) throw new FeedbackSourceMismatchError(source, sample.source);\n    if (sample.health > FeedbackSourceHealthState.INDETERMINATE || sample.reason > FeedbackSourceReason.MOUNT_REQUIRED || sample.detail > FusionFault.INHIBITED) throw new Error('Invalid feedback source health');\n")
+                elif c['command'] == 'GET_FEEDBACK_IMU_CHANNELS':
+                    lines.append("    if ((!sample.accel_timestamp_us && sample.accel_age_us !== 0xffffffff) || (!sample.gyro_timestamp_us && sample.gyro_age_us !== 0xffffffff)) throw new Error('Invalid feedback IMU channel provenance');\n")
+                elif c['command'] == 'GET_FEEDBACK_SOURCE_STATUS':
+                    lines.append("    if (sample.requested > 2 || sample.valid > 1 || sample.reason > 9 || (sample.valid ? sample.active !== sample.requested || sample.reason !== 0 || !sample.max_age_ms || sample.age_us > 1000 * sample.max_age_ms : sample.active !== 255 || sample.reason === 0 || sample.sequence !== 0 || sample.timestamp_us !== 0n || sample.age_us !== 0xffffffff)) throw new Error('Invalid feedback source status');\n")
+                elif c['command'] == 'GET_FEEDBACK_SOURCE_VECTOR':
+                    lines.append("    if (![sample.x, sample.y, sample.z].every(Number.isFinite)) throw new Error('Invalid feedback vector');\n")
+                elif c['command'] == 'GET_IMU_TRACKING_STATUS':
+                    lines.append("    if (sample.state > 4 || sample.fault > 9 || sample.flags > 15 || sample.reserved !== 0) throw new Error('Invalid IMU tracking status');\n")
+                elif c['command'] == 'GET_IMU_TRACKING_CONFIGURATION':
+                    lines.append("    if (!Number.isFinite(sample.mounting_yaw_rad) || Math.abs(sample.mounting_yaw_rad) > Math.PI || sample.window_us === 0) throw new Error('Invalid IMU tracking configuration');\n")
+                elif c['command'] == 'GET_IMU_TRACKING_VECTOR':
+                    lines.append("    if (![sample.x, sample.y, sample.z].every(Number.isFinite)) throw new Error('Invalid IMU tracking vector');\n")
+                elif c['command'] == 'GET_FUSION_STATUS':
+                    lines.append("    if (sample.mode > 2 || sample.health > 3 || sample.fault > 9 || sample.flags > 15) throw new Error('Invalid fusion status');\n")
+                elif c['command'] == 'GET_FUSION_CONFIGURATION':
+                    lines.append("    if (sample.mode > 2 || !Number.isFinite(sample.mounting_yaw_rad) || Math.abs(sample.mounting_yaw_rad) > Math.PI) throw new Error('Invalid fusion configuration');\n")
+                else:
+                    lines.append("    if (![sample.x, sample.y, sample.z].every(Number.isFinite)) throw new Error('Invalid fusion vector');\n")
+                lines.append('    return sample;\n')
+            elif c['command'] == 'GET_IMU':
                 lines.append(f'    const sample = {class_name(t)}.decode(response);\n')
                 lines.append("    if (!Object.values(sample).every(Number.isFinite)) throw new Error('Invalid IMU payload');\n    return sample;\n")
             elif t in objects: lines.append(f'    return {class_name(t)}.decode(response);\n')
@@ -310,6 +521,12 @@ export function decodeTelemetryEvent(payload) {
             elif c['command'] == 'GET_MOTOR_CURRENT':
                 lines.append(f'    const view = payloadView(response, {size(t)});\n    const amps = {read(t,0)};\n')
                 lines.append("    if (!Number.isFinite(amps) || amps < 0) throw new Error('Invalid motor current payload');\n    return amps;\n")
+            elif c['command'] == 'GET_DRIVER_SLEEP':
+                lines.append(f'    const view = payloadView(response, {size(t)});\n    const sleeping = {read(t,0)};\n')
+                lines.append("    if (sleeping !== 0 && sleeping !== 1) throw new Error('Invalid driver sleep state');\n    return sleeping;\n")
+            elif c['command'] == 'GET_BOARD_IDLE':
+                lines.append(f'    const view = payloadView(response, {size(t)});\n    const idle = {read(t,0)};\n')
+                lines.append("    if (idle !== 0 && idle !== 1) throw new Error('Invalid board idle state');\n    return idle;\n")
             else:
                 lines.append(f'    const view = payloadView(response, {size(t)});\n    return {read(t,0)};\n')
         else: lines.append(f'    await this._request({c["command"]}, payload, 0);\n')

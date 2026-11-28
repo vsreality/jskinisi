@@ -5,6 +5,7 @@ import MotorFaults from './MotorFaults';
 import FaultHistory from './FaultHistory';
 import MotorCurrentLimit from './MotorCurrentLimit';
 import PwmFrequency from './PwmFrequency';
+import DriverSleep from './DriverSleep';
 import { Topic } from '../../commands/kinisi_commands';
 import { useSettings } from '../../contexts/SettingsContext';
 // API-v2 actions display controller errors and await command acknowledgements.
@@ -148,6 +149,7 @@ function MotorTab({ isActive = true }){
             {commandError && <p className="conn-error" role="alert">{commandError}</p>}
             <fieldset className='settings-card motor-output-card'>
             <legend>Motor setup &amp; output</legend>
+            <DriverSleep controller={controller} isConnected={isConnected} isActive={isActive} />
             <section className="control-section">
             {/* Motor Controls */}
             <p>

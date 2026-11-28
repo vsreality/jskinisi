@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ControllerContext } from './ControllerContext';
 import { KinisiClient } from '../commands/kinisi_client';
+import BoardPowerProvider from './BoardPowerProvider';
 
 export const ControllerProvider = ({ children }) => {
     const [isConnected, setIsConnected] = useState(false);
@@ -22,7 +23,7 @@ export const ControllerProvider = ({ children }) => {
 
     return (
         <ControllerContext.Provider value={value}>
-            {children}
+            <BoardPowerProvider controller={controller} isConnected={isConnected}>{children}</BoardPowerProvider>
         </ControllerContext.Provider>
     );
 };

@@ -1,6 +1,6 @@
 // Generated from tools/commands.json by tools/sdkgenerator.py. Do not edit.
 export const SDK_VERSION = Object.freeze([2, 6, 0]);
-export const PROTOCOL_VERSION = Object.freeze([2, 13, 0]);
+export const PROTOCOL_VERSION = Object.freeze([2, 26, 0]);
 export const GET_TEMPERATURE = 0x50;
 export const GET_IMU = 0x51;
 export const GET_MOTOR_CURRENT = 0x52;
@@ -82,6 +82,33 @@ export const SET_MOTOR_CURRENT_LIMIT = 0x56;
 export const SUBSCRIBE_CONFIGURED = 0x84;
 export const GET_PWM_FREQUENCY = 0x57;
 export const SET_PWM_FREQUENCY = 0x58;
+export const SAVE_CONFIGURATION = 0x59;
+export const GET_CONFIGURATION_FIELD = 0x5A;
+export const SET_DRIVER_SLEEP = 0x5B;
+export const GET_DRIVER_SLEEP = 0x5C;
+export const SET_BOARD_IDLE = 0x5D;
+export const GET_BOARD_IDLE = 0x5E;
+export const SET_FUSION_EXPERIMENT = 0x5f;
+export const GET_FUSION_STATUS = 0x60;
+export const GET_FUSION_VECTOR = 0x61;
+export const GET_FUSION_CONFIGURATION = 0x62;
+export const SET_IMU_TRACKING = 0x63;
+export const GET_IMU_TRACKING_STATUS = 0x64;
+export const GET_IMU_TRACKING_VECTOR = 0x65;
+export const GET_IMU_TRACKING_CONFIGURATION = 0x66;
+export const SET_FEEDBACK_SOURCE = 0x67;
+export const GET_FEEDBACK_SOURCE_STATUS = 0x68;
+export const GET_FEEDBACK_SOURCE_VECTOR = 0x69;
+export const SET_FEEDBACK_FUSION_MOUNT = 0x6a;
+export const GET_FEEDBACK_FUSION_MOUNT = 0x6b;
+export const GET_FEEDBACK_SOURCE_HEALTH = 0x6c;
+export const GET_FEEDBACK_IMU_CHANNELS = 0x6d;
+export const SET_IMU_MOUNT = 0x6e;
+export const GET_IMU_MOUNT = 0x6f;
+export const SET_BOARD_MOUNT = 0x85;
+export const GET_BOARD_MOUNT = 0x86;
+export const INITIALIZE_MECANUM_PLATFORM_ORIENTED = 0x87;
+export const INITIALIZE_OMNI_PLATFORM_ORIENTED = 0x88;
 export const ErrorCode = Object.freeze({
   INCOMPATIBLE_PROTOCOL: 1,
   INVALID_ARGUMENT: 2,
@@ -101,6 +128,9 @@ export const ErrorCode = Object.freeze({
   SENSOR_NOT_AVAILABLE: 16,
   SUBSCRIPTION_LIMIT: 17,
   SAMPLE_OUT_OF_RANGE: 18,
+  DRIVERS_ASLEEP: 19,
+  BOARD_IDLE: 20,
+  SOURCE_SWITCH_UNSAFE: 21,
 });
 export const ErrorDescriptions = Object.freeze({
   1: "The requested protocol version is incompatible with this firmware.",
@@ -121,7 +151,19 @@ export const ErrorDescriptions = Object.freeze({
   16: "The selected sensor is not defined on this board.",
   17: "This connection has no free subscription slots; unsubscribe an existing source first.",
   18: "The sensor reading is saturated; no valid measurement can be returned.",
+  19: "Driver sleep is active. Explicitly wake the drivers before requesting this operation.",
+  20: "Board idle is active. Explicitly wake the board before changing driver sleep or starting a subscription.",
+  21: "Stop all motor outputs, disarm all controllers and wait for stationary wheel observations before changing the tracking preference.",
 });
+/** A response for a different producer cannot describe the requested source. */
+export class FeedbackSourceMismatchError extends Error {
+  constructor(requested, received) {
+    super(`Expected health for feedback source ${requested}, received ${received}`);
+    this.name = 'FeedbackSourceMismatchError';
+    this.requested = requested;
+    this.received = received;
+  }
+}
 /** Preserve uint64/int64 precision instead of silently accepting rounded Numbers. */
 function exactBigInt(value) {
   if (typeof value === 'number' && !Number.isSafeInteger(value)) throw new TypeError('64-bit values require a bigint or a safe integer');
@@ -148,6 +190,124 @@ export const PwmFrequency = Object.freeze({
   KHZ_25: 25000,
   KHZ_50: 50000,
   KHZ_100: 100000,
+});
+export const MecanumRollerOrientation = Object.freeze({
+  STANDARD: 0,
+  MIRRORED: 1,
+});
+export const OmniWheelOrientation = Object.freeze({
+  REAR: 0,
+  FRONT: 1,
+});
+export const FusionMode = Object.freeze({
+  LEGACY_ENCODER: 0,
+  ENCODER_CORRECTION: 1,
+  FUSED: 2,
+});
+export const FusionHealth = Object.freeze({
+  DISABLED: 0,
+  WAITING: 1,
+  HEALTHY: 2,
+  FAULT: 3,
+});
+export const FusionFault = Object.freeze({
+  NONE: 0,
+  MOUNT_INVALID: 1,
+  ENCODER_UNAVAILABLE: 2,
+  IMU_UNAVAILABLE: 3,
+  STALE: 4,
+  TIMESTAMP: 5,
+  SATURATION: 6,
+  BIAS_NOT_READY: 7,
+  DISCONTINUITY: 8,
+  INHIBITED: 9,
+});
+export const FusionFlag = Object.freeze({
+  ESTIMATE_VALID: 1,
+  BIAS_READY: 2,
+  FRESH_TARGET_REQUIRED: 4,
+  CORRECTION_ACTIVE: 8,
+});
+export const FusionVectorKind = Object.freeze({
+  ENCODER_POSE: 0,
+  ENCODER_TWIST: 1,
+  FUSED_POSE: 2,
+  FUSED_TWIST: 3,
+  BIAS: 4,
+});
+export const ImuTrackingAction = Object.freeze({
+  START: 0,
+  STOP: 1,
+  RESET: 2,
+  RECALIBRATE: 3,
+});
+export const ImuTrackingState = Object.freeze({
+  STOPPED: 0,
+  CALIBRATING: 1,
+  TRACKING: 2,
+  FAULT: 3,
+  EXPIRED: 4,
+});
+export const ImuTrackingFault = Object.freeze({
+  NONE: 0,
+  NOT_STATIONARY: 1,
+  IMU_UNAVAILABLE: 2,
+  STALE: 3,
+  TIMESTAMP: 4,
+  SATURATION: 5,
+  BIAS_NOT_READY: 6,
+  WINDOW_EXPIRED: 7,
+  INHIBITED: 8,
+  MOUNT_INVALID: 9,
+});
+export const ImuTrackingFlag = Object.freeze({
+  ESTIMATE_VALID: 1,
+  BIAS_READY: 2,
+  RESTART_REQUIRED: 4,
+  MOUNT_CONFIRMED: 8,
+});
+export const ImuTrackingVectorKind = Object.freeze({
+  POSE: 0,
+  TWIST: 1,
+  BIAS: 2,
+});
+export const FeedbackSource = Object.freeze({
+  ENCODER: 0,
+  IMU_ONLY: 1,
+  FUSED: 2,
+  NONE: 255,
+});
+export const FeedbackSourceReason = Object.freeze({
+  OK: 0,
+  NOT_STARTED: 1,
+  CALIBRATING: 2,
+  UNAVAILABLE: 3,
+  STALE: 4,
+  EXPIRED: 5,
+  FAULT: 6,
+  INHIBITED: 7,
+  WAITING_SAMPLE: 8,
+  MOUNT_REQUIRED: 9,
+});
+export const FeedbackSourceVectorKind = Object.freeze({
+  POSE: 0,
+  TWIST: 1,
+});
+export const FeedbackSourceHealthState = Object.freeze({
+  HEALTHY: 0,
+  SUSPECT: 1,
+  UNAVAILABLE: 2,
+  INDETERMINATE: 3,
+});
+export const FeedbackSourceHealthFlag = Object.freeze({
+  PROVENANCE: 1,
+  FRESH: 2,
+  DISAGREEMENT: 4,
+  COMPARISON_AVAILABLE: 8,
+  RECOVERING: 16,
+  RESTART_REQUIRED: 32,
+  TIMESTAMP_FAULT: 64,
+  SATURATION: 128,
 });
 export const SubscriptionMode = Object.freeze({
   PERIODIC: 0,
@@ -733,6 +893,513 @@ export class MotorCurrentLimit {
   }
 }
 
+/** Volatile v0.4 fusion experiment diagnostics; see command descriptions. */
+export class FusionStatus {
+  /** Store one decoded payload. */
+  constructor(mode, health, fault, flags, sequence, timestamp_us, accel_age_us, gyro_age_us, encoder_age_us) {
+    this.mode = mode;
+    this.health = health;
+    this.fault = fault;
+    this.flags = flags;
+    this.sequence = sequence;
+    this.timestamp_us = timestamp_us;
+    this.accel_age_us = accel_age_us;
+    this.gyro_age_us = gyro_age_us;
+    this.encoder_age_us = encoder_age_us;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 28; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(FusionStatus.getSize());
+    const view = new DataView(buffer);
+    view.setUint8(0, this.mode);
+    view.setUint8(1, this.health);
+    view.setUint8(2, this.fault);
+    view.setUint8(3, this.flags);
+    view.setUint32(4, this.sequence, true);
+    view.setBigUint64(8, exactBigInt(this.timestamp_us), true);
+    view.setUint32(16, this.accel_age_us, true);
+    view.setUint32(20, this.gyro_age_us, true);
+    view.setUint32(24, this.encoder_age_us, true);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, FusionStatus.getSize());
+    return new FusionStatus(
+      view.getUint8(0),
+      view.getUint8(1),
+      view.getUint8(2),
+      view.getUint8(3),
+      view.getUint32(4, true),
+      view.getBigUint64(8, true),
+      view.getUint32(16, true),
+      view.getUint32(20, true),
+      view.getUint32(24, true),
+    );
+  }
+}
+
+/** Volatile v0.4 fusion experiment diagnostics; see command descriptions. */
+export class FusionVector {
+  /** Store one decoded payload. */
+  constructor(sequence, x, y, z) {
+    this.sequence = sequence;
+    this.x = x;
+    this.y = y;
+    this.z = z;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 28; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(FusionVector.getSize());
+    const view = new DataView(buffer);
+    view.setUint32(0, this.sequence, true);
+    view.setFloat64(4, this.x, true);
+    view.setFloat64(12, this.y, true);
+    view.setFloat64(20, this.z, true);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, FusionVector.getSize());
+    return new FusionVector(
+      view.getUint32(0, true),
+      view.getFloat64(4, true),
+      view.getFloat64(12, true),
+      view.getFloat64(20, true),
+    );
+  }
+}
+
+/** Volatile v0.4 fusion experiment diagnostics; see command descriptions. */
+export class FusionConfiguration {
+  /** Store one decoded payload. */
+  constructor(mode, mounting_yaw_rad) {
+    this.mode = mode;
+    this.mounting_yaw_rad = mounting_yaw_rad;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 9; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(FusionConfiguration.getSize());
+    const view = new DataView(buffer);
+    view.setUint8(0, this.mode);
+    view.setFloat64(1, this.mounting_yaw_rad, true);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, FusionConfiguration.getSize());
+    return new FusionConfiguration(
+      view.getUint8(0),
+      view.getFloat64(1, true),
+    );
+  }
+}
+
+/** Volatile IMU-only relative tracking diagnostics. */
+export class ImuTrackingStatus {
+  /** Store one decoded payload. */
+  constructor(state, fault, flags, reserved, sequence, timestamp_us, elapsed_us, accel_age_us, gyro_age_us) {
+    this.state = state;
+    this.fault = fault;
+    this.flags = flags;
+    this.reserved = reserved;
+    this.sequence = sequence;
+    this.timestamp_us = timestamp_us;
+    this.elapsed_us = elapsed_us;
+    this.accel_age_us = accel_age_us;
+    this.gyro_age_us = gyro_age_us;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 28; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(ImuTrackingStatus.getSize());
+    const view = new DataView(buffer);
+    view.setUint8(0, this.state);
+    view.setUint8(1, this.fault);
+    view.setUint8(2, this.flags);
+    view.setUint8(3, this.reserved);
+    view.setUint32(4, this.sequence, true);
+    view.setBigUint64(8, exactBigInt(this.timestamp_us), true);
+    view.setUint32(16, this.elapsed_us, true);
+    view.setUint32(20, this.accel_age_us, true);
+    view.setUint32(24, this.gyro_age_us, true);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, ImuTrackingStatus.getSize());
+    return new ImuTrackingStatus(
+      view.getUint8(0),
+      view.getUint8(1),
+      view.getUint8(2),
+      view.getUint8(3),
+      view.getUint32(4, true),
+      view.getBigUint64(8, true),
+      view.getUint32(16, true),
+      view.getUint32(20, true),
+      view.getUint32(24, true),
+    );
+  }
+}
+
+/** Volatile IMU-only relative tracking diagnostics. */
+export class ImuTrackingVector {
+  /** Store one decoded payload. */
+  constructor(sequence, x, y, z) {
+    this.sequence = sequence;
+    this.x = x;
+    this.y = y;
+    this.z = z;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 28; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(ImuTrackingVector.getSize());
+    const view = new DataView(buffer);
+    view.setUint32(0, this.sequence, true);
+    view.setFloat64(4, this.x, true);
+    view.setFloat64(12, this.y, true);
+    view.setFloat64(20, this.z, true);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, ImuTrackingVector.getSize());
+    return new ImuTrackingVector(
+      view.getUint32(0, true),
+      view.getFloat64(4, true),
+      view.getFloat64(12, true),
+      view.getFloat64(20, true),
+    );
+  }
+}
+
+/** Volatile IMU-only relative tracking diagnostics. */
+export class ImuTrackingConfiguration {
+  /** Store one decoded payload. */
+  constructor(mounting_yaw_rad, window_us) {
+    this.mounting_yaw_rad = mounting_yaw_rad;
+    this.window_us = window_us;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 12; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(ImuTrackingConfiguration.getSize());
+    const view = new DataView(buffer);
+    view.setFloat64(0, this.mounting_yaw_rad, true);
+    view.setUint32(8, this.window_us, true);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, ImuTrackingConfiguration.getSize());
+    return new ImuTrackingConfiguration(
+      view.getFloat64(0, true),
+      view.getUint32(8, true),
+    );
+  }
+}
+
+/** Board-wide selected tracking telemetry status. */
+export class FeedbackSourceStatus {
+  /** Store one decoded payload. */
+  constructor(requested, active, valid, reason, sequence, timestamp_us, origin_id, source_detail, age_us, max_age_ms) {
+    this.requested = requested;
+    this.active = active;
+    this.valid = valid;
+    this.reason = reason;
+    this.sequence = sequence;
+    this.timestamp_us = timestamp_us;
+    this.origin_id = origin_id;
+    this.source_detail = source_detail;
+    this.age_us = age_us;
+    this.max_age_ms = max_age_ms;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 27; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(FeedbackSourceStatus.getSize());
+    const view = new DataView(buffer);
+    view.setUint8(0, this.requested);
+    view.setUint8(1, this.active);
+    view.setUint8(2, this.valid);
+    view.setUint8(3, this.reason);
+    view.setUint32(4, this.sequence, true);
+    view.setBigUint64(8, exactBigInt(this.timestamp_us), true);
+    view.setUint32(16, this.origin_id, true);
+    view.setUint8(20, this.source_detail);
+    view.setUint32(21, this.age_us, true);
+    view.setUint16(25, this.max_age_ms, true);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, FeedbackSourceStatus.getSize());
+    return new FeedbackSourceStatus(
+      view.getUint8(0),
+      view.getUint8(1),
+      view.getUint8(2),
+      view.getUint8(3),
+      view.getUint32(4, true),
+      view.getBigUint64(8, true),
+      view.getUint32(16, true),
+      view.getUint8(20),
+      view.getUint32(21, true),
+      view.getUint16(25, true),
+    );
+  }
+}
+
+/** Selected source vector in the selector pose frame or native body twist frame. */
+export class FeedbackSourceVector {
+  /** Store one decoded payload. */
+  constructor(sequence, x, y, z) {
+    this.sequence = sequence;
+    this.x = x;
+    this.y = y;
+    this.z = z;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 28; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(FeedbackSourceVector.getSize());
+    const view = new DataView(buffer);
+    view.setUint32(0, this.sequence, true);
+    view.setFloat64(4, this.x, true);
+    view.setFloat64(12, this.y, true);
+    view.setFloat64(20, this.z, true);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, FeedbackSourceVector.getSize());
+    return new FeedbackSourceVector(
+      view.getUint32(0, true),
+      view.getFloat64(4, true),
+      view.getFloat64(12, true),
+      view.getFloat64(20, true),
+    );
+  }
+}
+
+/** Passive tracking mount, independent of chassis control. */
+export class FeedbackFusionMount {
+  /** Store one decoded payload. */
+  constructor(confirmed, mounting_yaw_rad) {
+    this.confirmed = confirmed;
+    this.mounting_yaw_rad = mounting_yaw_rad;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 9; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(FeedbackFusionMount.getSize());
+    const view = new DataView(buffer);
+    view.setUint8(0, this.confirmed);
+    view.setFloat64(1, this.mounting_yaw_rad, true);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, FeedbackFusionMount.getSize());
+    return new FeedbackFusionMount(
+      view.getUint8(0),
+      view.getFloat64(1, true),
+    );
+  }
+}
+
+/** Read producer health independently of selector and control. ENCODER is the running platform encoder batch, IMU_ONLY is physical BMI088 pair availability independent of the one-second estimate, FUSED is the passive fused estimate. Disagreement indicates conflicting observations without assigning sensor blame. HEALTHY means directly usable data. Comparability is separate. Historical provenance remains readable during failure. Reconnect reads board state. */
+export class FeedbackSourceHealth {
+  /** Store one decoded payload. */
+  constructor(source, health, reason, detail, flags, sequence, timestamp_us, age_us, max_age_us) {
+    this.source = source;
+    this.health = health;
+    this.reason = reason;
+    this.detail = detail;
+    this.flags = flags;
+    this.sequence = sequence;
+    this.timestamp_us = timestamp_us;
+    this.age_us = age_us;
+    this.max_age_us = max_age_us;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 28; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(FeedbackSourceHealth.getSize());
+    const view = new DataView(buffer);
+    view.setUint8(0, this.source);
+    view.setUint8(1, this.health);
+    view.setUint8(2, this.reason);
+    view.setUint8(3, this.detail);
+    view.setUint32(4, this.flags, true);
+    view.setUint32(8, this.sequence, true);
+    view.setBigUint64(12, exactBigInt(this.timestamp_us), true);
+    view.setUint32(20, this.age_us, true);
+    view.setUint32(24, this.max_age_us, true);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, FeedbackSourceHealth.getSize());
+    return new FeedbackSourceHealth(
+      view.getUint8(0),
+      view.getUint8(1),
+      view.getUint8(2),
+      view.getUint8(3),
+      view.getUint32(4, true),
+      view.getUint32(8, true),
+      view.getBigUint64(12, true),
+      view.getUint32(20, true),
+      view.getUint32(24, true),
+    );
+  }
+}
+
+/** Read independent last observed accelerometer and gyro acquisition times in board uptime microseconds. A timestamp of zero and age UINT32_MAX indicate no observed acquisition. These are physical source observations, independent of the finite IMU-only tracking window. A pair must meet the 35000 us age and 15000 us skew limits. */
+export class FeedbackImuChannels {
+  /** Store one decoded payload. */
+  constructor(accel_timestamp_us, gyro_timestamp_us, accel_age_us, gyro_age_us) {
+    this.accel_timestamp_us = accel_timestamp_us;
+    this.gyro_timestamp_us = gyro_timestamp_us;
+    this.accel_age_us = accel_age_us;
+    this.gyro_age_us = gyro_age_us;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 24; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(FeedbackImuChannels.getSize());
+    const view = new DataView(buffer);
+    view.setBigUint64(0, exactBigInt(this.accel_timestamp_us), true);
+    view.setBigUint64(8, exactBigInt(this.gyro_timestamp_us), true);
+    view.setUint32(16, this.accel_age_us, true);
+    view.setUint32(20, this.gyro_age_us, true);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, FeedbackImuChannels.getSize());
+    return new FeedbackImuChannels(
+      view.getBigUint64(0, true),
+      view.getBigUint64(8, true),
+      view.getUint32(16, true),
+      view.getUint32(20, true),
+    );
+  }
+}
+
+/** Signed board orientation and displacement to the chip in chassis axes. */
+export class ImuMountConfiguration {
+  /** Store one decoded payload. */
+  constructor(roll_cdeg, pitch_cdeg, yaw_cdeg, x_um, y_um, z_um, configured) {
+    this.roll_cdeg = roll_cdeg;
+    this.pitch_cdeg = pitch_cdeg;
+    this.yaw_cdeg = yaw_cdeg;
+    this.x_um = x_um;
+    this.y_um = y_um;
+    this.z_um = z_um;
+    this.configured = configured;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 19; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(ImuMountConfiguration.getSize());
+    const view = new DataView(buffer);
+    view.setInt16(0, this.roll_cdeg, true);
+    view.setInt16(2, this.pitch_cdeg, true);
+    view.setInt16(4, this.yaw_cdeg, true);
+    view.setInt32(6, this.x_um, true);
+    view.setInt32(10, this.y_um, true);
+    view.setInt32(14, this.z_um, true);
+    view.setUint8(18, this.configured);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, ImuMountConfiguration.getSize());
+    if (view.getInt16(0, true) < -18000 || view.getInt16(0, true) > 18000) throw new Error('Invalid mount roll_cdeg');
+    if (view.getInt16(2, true) < -9000 || view.getInt16(2, true) > 9000) throw new Error('Invalid mount pitch_cdeg');
+    if (view.getInt16(4, true) < -18000 || view.getInt16(4, true) > 18000) throw new Error('Invalid mount yaw_cdeg');
+    if (view.getInt32(6, true) < -10031098 || view.getInt32(6, true) > 10031098) throw new Error('Invalid mount x_um');
+    if (view.getInt32(10, true) < -10031098 || view.getInt32(10, true) > 10031098) throw new Error('Invalid mount y_um');
+    if (view.getInt32(14, true) < -10031098 || view.getInt32(14, true) > 10031098) throw new Error('Invalid mount z_um');
+    if (view.getUint8(18) > 1) throw new Error('Invalid mount configured flag');
+    return new ImuMountConfiguration(
+      view.getInt16(0, true),
+      view.getInt16(2, true),
+      view.getInt16(4, true),
+      view.getInt32(6, true),
+      view.getInt32(10, true),
+      view.getInt32(14, true),
+      Boolean(view.getUint8(18)),
+    );
+  }
+}
+
+/** Applied orientation and chassis-to-PCB underside-center displacement. */
+export class BoardMountConfiguration {
+  /** Store one decoded payload. */
+  constructor(roll_cdeg, pitch_cdeg, yaw_cdeg, x_um, y_um, z_um, configured) {
+    this.roll_cdeg = roll_cdeg;
+    this.pitch_cdeg = pitch_cdeg;
+    this.yaw_cdeg = yaw_cdeg;
+    this.x_um = x_um;
+    this.y_um = y_um;
+    this.z_um = z_um;
+    this.configured = configured;
+  }
+  /** Packed wire size; independent of JavaScript values. */
+  static getSize() { return 19; }
+  /** Encode a payload without a message header. */
+  encode() {
+    const buffer = new ArrayBuffer(BoardMountConfiguration.getSize());
+    const view = new DataView(buffer);
+    view.setInt16(0, this.roll_cdeg, true);
+    view.setInt16(2, this.pitch_cdeg, true);
+    view.setInt16(4, this.yaw_cdeg, true);
+    view.setInt32(6, this.x_um, true);
+    view.setInt32(10, this.y_um, true);
+    view.setInt32(14, this.z_um, true);
+    view.setUint8(18, this.configured);
+    return buffer;
+  }
+  /** Decode an exact response payload. uint64 values remain bigint. */
+  static decode(buffer) {
+    const view = payloadView(buffer, BoardMountConfiguration.getSize());
+    if (view.getInt16(0, true) < -18000 || view.getInt16(0, true) > 18000) throw new Error('Invalid mount roll_cdeg');
+    if (view.getInt16(2, true) < -9000 || view.getInt16(2, true) > 9000) throw new Error('Invalid mount pitch_cdeg');
+    if (view.getInt16(4, true) < -18000 || view.getInt16(4, true) > 18000) throw new Error('Invalid mount yaw_cdeg');
+    if (view.getInt32(6, true) < -10031098 || view.getInt32(6, true) > 10031098) throw new Error('Invalid mount x_um');
+    if (view.getInt32(10, true) < -10031098 || view.getInt32(10, true) > 10031098) throw new Error('Invalid mount y_um');
+    if (view.getInt32(14, true) < -10031098 || view.getInt32(14, true) > 10031098) throw new Error('Invalid mount z_um');
+    if (view.getUint8(18) > 1) throw new Error('Invalid mount configured flag');
+    if (!view.getUint8(18) && new Uint8Array(view.buffer, view.byteOffset, 18).some(byte => byte !== 0)) throw new Error('Unexpected unconfigured board pose');
+    return new BoardMountConfiguration(
+      view.getInt16(0, true),
+      view.getInt16(2, true),
+      view.getInt16(4, true),
+      view.getInt32(6, true),
+      view.getInt32(10, true),
+      view.getInt32(14, true),
+      Boolean(view.getUint8(18)),
+    );
+  }
+}
+
 /** Stable uint8 telemetry topic enum. */
 export const Topic = Object.freeze({
   ENCODER_ODOMETRY: 1,
@@ -820,7 +1487,7 @@ export class Commands {
     return MotorFaultStatus.decode(response);
   }
 
-  /** This command initializes a motor and prepares it for use. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels), so platform wheels are not reconfigured out from under the platform. Stops the motor velocity and position controllers before applying the command. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, INIT_REQUIRED. */
+  /** This command initializes a motor and prepares it for use. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels), so platform wheels are not reconfigured out from under the platform. Stops the motor velocity and position controllers before applying the command. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, INIT_REQUIRED. */
   async initialize_motor(motor_index, is_reversed) {
     const payload = new ArrayBuffer(2);
     const requestView = new DataView(payload);
@@ -829,7 +1496,7 @@ export class Commands {
     await this._request(INITIALIZE_MOTOR, payload, 0);
   }
 
-  /** This command sets the speed of the specified motor in PWM. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels); use the platform velocity commands to drive platform wheels. Stops the motor velocity and position controllers before applying the command. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, MOTOR_NOT_INITIALIZED, INIT_REQUIRED. */
+  /** This command sets the speed of the specified motor in PWM. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels); use the platform velocity commands to drive platform wheels. Stops the motor velocity and position controllers before applying the command. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, MOTOR_NOT_INITIALIZED, INIT_REQUIRED. */
   async set_motor_speed(motor_index, pwm) {
     const payload = new ArrayBuffer(9);
     const requestView = new DataView(payload);
@@ -846,7 +1513,7 @@ export class Commands {
     await this._request(STOP_MOTOR, payload, 0);
   }
 
-  /** Stops the motor's velocity and position controllers and applies a short brake, connecting both motor terminals to the same bridge rail to resist rotation. On dual-PWM boards both PWM control inputs are high. On V4 enable/direction boards DISABLE is low and EN duty is zero; direction does not affect braking. The command ID and payload are the same for all boards; firmware selects the hardware behavior from the board configuration. Short braking does not regulate or hold a specific position. A motor owned by an active platform is rejected with MOTOR_OWNED; use BRAKE_PLATFORM for platform wheels. Re-initialize the motor controller before using target-speed control again. Use STOP_MOTOR to coast instead. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED. */
+  /** Stops the motor's velocity and position controllers and applies a short brake, connecting both motor terminals to the same bridge rail to resist rotation. On dual-PWM boards both PWM control inputs are high. On V4 enable/direction boards DISABLE is low and EN duty is zero; direction does not affect braking. The command ID and payload are the same for all boards; firmware selects the hardware behavior from the board configuration. Short braking does not regulate or hold a specific position. A motor owned by an active platform is rejected with MOTOR_OWNED; use BRAKE_PLATFORM for platform wheels. Re-initialize the motor controller before using target-speed control again. Use STOP_MOTOR to coast instead. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED. */
   async brake_motor(motor_index) {
     const payload = new ArrayBuffer(1);
     const requestView = new DataView(payload);
@@ -854,7 +1521,7 @@ export class Commands {
     await this._request(BRAKE_MOTOR, payload, 0);
   }
 
-  /** This command sets the controller for the specified motor. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels), so it cannot create a competing controller on a platform wheel. Firmware 2.3.1 uses direct P+I+D PWM output with saturation anti-windup; retune gains from earlier builds. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, INIT_REQUIRED. */
+  /** This command sets the controller for the specified motor. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels), so it cannot create a competing controller on a platform wheel. Firmware 2.3.1 uses direct P+I+D PWM output with saturation anti-windup; retune gains from earlier builds. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, INIT_REQUIRED, ENCODER_NOT_INITIALIZED, SAMPLE_NOT_AVAILABLE. */
   async initialize_motor_controller(motor_index, is_reversed, encoder_index, is_encoder_reversed, encoder_resolution, kp, ki, kd, integral_limit) {
     if (!['number', 'string'].includes(typeof kp) || String(kp).trim() === '' || !Number.isFinite(Number(kp)) || Number(kp) < 0) throw new RangeError('kp must be finite and nonnegative');
     if (!['number', 'string'].includes(typeof ki) || String(ki).trim() === '' || !Number.isFinite(Number(ki)) || Number(ki) < 0) throw new RangeError('ki must be finite and nonnegative');
@@ -875,7 +1542,7 @@ export class Commands {
     await this._request(INITIALIZE_MOTOR_CONTROLLER, payload, 0);
   }
 
-  /** This command sets the target speed for the specified motor in radians. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels); use SET_PLATFORM_TARGET_VELOCITY to drive platform wheels. Suspends position mode; a new SET_MOTOR_POSITION reactivates it. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, CONTROLLER_NOT_INITIALIZED, INIT_REQUIRED. */
+  /** This command sets the target speed for the specified motor in radians. Rejected with MOTOR_OWNED if the motor is currently owned by an active platform (one of its wheels); use SET_PLATFORM_TARGET_VELOCITY to drive platform wheels. Suspends position mode; a new SET_MOTOR_POSITION reactivates it. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, MOTOR_OWNED, CONTROLLER_NOT_INITIALIZED, INIT_REQUIRED, ENCODER_NOT_INITIALIZED, SAMPLE_NOT_AVAILABLE. */
   async set_motor_target_speed(motor_index, speed) {
     const payload = new ArrayBuffer(9);
     const requestView = new DataView(payload);
@@ -1044,7 +1711,7 @@ export class Commands {
     await this._request(TOGGLE_STATUS_LED_STATE, payload, 0);
   }
 
-  /** This command initializes a mecanum (4-wheel) platform and prepares it for use. It uses motor and encoder indices 0, 1, 2 and 3 (one per wheel), which correspond to the is_reversed_0..3 and is_encoder_reversed_0..3 parameters. All four motor slots are occupied by this platform. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
+  /** This command initializes a mecanum (4-wheel) platform and prepares it for use. It uses motor and encoder indices 0, 1, 2 and 3 (one per wheel), which correspond to the is_reversed_0..3 and is_encoder_reversed_0..3 parameters. All four motor slots are occupied by this platform. Selects the STANDARD roller layout. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
   async initialize_mecanum_platform(is_reversed_0, is_reversed_1, is_reversed_2, is_reversed_3, is_encoder_reversed_0, is_encoder_reversed_1, is_encoder_reversed_2, is_encoder_reversed_3, length, width, wheels_diameter, encoder_resolution) {
     const payload = new ArrayBuffer(40);
     const requestView = new DataView(payload);
@@ -1063,7 +1730,7 @@ export class Commands {
     await this._request(INITIALIZE_MECANUM_PLATFORM, payload, 0);
   }
 
-  /** This command initializes an omni (3-wheel) platform and prepares it for use. It uses motor and encoder indices 0, 1 and 2 (one per wheel), which correspond to the is_reversed_0..2 and is_encoder_reversed_0..2 parameters. Motor index 3 is not used by this platform and stays free for other purposes. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
+  /** This command initializes an omni (3-wheel) platform and prepares it for use. It uses motor and encoder indices 0, 1 and 2 (one per wheel), which correspond to the is_reversed_0..2 and is_encoder_reversed_0..2 parameters. Motor index 3 is not used by this platform and stays free for other purposes. Selects the single-rear-wheel (REAR) orientation. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
   async initialize_omni_platform(is_reversed_0, is_reversed_1, is_reversed_2, is_encoder_reversed_0, is_encoder_reversed_1, is_encoder_reversed_2, wheels_diameter, robot_radius, encoder_resolution) {
     const payload = new ArrayBuffer(30);
     const requestView = new DataView(payload);
@@ -1079,7 +1746,7 @@ export class Commands {
     await this._request(INITIALIZE_OMNI_PLATFORM, payload, 0);
   }
 
-  /** This command initializes a differential (2-wheel) platform and prepares it for use. It uses motor and encoder index 0 for the left wheel and index 1 for the right wheel, which correspond to the is_reversed_0/1 and is_encoder_reversed_0/1 parameters. Motor indices 2 and 3 are not used by this platform and stay free for other purposes. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
+  /** This command initializes a differential (2-wheel) platform and prepares it for use. It uses motor and encoder index 0 for the left wheel and index 1 for the right wheel, which correspond to the is_reversed_0/1 and is_encoder_reversed_0/1 parameters. Motor indices 2 and 3 are not used by this platform and stay free for other purposes. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
   async initialize_differential_platform(is_reversed_0, is_reversed_1, is_encoder_reversed_0, is_encoder_reversed_1, wheel_diameter, wheel_base, encoder_resolution) {
     const payload = new ArrayBuffer(28);
     const requestView = new DataView(payload);
@@ -1093,7 +1760,7 @@ export class Commands {
     await this._request(INITIALIZE_DIFFERENTIAL_PLATFORM, payload, 0);
   }
 
-  /** This command sets the velocity for the platform in PWM. Stops platform velocity and position control before applying PWM. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, PLATFORM_NOT_INITIALIZED, INIT_REQUIRED. */
+  /** This command sets the velocity for the platform in PWM. Stops platform velocity and position control before applying PWM. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, PLATFORM_NOT_INITIALIZED, INIT_REQUIRED. */
   async set_platform_velocity(x, y, t) {
     const payload = new ArrayBuffer(24);
     const requestView = new DataView(payload);
@@ -1103,7 +1770,7 @@ export class Commands {
     await this._request(SET_PLATFORM_VELOCITY, payload, 0);
   }
 
-  /** This command sets the controller for the platform. Firmware 2.3.1 uses direct P+I+D PWM output with saturation anti-windup; retune gains from earlier builds. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, PLATFORM_NOT_INITIALIZED, INIT_REQUIRED. */
+  /** This command sets the controller for the platform. Firmware 2.3.1 uses direct P+I+D PWM output with saturation anti-windup; retune gains from earlier builds. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, ENCODER_NOT_INITIALIZED, PLATFORM_NOT_INITIALIZED, INIT_REQUIRED, SAMPLE_NOT_AVAILABLE. */
   async start_platform_controller(kp, ki, kd, integral_limit) {
     if (!['number', 'string'].includes(typeof kp) || String(kp).trim() === '' || !Number.isFinite(Number(kp)) || Number(kp) < 0) throw new RangeError('kp must be finite and nonnegative');
     if (!['number', 'string'].includes(typeof ki) || String(ki).trim() === '' || !Number.isFinite(Number(ki)) || Number(ki) < 0) throw new RangeError('ki must be finite and nonnegative');
@@ -1119,7 +1786,7 @@ export class Commands {
     await this._request(START_PLATFORM_CONTROLLER, payload, 0);
   }
 
-  /** This command set the target velocity for the platform in meters per second. Cancels platform position control; initialize it again before another pose target. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, PLATFORM_NOT_INITIALIZED, CONTROLLER_NOT_INITIALIZED, INIT_REQUIRED. */
+  /** This command set the target velocity for the platform in meters per second. Cancels platform position control; initialize it again before another pose target. With an active fusion experiment, rejects invalid or stale feedback and targets fenced by an earlier fault with SAMPLE_NOT_AVAILABLE; both experimental modes require 100 ms of observed unchanged configured counters for initial rest arming. Once armed, ordinary target updates remain accepted while moving. Wait for healthy feedback and submit a fresh target; stopped cold configuration can ACK while still WAITING. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, PLATFORM_NOT_INITIALIZED, CONTROLLER_NOT_INITIALIZED, INIT_REQUIRED, SAMPLE_NOT_AVAILABLE, ENCODER_NOT_INITIALIZED. */
   async set_platform_target_velocity(x, y, t) {
     const payload = new ArrayBuffer(24);
     const requestView = new DataView(payload);
@@ -1142,7 +1809,7 @@ export class Commands {
     await this._request(STOP_PLATFORM_CONTROLLER, payload, 0);
   }
 
-  /** This command starts the odometry calculation for the platform. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CLOCK_NOT_READY, PLATFORM_NOT_INITIALIZED. */
+  /** This command starts the odometry calculation for the platform. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CLOCK_NOT_READY, ENCODER_NOT_INITIALIZED, PLATFORM_NOT_INITIALIZED. */
   async start_platform_odometry() {
     const payload = new ArrayBuffer(0);
     await this._request(START_PLATFORM_ODOMETRY, payload, 0);
@@ -1167,7 +1834,7 @@ export class Commands {
     return PlatformOdometrySample.decode(response);
   }
 
-  /** Stops the platform velocity and position controllers and applies a short brake to this platform's wheel motors using the selected board's motor control model. Other motors are not affected. The brake resists motion until a new command is issued; it does not regulate or hold a specific position. Call START_PLATFORM_CONTROLLER again to resume closed-loop platform control. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR. */
+  /** Stops the platform velocity and position controllers and applies a short brake to this platform's wheel motors using the selected board's motor control model. Other motors are not affected. The brake resists motion until a new command is issued; it does not regulate or hold a specific position. Call START_PLATFORM_CONTROLLER again to resume closed-loop platform control. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR. */
   async brake_platform() {
     const payload = new ArrayBuffer(0);
     await this._request(BRAKE_PLATFORM, payload, 0);
@@ -1216,7 +1883,7 @@ export class Commands {
     return HeartbeatConfig.decode(response);
   }
 
-  /** Create or replace this connection's subscription for an odometry source. Requires READY, enabled heartbeat and running odometry. The interval must be at least twice the calculation period. Stop or reset pauses delivery until a fresh sample is available. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CLOCK_NOT_READY, ODOMETRY_NOT_INITIALIZED.
+  /** Create or replace this connection's subscription for an odometry source. Requires READY, enabled heartbeat and running odometry. The interval must be at least twice the calculation period. Stop or reset pauses delivery until a fresh sample is available. Errors: BOARD_IDLE, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CLOCK_NOT_READY, ODOMETRY_NOT_INITIALIZED.
    * @deprecated Retired since protocol 2.6.0. Use SUBSCRIBE. Kept for compatibility; eligible for removal in protocol 3.0.0.
     */
   async subscribe_odometry(source, interval_ms) {
@@ -1243,7 +1910,7 @@ export class Commands {
     await this._request(POLL_TELEMETRY, payload, 0);
   }
 
-  /** Initialize a bounded proportional position loop over an already running motor velocity controller. Zero is the current encoder position; initially holds zero. Stop/delete/reinitialize of velocity control discards position tuning. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, MOTOR_OWNED. */
+  /** Initialize a bounded proportional position loop over an already running motor velocity controller. Zero is the current encoder position; initially holds zero. Stop/delete/reinitialize of velocity control discards position tuning. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, MOTOR_OWNED, ENCODER_NOT_INITIALIZED, SAMPLE_NOT_AVAILABLE. */
   async initialize_motor_position_controller(motor_index, kp, max_speed, tolerance) {
     if (typeof motor_index !== 'number' || !Number.isFinite(motor_index)) throw new TypeError('motor_index must be a finite number');
     if (!Number.isInteger(motor_index) || motor_index < 0 || motor_index > 3) throw new RangeError('motor_index must be 0..3');
@@ -1272,7 +1939,7 @@ export class Commands {
     await this._request(RESET_MOTOR_POSITION, payload, 0);
   }
 
-  /** Set an absolute multi-turn angle in radians relative to the last position initialization/reset. Requires initialized position and velocity controllers. Reactivates position mode after a velocity override. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, MOTOR_OWNED. */
+  /** Set an absolute multi-turn angle in radians relative to the last position initialization/reset. Requires initialized position and velocity controllers. Reactivates position mode after a velocity override. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, MOTOR_OWNED, ENCODER_NOT_INITIALIZED, SAMPLE_NOT_AVAILABLE. */
   async set_motor_position(motor_index, position) {
     if (typeof motor_index !== 'number' || !Number.isFinite(motor_index)) throw new TypeError('motor_index must be a finite number');
     if (!Number.isInteger(motor_index) || motor_index < 0 || motor_index > 3) throw new RangeError('motor_index must be 0..3');
@@ -1296,7 +1963,7 @@ export class Commands {
     return view.getFloat64(0, true);
   }
 
-  /** Initialize bounded pose control after START_PLATFORM_CONTROLLER. Starts odometry if needed, preserves its world frame and zeros velocity targets. No motion until SET_PLATFORM_POSITION. Supports omni, mecanum and differential bases. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, PLATFORM_NOT_INITIALIZED, ENCODER_NOT_INITIALIZED. */
+  /** Initialize bounded pose control after START_PLATFORM_CONTROLLER. Starts odometry if needed, preserves its world frame and zeros velocity targets. No motion until SET_PLATFORM_POSITION. Supports omni, mecanum and differential bases. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, PLATFORM_NOT_INITIALIZED, ENCODER_NOT_INITIALIZED, SAMPLE_NOT_AVAILABLE. */
   async initialize_platform_position_controller(linear_kp, angular_kp, max_linear_speed, max_angular_speed, position_tolerance, heading_tolerance) {
     if (typeof linear_kp !== 'number' || !Number.isFinite(linear_kp)) throw new TypeError('linear_kp must be a finite number');
     if (linear_kp <= 0) throw new RangeError('linear_kp must be positive');
@@ -1327,7 +1994,7 @@ export class Commands {
     await this._request(RESET_PLATFORM_POSITION, payload, 0);
   }
 
-  /** Set absolute (x,y,t) in the current odometry world frame: meters, meters, radians. Heading uses the shortest angular path. Requires initialized position control and fresh odometry. Differential bases approach the point before aligning final heading. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, PLATFORM_NOT_INITIALIZED, ODOMETRY_NOT_INITIALIZED, SAMPLE_NOT_AVAILABLE. */
+  /** Set absolute (x,y,t) in the current odometry world frame: meters, meters, radians. Heading uses the shortest angular path. Requires initialized position control and fresh odometry. Differential bases approach the point before aligning final heading. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, PLATFORM_NOT_INITIALIZED, ODOMETRY_NOT_INITIALIZED, SAMPLE_NOT_AVAILABLE, ENCODER_NOT_INITIALIZED. */
   async set_platform_position(x, y, t) {
     if (typeof x !== 'number' || !Number.isFinite(x)) throw new TypeError('x must be a finite number');
     if (typeof y !== 'number' || !Number.isFinite(y)) throw new TypeError('y must be a finite number');
@@ -1340,7 +2007,7 @@ export class Commands {
     await this._request(SET_PLATFORM_POSITION, payload, 0);
   }
 
-  /** Initialize a position PID over the existing velocity controller. Initialize a bounded position PID loop over an already running motor velocity controller. Zero is the current encoder position; initially holds zero. Stop/delete/reinitialize of velocity control discards position tuning. Clears position PID history. Ki and Kd may be zero to disable I and D. Integral limits bound the integral velocity contribution. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, MOTOR_OWNED. */
+  /** Initialize a position PID over the existing velocity controller. Initialize a bounded position PID loop over an already running motor velocity controller. Zero is the current encoder position; initially holds zero. Stop/delete/reinitialize of velocity control discards position tuning. Clears position PID history. Ki and Kd may be zero to disable I and D. Integral limits bound the integral velocity contribution. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, MOTOR_OWNED, ENCODER_NOT_INITIALIZED, SAMPLE_NOT_AVAILABLE. */
   async initialize_motor_position_pid_controller(motor_index, kp, max_speed, tolerance, ki, kd, integral_limit) {
     if (typeof motor_index !== 'number' || !Number.isFinite(motor_index)) throw new TypeError('motor_index must be a finite number');
     if (!Number.isInteger(motor_index) || motor_index < 0 || motor_index > 3) throw new RangeError('motor_index must be 0..3');
@@ -1368,7 +2035,7 @@ export class Commands {
     await this._request(INITIALIZE_MOTOR_POSITION_PID_CONTROLLER, payload, 0);
   }
 
-  /** Initialize a position PID over the existing velocity controller. Initialize bounded pose control after START_PLATFORM_CONTROLLER. Starts odometry if needed, preserves its world frame and zeros velocity targets. No motion until SET_PLATFORM_POSITION. Supports omni, mecanum and differential bases. Clears position PID history. Ki and Kd may be zero to disable I and D. Integral limits bound the integral velocity contribution. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, PLATFORM_NOT_INITIALIZED, ENCODER_NOT_INITIALIZED. */
+  /** Initialize a position PID over the existing velocity controller. Initialize bounded pose control after START_PLATFORM_CONTROLLER. Starts odometry if needed, preserves its world frame and zeros velocity targets. No motion until SET_PLATFORM_POSITION. Supports omni, mecanum and differential bases. Clears position PID history. Ki and Kd may be zero to disable I and D. Integral limits bound the integral velocity contribution. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CONTROLLER_NOT_INITIALIZED, PLATFORM_NOT_INITIALIZED, ENCODER_NOT_INITIALIZED, SAMPLE_NOT_AVAILABLE. */
   async initialize_platform_position_pid_controller(linear_kp, angular_kp, max_linear_speed, max_angular_speed, position_tolerance, heading_tolerance, linear_ki, linear_kd, linear_integral_limit, angular_ki, angular_kd, angular_integral_limit) {
     if (typeof linear_kp !== 'number' || !Number.isFinite(linear_kp)) throw new TypeError('linear_kp must be a finite number');
     if (linear_kp <= 0) throw new RangeError('linear_kp must be positive');
@@ -1411,7 +2078,7 @@ export class Commands {
     await this._request(INITIALIZE_PLATFORM_POSITION_PID_CONTROLLER, payload, 0);
   }
 
-  /** Create or replace this connection's subscription for a topic and resource. Requires READY and enabled heartbeat. Odometry must be running. The interval must meet the topic minimum and, for odometry, be at least twice the calculation period. Failed reads pause delivery until recovery. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, ODOMETRY_NOT_INITIALIZED, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SUBSCRIPTION_LIMIT, SAMPLE_OUT_OF_RANGE. */
+  /** Create or replace this connection's subscription for a topic and resource. Requires READY and enabled heartbeat. Odometry must be running. The interval must meet the topic minimum and, for odometry, be at least twice the calculation period. Failed reads pause delivery until recovery. Errors: BOARD_IDLE, INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, ODOMETRY_NOT_INITIALIZED, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SUBSCRIPTION_LIMIT, SAMPLE_OUT_OF_RANGE. */
   async subscribe(topic_id, index, interval_ms) {
     if (!Number.isInteger(topic_id) || !Object.hasOwn(TopicDefinitions, topic_id)) throw new RangeError('Invalid topic');
     if (!Number.isInteger(index) || index < 0 || index > TopicDefinitions[topic_id].indexMax) throw new RangeError('Invalid topic index');
@@ -1435,7 +2102,7 @@ export class Commands {
     await this._request(UNSUBSCRIBE, payload, 0);
   }
 
-  /** Create or replace this connection's subscription with a delivery mode. Requires READY and enabled heartbeat. The interval sets the sampling cadence and must meet the topic minimum; odometry also requires twice the calculation period. ON_CHANGE sends an initial snapshot and changed values, excluding timestamp and clock metadata. Failed reads pause delivery; recovery sends a fresh snapshot. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, ODOMETRY_NOT_INITIALIZED, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SUBSCRIPTION_LIMIT, SAMPLE_OUT_OF_RANGE. */
+  /** Create or replace this connection's subscription with a delivery mode. Requires READY and enabled heartbeat. The interval sets the sampling cadence and must meet the topic minimum; odometry also requires twice the calculation period. ON_CHANGE sends an initial snapshot and changed values, excluding timestamp and clock metadata. Failed reads pause delivery; recovery sends a fresh snapshot. Errors: BOARD_IDLE, INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, ODOMETRY_NOT_INITIALIZED, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SUBSCRIPTION_LIMIT, SAMPLE_OUT_OF_RANGE. */
   async subscribe_with_mode(topic_id, index, interval_ms, mode) {
     if (!Number.isInteger(topic_id) || !Object.hasOwn(TopicDefinitions, topic_id)) throw new RangeError('Invalid topic');
     if (!Object.values(SubscriptionMode).includes(mode)) throw new RangeError('Invalid subscription mode');
@@ -1450,7 +2117,7 @@ export class Commands {
     await this._request(SUBSCRIBE_WITH_MODE, payload, 0);
   }
 
-  /** Stop the initialized motor and its controller, clear latched driver faults, and return fresh diagnostics. Requires a ready connection. The motor remains stopped. Active conditions can remain reported. Platform-owned motors are rejected. Driver configuration is preserved; sleeping drivers are not woken. A failed clear or unreadable verification returns an error. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, SENSOR_NOT_AVAILABLE, MOTOR_OWNED, MOTOR_NOT_INITIALIZED, INTERNAL_ERROR, CLOCK_NOT_READY. */
+  /** Stop the initialized motor and its controller, clear latched driver faults, and return fresh diagnostics. Requires a ready connection. The motor remains stopped. Active conditions can remain reported. Platform-owned motors are rejected. Driver configuration is preserved; sleeping drivers are not woken. A failed clear or unreadable verification returns an error. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, SENSOR_NOT_AVAILABLE, MOTOR_OWNED, MOTOR_NOT_INITIALIZED, INTERNAL_ERROR, CLOCK_NOT_READY. */
   async clear_motor_faults(motor_index) {
     if (!Number.isInteger(motor_index) || motor_index < 0 || motor_index > 3) throw new RangeError('motor_index must be 0..3');
     const payload = new ArrayBuffer(1);
@@ -1460,7 +2127,7 @@ export class Commands {
     return MotorFaultStatus.decode(response);
   }
 
-  /** Read the applied hardware current-regulation setting in milliamps. Requires a ready connection and an initialized, awake motor driver. Does not change motor state. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, MOTOR_NOT_INITIALIZED, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
+  /** Read the applied hardware current-regulation setting in milliamps. Requires a ready connection and an initialized, awake motor driver. Does not change motor state. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, MOTOR_NOT_INITIALIZED, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
   async get_motor_current_limit(motor_index) {
     if (!Number.isInteger(motor_index) || motor_index < 0 || motor_index > 3) throw new RangeError('motor_index must be 0..3');
     const payload = new ArrayBuffer(1);
@@ -1470,7 +2137,7 @@ export class Commands {
     return MotorCurrentLimit.decode(response);
   }
 
-  /** Stop the motor and its controller, apply and verify hardware current regulation, and return the applied setting. Requires a ready connection and an initialized, awake driver. Only board-supported thresholds are accepted. Platform-owned motors are rejected. The motor stays stopped. Settings are volatile; motor reinitialization applies board defaults. Driver power loss requires reinitialization. Overcurrent protection is unchanged. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, MOTOR_NOT_INITIALIZED, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, MOTOR_OWNED. */
+  /** Stop the motor and its controller, apply and verify hardware current regulation, and return the applied setting. Requires a ready connection and an initialized, awake driver. Only board-supported thresholds are accepted. Platform-owned motors are rejected. The motor stays stopped. Settings are volatile; motor reinitialization applies board defaults. Driver power loss requires reinitialization. Overcurrent protection is unchanged. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, MOTOR_NOT_INITIALIZED, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, MOTOR_OWNED. */
   async set_motor_current_limit(motor_index, enabled, threshold_ma) {
     if (!Number.isInteger(motor_index) || motor_index < 0 || motor_index > 3) throw new RangeError('motor_index must be 0..3');
     if (typeof enabled !== 'boolean' || !Number.isInteger(threshold_ma) || threshold_ma < 1 || threshold_ma > 65535) throw new RangeError('Expected enabled boolean and threshold_ma integer from 1 to 65535');
@@ -1483,7 +2150,7 @@ export class Commands {
     return MotorCurrentLimit.decode(response);
   }
 
-  /** Create or replace a subscription with independent trigger and delivery settings. Send an initial snapshot. PERIODIC uses poll_interval_ms; ON_EVENT requires zero polling interval and an event-capable source. ON_CHANGE suppresses unchanged values, excluding timestamp and clock metadata; max_silence_ms requests fresh refreshes, or zero disables refreshes. Delivery is best effort and requires READY and heartbeat. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, ODOMETRY_NOT_INITIALIZED, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SUBSCRIPTION_LIMIT, SAMPLE_OUT_OF_RANGE. */
+  /** Create or replace a subscription with independent trigger and delivery settings. Send an initial snapshot. PERIODIC uses poll_interval_ms; ON_EVENT requires zero polling interval and an event-capable source. ON_CHANGE suppresses unchanged values, excluding timestamp and clock metadata; max_silence_ms requests fresh refreshes, or zero disables refreshes. Delivery is best effort and requires READY and heartbeat. Errors: BOARD_IDLE, INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, ODOMETRY_NOT_INITIALIZED, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SUBSCRIPTION_LIMIT, SAMPLE_OUT_OF_RANGE. */
   async subscribe_configured(topic_id, index, poll_interval_ms, trigger, delivery, max_silence_ms) {
     if (!Number.isInteger(topic_id) || !Object.hasOwn(TopicDefinitions, topic_id)) throw new RangeError('Invalid topic');
     if (!Number.isInteger(index) || index < 0 || index > TopicDefinitions[topic_id].indexMax) throw new RangeError('Invalid topic index');
@@ -1510,7 +2177,7 @@ export class Commands {
     return view.getUint32(0, true);
   }
 
-  /** Stop all motors and motor/platform controllers, then set the board-wide PWM frequency. All motors remain stopped. The setting survives motor initialization and connection changes; reboot restores the board default. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, INTERNAL_ERROR. */
+  /** Stop all motors and motor/platform controllers, then set the board-wide PWM frequency. All motors remain stopped. The setting survives motor initialization and connection changes. At boot the board uses its default unless it restores an explicitly saved v0.4 configuration. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, INTERNAL_ERROR. */
   async set_pwm_frequency(frequency_hz) {
     if (!Object.values(PwmFrequency).includes(frequency_hz)) throw new RangeError('Invalid PWM frequency');
     const payload = new ArrayBuffer(4);
@@ -1519,5 +2186,314 @@ export class Commands {
     const response = await this._request(SET_PWM_FREQUENCY, payload, 4);
     const view = payloadView(response, 4);
     return view.getUint32(0, true);
+  }
+
+  /** Save the complete running platform setup and motor PWM frequency to onboard FRAM. Available on v0.4 with protocol 2.14 or later. ACK confirms a durable save. A subsequent boot restores the setup with outputs stopped. Protocol 2.23+ also saves the applied physical IMU mount and accepts an explicitly configured mount before platform commissioning. Errors: INVALID_LENGTH, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, PLATFORM_NOT_INITIALIZED, INVALID_ARGUMENT, INTERNAL_ERROR. */
+  async save_configuration() {
+    const payload = new ArrayBuffer(0);
+    await this._request(SAVE_CONFIGURATION, payload, 0);
+  }
+
+  /** Read a running configuration field. Fields 0 through 6 require v0.4. Field 7 is available on all boards with protocol 2.25 and a configured mecanum platform. Field 8 is available on all boards with protocol 2.26 and a configured Omni platform. Use GET_PWM_FREQUENCY for the board-wide switching frequency. Errors: INVALID_LENGTH, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INVALID_ARGUMENT, PLATFORM_NOT_INITIALIZED. */
+  async get_configuration_field(field, index) {
+    if (![field, index].every(v => Number.isInteger(v) && v >= 0 && v <= 255)) throw new RangeError('Configuration field and index must be unsigned bytes');
+    const payload = new ArrayBuffer(2);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, field);
+    requestView.setUint8(1, index);
+    const response = await this._request(GET_CONFIGURATION_FIELD, payload, 8);
+    const view = payloadView(response, 8);
+    return view.getFloat64(0, true);
+  }
+
+  /** Set the board-wide motor inhibit. Entry stops all controllers and blocks new motion. On v0.3 and Nano (protocol 2.17), entry holds each DRV8870 input pair low. Release keeps the inputs low until a fresh drive or explicit short brake. On v0.4 (protocol 2.15+), wake verifies retained settings for initialized drivers and leaves outputs stopped. Failed transitions retain the inhibit for explicit retry. Requires READY and a profile supporting driver sleep. Errors: DRIVERS_ASLEEP, BOARD_IDLE, INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
+  async set_driver_sleep(sleeping) {
+    if (sleeping !== 0 && sleeping !== 1) throw new RangeError('sleeping must be 0 (awake) or 1 (asleep)');
+    const payload = new ArrayBuffer(1);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, sleeping);
+    await this._request(SET_DRIVER_SLEEP, payload, 0);
+  }
+
+  /** Read the software motor inhibit across connections. It clears at boot. A zero permits commands and does not establish that each chip is awake. Requires READY and driver sleep support (v0.4 since protocol 2.15, original v0.3 and Nano since 2.17). Errors: INVALID_LENGTH, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE. */
+  async get_driver_sleep() {
+    const payload = new ArrayBuffer(0);
+    const response = await this._request(GET_DRIVER_SLEEP, payload, 1);
+    const view = payloadView(response, 1);
+    const sleeping = view.getUint8(0);
+    if (sleeping !== 0 && sleeping !== 1) throw new Error('Invalid driver sleep state');
+    return sleeping;
+  }
+
+  /** Set communication-preserving board idle. Entry (1) stops control, inhibits the drivers and permits shallow CPU sleep between tasks. USB traffic, time sync, queries and heartbeat keep using the existing session. Only explicit exit (0) clears idle. Exit preserves a prior independent driver inhibit and leaves outputs stopped. On original v0.3 and Nano both DRV8870 inputs stay low until fresh drive or brake. On v0.4, previously active drivers are verified before release. A failed transition retains idle and inhibit for explicit retry. Requires READY, an idle-capable profile and protocol 2.18 on v0.3 or Nano, or 2.16 on v0.4. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, BOARD_IDLE. */
+  async set_board_idle(idle) {
+    if (idle !== 0 && idle !== 1) throw new RangeError('idle must be 0 (active) or 1 (idle)');
+    const payload = new ArrayBuffer(1);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, idle);
+    await this._request(SET_BOARD_IDLE, payload, 0);
+  }
+
+  /** Read the shared logical idle request without clearing it. Interrupts can resume the CPU while this request remains set. GET_DRIVER_SLEEP reports the effective driver inhibit. Idle survives reconnect and clears at reset. Requires READY and board idle support (original v0.3 and Nano since protocol 2.18, v0.4 since 2.16). Errors: INVALID_LENGTH, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE. */
+  async get_board_idle() {
+    const payload = new ArrayBuffer(0);
+    const response = await this._request(GET_BOARD_IDLE, payload, 1);
+    const view = payloadView(response, 1);
+    const idle = view.getUint8(0);
+    if (idle !== 0 && idle !== 1) throw new Error('Invalid board idle state');
+    return idle;
+  }
+
+  /** Configure the volatile v0.4 experiment only while motion is stopped and all commanded targets and motor outputs are zero; initialized controllers with idle zero targets are allowed. Mode 0 retains the legacy encoder path (boot default), 1 uses encoder feedback with the common chassis correction, and 2 uses fused feedback with that same correction. No IMU-only mode. Without a configured physical mount, modes 1/2 require a rigid, level board with component side up, IMU at the chassis reference point, and mounting_yaw_rad as the angle of board +X expressed in chassis XY, counterclockwise about chassis +Z. Sensor-to-board axes are (-x,-y,+z); chassis axes are forward/left/up. Reject nonfinite or out-of-range yaw, any observed configured encoder movement in the preceding 100 ms, or a counter change since a fresh sample. Stopped cold setup may ACK in WAITING; ACK does not establish readiness. Both experimental modes require 100 ms of observed unchanged configured counters for initial rest arming before accepting a motion target; once armed, ordinary target updates remain accepted while moving; fused bias calibration may run within that window. Reconfiguration cancels old targets. Sources may requalify automatically after an ordinary sensor fault, but healthy inputs and a fresh target are required before control resumes. Does not save to FRAM or start motion. Requires READY, exact v0.4.0 fusion capability and protocol 2.19. On protocol 2.23+, a configured physical mount takes precedence over legacy yaw. Use GET_BOARD_MOUNT on 2.24+ for PCB underside-center geometry. On 2.23 use GET_IMU_MOUNT for chip-reference geometry. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, BOARD_IDLE, DRIVERS_ASLEEP, PLATFORM_NOT_INITIALIZED. */
+  async set_fusion_experiment(mode, mounting_yaw_rad) {
+    if (!Number.isInteger(mode) || mode < 0 || mode > 2) throw new RangeError('Invalid fusion experiment mode');
+    if (typeof mounting_yaw_rad !== 'number' || !Number.isFinite(mounting_yaw_rad) || Math.abs(mounting_yaw_rad) > Math.PI) throw new RangeError('Mounting yaw must be finite radians within [-pi, pi]');
+    const payload = new ArrayBuffer(9);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, mode);
+    requestView.setFloat64(1, mounting_yaw_rad, true);
+    await this._request(SET_FUSION_EXPERIMENT, payload, 0);
+  }
+
+  /** Read experiment mode, health, fault, flags and timestamped sample ages without setting targets or changing configuration. A read may enforce an expired feedback deadline, clear the live target and coast. Health/fault/flag values use the FusionHealth/FusionFault/FusionFlag catalogs. Timestamp uses the monotonic board clock; unavailable ages are UINT32_MAX. The physical IMU producer waits 2 ms between passes, without guaranteeing a 2 ms acquisition cadence, and pairs only acquisition windows entirely preceding the encoder timestamp: each window is at most 5 ms wide, worst-case accel/gyro skew at most 15 ms, and age at most 35 ms. These are software acceptance limits, not a physical timing qualification. ESTIMATE_VALID describes the selected experiment estimate, not physical accuracy. Requires READY, exact v0.4.0 fusion capability and protocol 2.19. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
+  async get_fusion_status() {
+    const payload = new ArrayBuffer(0);
+    const response = await this._request(GET_FUSION_STATUS, payload, 28);
+    const sample = FusionStatus.decode(response);
+    if (sample.mode > 2 || sample.health > 3 || sample.fault > 9 || sample.flags > 15) throw new Error('Invalid fusion status');
+    return sample;
+  }
+
+  /** Read one compact experiment vector: 0 encoder pose (relative x,y,yaw), 1 encoder body twist (vx,vy,yaw rate), 2 fused pose, 3 fused body twist, 4 estimated bias (ax,ay,gyro z). Units are metres, seconds and radians. On outage recovery, the last fused-from-encoder world transform is reapplied to the current encoder pose. Returns SAMPLE_NOT_AVAILABLE when the requested estimate is invalid. Match sequence with GET_FUSION_STATUS to associate timestamp/health; different sequences are different snapshots. At most 28 payload bytes so the framed reply fits Arduino Wire32. Does not reset state or start motion. Requires READY, exact v0.4.0 fusion capability and protocol 2.19. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SAMPLE_NOT_AVAILABLE. */
+  async get_fusion_vector(kind) {
+    if (!Number.isInteger(kind) || kind < 0 || kind > 4) throw new RangeError('Invalid fusion vector kind');
+    const payload = new ArrayBuffer(1);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, kind);
+    const response = await this._request(GET_FUSION_VECTOR, payload, 28);
+    const sample = FusionVector.decode(response);
+    if (![sample.x, sample.y, sample.z].every(Number.isFinite)) throw new Error('Invalid fusion vector');
+    return sample;
+  }
+
+  /** Read the volatile experiment mode and declared mounting yaw without changing state. Reset selects legacy encoder mode; SAVE_CONFIGURATION does not persist this experiment. Requires READY, exact v0.4.0 fusion capability and protocol 2.19. On protocol 2.23+, a configured physical mount takes precedence over legacy yaw. Use GET_BOARD_MOUNT on 2.24+ for PCB underside-center geometry. On 2.23 use GET_IMU_MOUNT for chip-reference geometry. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
+  async get_fusion_configuration() {
+    const payload = new ArrayBuffer(0);
+    const response = await this._request(GET_FUSION_CONFIGURATION, payload, 9);
+    const sample = FusionConfiguration.decode(response);
+    if (sample.mode > 2 || !Number.isFinite(sample.mounting_yaw_rad) || Math.abs(sample.mounting_yaw_rad) > Math.PI) throw new Error('Invalid fusion configuration');
+    return sample;
+  }
+
+  /** Control volatile IMU-only relative tracking. START=0, RESET=2 and RECALIBRATE=3 are accepted from any state with stationary_mount_confirmed=1 and finite yaw in [-pi,pi]; all discard prior bias and pose and begin full cold stationary calibration at a new relative origin. The caller confirms true zero velocity and the actual rigid installation. Without a configured physical mount, use a level sensor with +Z up at the tracking origin. Legacy yaw is the angle of sensor +X in chassis XY, counterclockwise about chassis +Z. The legacy sensor-to-chassis transform is Rz(yaw)*(x,y,z), axes forward/left/up. IMU stationarity checks cannot establish zero constant velocity. STOP=1 requires confirmation=0 and yaw=0 and stops integration. ACK confirms the action, not a valid estimate. Fault, expiry or interruption requires deliberate restart; no automatic recovery. Not saved to FRAM. Requires READY, exact model 1 hardware 0.4.0 with imu_tracking capability and protocol 2.20+. Independent of platform, encoders and fusion; never commands motion or changes control feedback. On protocol 2.23+, a configured physical mount takes precedence over legacy yaw. Use GET_BOARD_MOUNT on 2.24+ for PCB underside-center geometry. On 2.23 use GET_IMU_MOUNT for chip-reference geometry. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, BOARD_IDLE, DRIVERS_ASLEEP. */
+  async set_imu_tracking(action, stationary_mount_confirmed, mounting_yaw_rad) {
+    if (!Number.isInteger(action) || action < 0 || action > 3 || !Number.isInteger(stationary_mount_confirmed) || stationary_mount_confirmed < 0 || stationary_mount_confirmed > 1) throw new RangeError('Invalid IMU tracking action or confirmation');
+    if (!Number.isFinite(mounting_yaw_rad) || Math.abs(mounting_yaw_rad) > Math.PI || (action === 1 ? stationary_mount_confirmed !== 0 || mounting_yaw_rad !== 0 : stationary_mount_confirmed !== 1)) throw new RangeError('Invalid IMU tracking mounting declaration');
+    const payload = new ArrayBuffer(10);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, action);
+    requestView.setUint8(1, stationary_mount_confirmed);
+    requestView.setFloat64(2, mounting_yaw_rad, true);
+    await this._request(SET_IMU_TRACKING, payload, 0);
+  }
+
+  /** Read IMU-only tracking state, fault, flags, sequence, last eligible joint sample-watermark timestamp, wall elapsed time since the source origin capped at window_us and separate accel/gyro ages in microseconds. UINT32_MAX age means unavailable. ESTIMATE_VALID is required for usable current estimates; timestamp and health are not physical accuracy guarantees. A delayed in-window source sample may remain readable briefly after the wall clock reaches the source end. Healthy tracking expires upon the first consumed source watermark at or beyond the end, or by the first serviced status/vector/configuration read at or after end + 50000 us. Missing, stale or invalid input may fault earlier. This is a serviced-read guarantee, not a hard real-time scheduling guarantee. Reads never start tracking. Status and vector sequences must match to combine separate reads. Requires READY, exact model 1 hardware 0.4.0 with imu_tracking capability and protocol 2.20+. Independent of platform, encoders and fusion; never commands motion or changes control feedback. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
+  async get_imu_tracking_status() {
+    const payload = new ArrayBuffer(0);
+    const response = await this._request(GET_IMU_TRACKING_STATUS, payload, 28);
+    const sample = ImuTrackingStatus.decode(response);
+    if (sample.state > 4 || sample.fault > 9 || sample.flags > 15 || sample.reserved !== 0) throw new Error('Invalid IMU tracking status');
+    return sample;
+  }
+
+  /** Read a compact IMU-only vector selected by kind: POSE=0 (relative metres,metres,radians), TWIST=1 (body metres/second,metres/second,radians/second), BIAS=2 (accel-X,accel-Y metres/second squared and gyro-Z radians/second). SAMPLE_NOT_AVAILABLE means the requested estimate is invalid. Match sequence with GET_IMU_TRACKING_STATUS; never combine mismatched snapshots. Relative integration drifts and has no absolute position or heading reference. Requires READY, exact model 1 hardware 0.4.0 with imu_tracking capability and protocol 2.20+. Independent of platform, encoders and fusion; never commands motion or changes control feedback. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SAMPLE_NOT_AVAILABLE. */
+  async get_imu_tracking_vector(kind) {
+    if (!Number.isInteger(kind) || kind < 0 || kind > 2) throw new RangeError('Invalid IMU tracking vector kind');
+    const payload = new ArrayBuffer(1);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, kind);
+    const response = await this._request(GET_IMU_TRACKING_VECTOR, payload, 28);
+    const sample = ImuTrackingVector.decode(response);
+    if (![sample.x, sample.y, sample.z].every(Number.isFinite)) throw new Error('Invalid IMU tracking vector');
+    return sample;
+  }
+
+  /** Read mounting yaw and the actual bounded tracking horizon in microseconds. This v0.4 release reports 1000000 us for a one-second motion-onset diagnostic. Always use readback for the connected board horizon. The eligible source interval is [origin, origin + window_us); at 100 Hz it contains 100 source stamps including origin and excluding the end. No estimate at or beyond the source end is published. Reset clears volatile tracking state; reconnect does not start or re-anchor tracking. Requires READY, exact model 1 hardware 0.4.0 with imu_tracking capability and protocol 2.20+. Independent of platform, encoders and fusion; never commands motion or changes control feedback. On protocol 2.23+, a configured physical mount takes precedence over legacy yaw. Use GET_BOARD_MOUNT on 2.24+ for PCB underside-center geometry. On 2.23 use GET_IMU_MOUNT for chip-reference geometry. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
+  async get_imu_tracking_configuration() {
+    const payload = new ArrayBuffer(0);
+    const response = await this._request(GET_IMU_TRACKING_CONFIGURATION, payload, 12);
+    const sample = ImuTrackingConfiguration.decode(response);
+    if (!Number.isFinite(sample.mounting_yaw_rad) || Math.abs(sample.mounting_yaw_rad) > Math.PI || sample.window_us === 0) throw new Error('Invalid IMU tracking configuration');
+    return sample;
+  }
+
+  /** Choose the board-wide telemetry preference. A change requires stopped outputs, disarmed controllers and stationary observed encoders. An unchanged preference is idempotent. The selector never starts motion, wheel odometry, standalone IMU calibration or a controller. FUSED uses an independent passive instance of the release estimator when its explicit mount and encoder odometry are available. It anchors a new relative frame at the first available source sample serviced after a switch or producer restart. The existing SAVE_CONFIGURATION explicitly persists the preference alongside platform setup; cold restore never restores an origin, bias, stationary declaration or motion target. Requires READY and exact model 1 hardware 0.4.0 with feedback_source_selector and protocol 2.21 or newer. Selection only routes tracking telemetry. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SOURCE_SWITCH_UNSAFE. */
+  async set_feedback_source(source) {
+    if (!Number.isInteger(source) || source < 0 || source > 2) throw new RangeError('Invalid feedback source');
+    const payload = new ArrayBuffer(1);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, source);
+    await this._request(SET_FEEDBACK_SOURCE, payload, 0);
+  }
+
+  /** Get requested and active source, availability reason and producer detail. Invalid status reports active NONE; no fallback. While valid the sample sequence and monotonic timestamp identify the underlying producer publication. Inspect requested source diagnostics for acquisition ages and fault detail. The standalone IMU is a one-second relative motion-onset diagnostic; fused telemetry uses the existing experimental estimator. Reconnect reads live board state. Requires READY and exact model 1 hardware 0.4.0 with feedback_source_selector and protocol 2.21 or newer. Selection only routes tracking telemetry. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
+  async get_feedback_source_status() {
+    const payload = new ArrayBuffer(0);
+    const response = await this._request(GET_FEEDBACK_SOURCE_STATUS, payload, 27);
+    const sample = FeedbackSourceStatus.decode(response);
+    if (sample.requested > 2 || sample.valid > 1 || sample.reason > 9 || (sample.valid ? sample.active !== sample.requested || sample.reason !== 0 || !sample.max_age_ms || sample.age_us > 1000 * sample.max_age_ms : sample.active !== 255 || sample.reason === 0 || sample.sequence !== 0 || sample.timestamp_us !== 0n || sample.age_us !== 0xffffffff)) throw new Error('Invalid feedback source status');
+    return sample;
+  }
+
+  /** Get selector-relative pose (metres, metres, unwrapped radians) or body twist (metres/second, metres/second, radians/second), +X forward, +Y left, yaw CCW. Relative XY is rotated into the heading at the new anchor. First capture a valid status, then request both vectors with its exact origin_id and sequence. Eight distinct recent captures are retained for at most 50000 us after capture. Both keys and the current healthy source/frame must match. Selected historical sample age cannot exceed 50000 us for IMU-only, 60000 us for fused, or three configured encoder periods. Expiry or invalidation immediately rejects cached data. A final live status may naturally advance sequence and time; require the same valid requested/active source and origin, match both vector sequences to the original capture and retry on SAMPLE_NOT_AVAILABLE. Compare origins only within the same boot. Requires READY and exact model 1 hardware 0.4.0 with feedback_source_selector and protocol 2.21 or newer. Selection only routes tracking telemetry. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SAMPLE_NOT_AVAILABLE. */
+  async get_feedback_source_vector(kind, origin_id, sequence) {
+    if (!Number.isInteger(kind) || kind < 0 || kind > 1) throw new RangeError('Invalid feedback vector kind');
+    if (![origin_id, sequence].every(value => Number.isInteger(value) && value >= 0 && value <= 0xffffffff)) throw new RangeError('Invalid feedback sample key');
+    const payload = new ArrayBuffer(9);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, kind);
+    requestView.setUint32(1, origin_id, true);
+    requestView.setUint32(5, sequence, true);
+    const response = await this._request(GET_FEEDBACK_SOURCE_VECTOR, payload, 28);
+    const sample = FeedbackSourceVector.decode(response);
+    if (![sample.x, sample.y, sample.z].every(Number.isFinite)) throw new Error('Invalid feedback vector');
+    return sample;
+  }
+
+  /** Declare the legacy centered, level board orientation for passive fused telemetry, with finite board yaw in [-pi,pi]. Requires stopped outputs and disarmed controllers. Each successful command discards prior passive calibration and pose; the observer requires fresh stationary observations. This volatile setting applies only to passive telemetry. Requires READY, exact v0.4 and protocol 2.21+. On protocol 2.23+, a configured physical mount takes precedence over legacy yaw. Use GET_BOARD_MOUNT on 2.24+ for PCB underside-center geometry. On 2.23 use GET_IMU_MOUNT for chip-reference geometry. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SOURCE_SWITCH_UNSAFE. */
+  async set_feedback_fusion_mount(mounting_yaw_rad) {
+    if (!Number.isFinite(mounting_yaw_rad) || Math.abs(mounting_yaw_rad) > Math.PI) throw new RangeError('Invalid fusion mounting yaw');
+    const payload = new ArrayBuffer(8);
+    const requestView = new DataView(payload);
+    requestView.setFloat64(0, mounting_yaw_rad, true);
+    await this._request(SET_FEEDBACK_FUSION_MOUNT, payload, 0);
+  }
+
+  /** Read the explicit volatile passive fusion mounting confirmation and board yaw. Reset clears confirmation. Requires READY, exact v0.4 and protocol 2.21+. On protocol 2.23+, a configured physical mount takes precedence over legacy yaw. Use GET_BOARD_MOUNT on 2.24+ for PCB underside-center geometry. On 2.23 use GET_IMU_MOUNT for chip-reference geometry. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
+  async get_feedback_fusion_mount() {
+    const payload = new ArrayBuffer(0);
+    const response = await this._request(GET_FEEDBACK_FUSION_MOUNT, payload, 9);
+    const sample = FeedbackFusionMount.decode(response);
+    if (sample.confirmed > 1 || !Number.isFinite(sample.mounting_yaw_rad) || Math.abs(sample.mounting_yaw_rad) > Math.PI) throw new Error('Invalid feedback fusion mount');
+    return sample;
+  }
+
+  /** Read producer health independently of selector and control. ENCODER is the running platform encoder batch, IMU_ONLY is physical BMI088 pair availability independent of the one-second estimate, FUSED is the passive fused estimate. Disagreement indicates conflicting observations without assigning sensor blame. HEALTHY means directly usable data. Comparability is separate. Historical provenance remains readable during failure. Reconnect reads board state. Requires READY, exact v0.4 and protocol 2.22+ with feedback_source_health. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
+  async get_feedback_source_health(source) {
+    if (!Number.isInteger(source) || source < 0 || source > 2) throw new RangeError('Invalid feedback source');
+    const payload = new ArrayBuffer(1);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, source);
+    const response = await this._request(GET_FEEDBACK_SOURCE_HEALTH, payload, 28);
+    const sample = FeedbackSourceHealth.decode(response);
+    if (sample.source !== source) throw new FeedbackSourceMismatchError(source, sample.source);
+    if (sample.health > FeedbackSourceHealthState.INDETERMINATE || sample.reason > FeedbackSourceReason.MOUNT_REQUIRED || sample.detail > FusionFault.INHIBITED) throw new Error('Invalid feedback source health');
+    return sample;
+  }
+
+  /** Read independent last observed accelerometer and gyro acquisition times in board uptime microseconds. A timestamp of zero and age UINT32_MAX indicate no observed acquisition. These are physical source observations, independent of the finite IMU-only tracking window. A pair must meet the 35000 us age and 15000 us skew limits. Requires READY, exact v0.4 and protocol 2.22+ with feedback_source_health. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
+  async get_feedback_imu_channels() {
+    const payload = new ArrayBuffer(0);
+    const response = await this._request(GET_FEEDBACK_IMU_CHANNELS, payload, 24);
+    const sample = FeedbackImuChannels.decode(response);
+    if ((!sample.accel_timestamp_us && sample.accel_age_us !== 0xffffffff) || (!sample.gyro_timestamp_us && sample.gyro_age_us !== 0xffffffff)) throw new Error('Invalid feedback IMU channel provenance');
+    return sample;
+  }
+
+  /** Legacy chip-reference API, deprecated for new installations. Set the complete rigid mount for IMU-only and fused tracking on a stopped, disarmed v0.4. The board-to-chassis rotation is Rz(yaw) Ry(pitch) Rx(roll). A changed mount requires fresh tracking initialization. SAVE_CONFIGURATION persists this geometry. Requires READY and protocol 2.23+ with imu_mounting. XYZ refers to the BMI088 chip. Use SET_BOARD_MOUNT for the PCB underside center. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SOURCE_SWITCH_UNSAFE. */
+  async set_imu_mount(roll_cdeg, pitch_cdeg, yaw_cdeg, x_um, y_um, z_um) {
+    if (!Number.isInteger(roll_cdeg) || roll_cdeg < -18000 || roll_cdeg > 18000) throw new RangeError('Invalid mount roll_cdeg');
+    if (!Number.isInteger(pitch_cdeg) || pitch_cdeg < -9000 || pitch_cdeg > 9000) throw new RangeError('Invalid mount pitch_cdeg');
+    if (!Number.isInteger(yaw_cdeg) || yaw_cdeg < -18000 || yaw_cdeg > 18000) throw new RangeError('Invalid mount yaw_cdeg');
+    if (!Number.isInteger(x_um) || x_um < -10000000 || x_um > 10000000) throw new RangeError('Invalid mount x_um');
+    if (!Number.isInteger(y_um) || y_um < -10000000 || y_um > 10000000) throw new RangeError('Invalid mount y_um');
+    if (!Number.isInteger(z_um) || z_um < -10000000 || z_um > 10000000) throw new RangeError('Invalid mount z_um');
+    const payload = new ArrayBuffer(18);
+    const requestView = new DataView(payload);
+    requestView.setInt16(0, roll_cdeg, true);
+    requestView.setInt16(2, pitch_cdeg, true);
+    requestView.setInt16(4, yaw_cdeg, true);
+    requestView.setInt32(6, x_um, true);
+    requestView.setInt32(10, y_um, true);
+    requestView.setInt32(14, z_um, true);
+    await this._request(SET_IMU_MOUNT, payload, 0);
+  }
+
+  /** Legacy chip-reference API, deprecated for new installations. Read the shared physical mount. When configured is false, IMU-only uses its legacy sensor yaw and fusion its legacy board yaw. Requires READY and protocol 2.23+ with imu_mounting. XYZ is the BMI088 chip position, including when derived from a PCB underside-center installation. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
+  async get_imu_mount() {
+    const payload = new ArrayBuffer(0);
+    const response = await this._request(GET_IMU_MOUNT, payload, 19);
+    return ImuMountConfiguration.decode(response);
+  }
+
+  /** Set the rigid mount on a stopped, disarmed Mini. XYZ is the displacement in chassis axes from the tracking origin to the geometric center of the PCB underside. Board-to-chassis rotation is Rz(yaw) Ry(pitch) Rx(roll). Firmware derives the chip offset. SAVE_CONFIGURATION persists the entered board pose. Requires READY, exact v0.4 imu_mounting and protocol 2.24+. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR, SOURCE_SWITCH_UNSAFE. */
+  async set_board_mount(roll_cdeg, pitch_cdeg, yaw_cdeg, x_um, y_um, z_um) {
+    if (!Number.isInteger(roll_cdeg) || roll_cdeg < -18000 || roll_cdeg > 18000) throw new RangeError('Invalid mount roll_cdeg');
+    if (!Number.isInteger(pitch_cdeg) || pitch_cdeg < -9000 || pitch_cdeg > 9000) throw new RangeError('Invalid mount pitch_cdeg');
+    if (!Number.isInteger(yaw_cdeg) || yaw_cdeg < -18000 || yaw_cdeg > 18000) throw new RangeError('Invalid mount yaw_cdeg');
+    if (!Number.isInteger(x_um) || x_um < -10000000 || x_um > 10000000) throw new RangeError('Invalid mount x_um');
+    if (!Number.isInteger(y_um) || y_um < -10000000 || y_um > 10000000) throw new RangeError('Invalid mount y_um');
+    if (!Number.isInteger(z_um) || z_um < -10000000 || z_um > 10000000) throw new RangeError('Invalid mount z_um');
+    const payload = new ArrayBuffer(18);
+    const requestView = new DataView(payload);
+    requestView.setInt16(0, roll_cdeg, true);
+    requestView.setInt16(2, pitch_cdeg, true);
+    requestView.setInt16(4, yaw_cdeg, true);
+    requestView.setInt32(6, x_um, true);
+    requestView.setInt32(10, y_um, true);
+    requestView.setInt32(14, z_um, true);
+    await this._request(SET_BOARD_MOUNT, payload, 0);
+  }
+
+  /** Read the applied board orientation and geometric PCB underside center in chassis coordinates. Legacy chip mounts are converted. When unconfigured all coordinates and angles are zero. Requires READY, exact v0.4 imu_mounting and protocol 2.24+. Errors: INVALID_LENGTH, INVALID_ARGUMENT, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INTERNAL_ERROR. */
+  async get_board_mount() {
+    const payload = new ArrayBuffer(0);
+    const response = await this._request(GET_BOARD_MOUNT, payload, 19);
+    return BoardMountConfiguration.decode(response);
+  }
+
+  /** Initialize four mecanum wheels with an explicit 45-degree roller layout. Requires protocol 2.25 and a READY session. Motor/encoder indices 0, 1, 2, 3 are front right, rear right, rear left, front left. Length and width are positive front-to-rear and side-to-side wheel-center spacings in meters. STANDARD uses yaw lever (width + length)/2. MIRRORED uses (width - length)/2 and requires unequal spacings. Invalid orientation or geometry leaves the running setup unchanged. Errors: DRIVERS_ASLEEP, BOARD_IDLE, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CLOCK_NOT_READY. */
+  async initialize_mecanum_platform_oriented(is_reversed_0, is_reversed_1, is_reversed_2, is_reversed_3, is_encoder_reversed_0, is_encoder_reversed_1, is_encoder_reversed_2, is_encoder_reversed_3, length, width, wheels_diameter, encoder_resolution, roller_orientation) {
+    if (![is_reversed_0, is_reversed_1, is_reversed_2, is_reversed_3, is_encoder_reversed_0, is_encoder_reversed_1, is_encoder_reversed_2, is_encoder_reversed_3].every(v => v === true || v === false || v === 0 || v === 1)) throw new RangeError('Invalid motor or encoder reversal');
+    if (!Object.values(MecanumRollerOrientation).includes(roller_orientation)) throw new RangeError('Unknown mecanum roller arrangement');
+    if (![length, width, wheels_diameter].every(v => Number.isFinite(v) && v > 0) || !Number.isFinite(encoder_resolution) || encoder_resolution < 0) throw new RangeError('Enter positive dimensions and nonnegative encoder resolution');
+    const lever = width * 0.5 + (roller_orientation === MecanumRollerOrientation.MIRRORED ? -length : length) * 0.5;
+    if (!Number.isFinite(1 / lever) || !Number.isFinite(2 / wheels_diameter)) throw new RangeError('Unusable mecanum geometry: check wheel diameter and wheel-center spacings. Mirrored rollers require unequal length and width for yaw');
+    const payload = new ArrayBuffer(41);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, is_reversed_0);
+    requestView.setUint8(1, is_reversed_1);
+    requestView.setUint8(2, is_reversed_2);
+    requestView.setUint8(3, is_reversed_3);
+    requestView.setUint8(4, is_encoder_reversed_0);
+    requestView.setUint8(5, is_encoder_reversed_1);
+    requestView.setUint8(6, is_encoder_reversed_2);
+    requestView.setUint8(7, is_encoder_reversed_3);
+    requestView.setFloat64(8, length, true);
+    requestView.setFloat64(16, width, true);
+    requestView.setFloat64(24, wheels_diameter, true);
+    requestView.setFloat64(32, encoder_resolution, true);
+    requestView.setUint8(40, roller_orientation);
+    await this._request(INITIALIZE_MECANUM_PLATFORM_ORIENTED, payload, 0);
+  }
+
+  /** Initialize a 120-degree, three-wheel Omni platform in the marked chassis frame (+X forward, +Y left, positive yaw counterclockwise). Requires READY and protocol 2.26. REAR places W0 front right, W1 front left and W2 rear. FRONT rotates the complete triangle 180 degrees: W0 rear left, W1 rear right and W2 front. Motor and encoder indices stay attached to those wheels, with independent reversal flags. Dimensions must be positive and encoder resolution nonnegative. Invalid requests leave the running setup unchanged. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CLOCK_NOT_READY. */
+  async initialize_omni_platform_oriented(is_reversed_0, is_reversed_1, is_reversed_2, is_encoder_reversed_0, is_encoder_reversed_1, is_encoder_reversed_2, wheels_diameter, robot_radius, encoder_resolution, wheel_orientation) {
+    if (![is_reversed_0, is_reversed_1, is_reversed_2, is_encoder_reversed_0, is_encoder_reversed_1, is_encoder_reversed_2].every(v => v === true || v === false || v === 0 || v === 1)) throw new RangeError('Invalid motor or encoder reversal');
+    if (!Object.values(OmniWheelOrientation).includes(wheel_orientation)) throw new RangeError('Unknown omni wheel arrangement');
+    if (![wheels_diameter, robot_radius].every(v => Number.isFinite(v) && v > 0) || !Number.isFinite(2 / wheels_diameter) || !Number.isFinite(1 / robot_radius) || !Number.isFinite(encoder_resolution) || encoder_resolution < 0) throw new RangeError('Enter positive dimensions and nonnegative encoder resolution');
+    const payload = new ArrayBuffer(31);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, is_reversed_0);
+    requestView.setUint8(1, is_reversed_1);
+    requestView.setUint8(2, is_reversed_2);
+    requestView.setUint8(3, is_encoder_reversed_0);
+    requestView.setUint8(4, is_encoder_reversed_1);
+    requestView.setUint8(5, is_encoder_reversed_2);
+    requestView.setFloat64(6, wheels_diameter, true);
+    requestView.setFloat64(14, robot_radius, true);
+    requestView.setFloat64(22, encoder_resolution, true);
+    requestView.setUint8(30, wheel_orientation);
+    await this._request(INITIALIZE_OMNI_PLATFORM_ORIENTED, payload, 0);
   }
 }

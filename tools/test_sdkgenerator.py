@@ -23,6 +23,28 @@ class GeneratorTests(unittest.TestCase):
         """Load the complete schema rather than a reduced codec fixture."""
         self.schema = json.loads((ROOT / 'tools/commands.json').read_text(encoding='utf-8'))
 
+    def test_mecanum_orientation_catalog_and_layout(self):
+        for mutate in (
+                lambda s: s.pop('mecanum_roller_orientations'),
+                lambda s: s['mecanum_roller_orientations'][1].update(id=True),
+                lambda s: s['mecanum_roller_orientations'][1].update(name='UNKNOWN'),
+                lambda s: next(c for c in s['commands'] if c['command'] == 'INITIALIZE_MECANUM_PLATFORM_ORIENTED')['properties'].pop()):
+            schema = deepcopy(self.schema)
+            mutate(schema)
+            with self.assertRaises(ValueError):
+                generate_js_code(schema)
+
+    def test_omni_orientation_catalog_and_layout(self):
+        for mutate in (
+                lambda s: s.pop('omni_wheel_orientations'),
+                lambda s: s['omni_wheel_orientations'][1].update(id=True),
+                lambda s: s['omni_wheel_orientations'][1].update(name='UNKNOWN'),
+                lambda s: next(c for c in s['commands'] if c['command'] == 'INITIALIZE_OMNI_PLATFORM_ORIENTED')['properties'].pop()):
+            schema = deepcopy(self.schema)
+            mutate(schema)
+            with self.assertRaises(ValueError):
+                generate_js_code(schema)
+
     def test_pwm_catalog_and_layout(self):
         for mutate in (
                 lambda s: s.pop('pwm_frequencies'),
@@ -37,6 +59,35 @@ class GeneratorTests(unittest.TestCase):
         """The current schema produces identical runtime definitions."""
         actual = (ROOT / 'src/commands/kinisi_commands.js').read_text(encoding='utf-8')
         self.assertEqual(generate_js_code(self.schema), actual)
+
+    def test_driver_sleep_contract(self):
+        for name in ('SET_DRIVER_SLEEP', 'GET_DRIVER_SLEEP', 'SET_BOARD_IDLE', 'GET_BOARD_IDLE'):
+            schema = deepcopy(self.schema)
+            schema['commands'] = [c for c in schema['commands'] if c['command'] != name]
+            with self.assertRaisesRegex(ValueError, 'missing runtime commands'):
+                generate_js_code(schema)
+
+    def test_board_idle_envelope(self):
+        for mutate in (
+            lambda commands: commands['SET_BOARD_IDLE']['properties'][0].update(type='bool'),
+            lambda commands: commands['SET_BOARD_IDLE']['properties'][0].update(range=[0, 2]),
+            lambda commands: commands['GET_BOARD_IDLE']['response'].update(type='uint16_t'),
+        ):
+            schema = deepcopy(self.schema)
+            mutate({c['command']: c for c in schema['commands']})
+            with self.assertRaisesRegex(ValueError, 'board idle envelope'):
+                generate_js_code(schema)
+
+    def test_driver_sleep_envelope(self):
+        for mutate in (
+            lambda commands: commands['SET_DRIVER_SLEEP']['properties'][0].update(type='bool'),
+            lambda commands: commands['SET_DRIVER_SLEEP']['properties'][0].update(range=[0, 2]),
+            lambda commands: commands['GET_DRIVER_SLEEP']['response'].update(type='uint16_t'),
+        ):
+            schema = deepcopy(self.schema)
+            mutate({c['command']: c for c in schema['commands']})
+            with self.assertRaisesRegex(ValueError, 'driver sleep envelope'):
+                generate_js_code(schema)
 
     def test_incompatible_schema_preserves_output(self):
         """Unsupported framing or absent runtime commands cannot replace the module."""

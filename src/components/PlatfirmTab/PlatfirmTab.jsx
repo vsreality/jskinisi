@@ -1,6 +1,15 @@
 import PositionControl from '../PositionControl/PositionControl';
+import ConfigurationSave from './ConfigurationSave';
+import ImuMounting from './ImuMounting';
+import MountReadback from '../MountReadback';
+import useImuMount from '../../hooks/useImuMount';
+import PlatformLayout from './PlatformLayout';
+import FusionExperiment from './FusionExperiment';
+import TrackingSource from './TrackingSource';
+import { supportsOmniOrientation, supportsMecanumOrientation, supportsFeedbackSourceSelector, supportsConfigurationPersistence } from '../../commands/board_profile';
 import TelemetryControl from '../TelemetryControl/TelemetryControl';
-import { Topic } from '../../commands/kinisi_commands';
+import { readOmniWheelOrientation, readMecanumRollerOrientation } from '../../commands/configuration';
+import { MecanumRollerOrientation, OmniWheelOrientation, Topic } from '../../commands/kinisi_commands';
 import { useSettings, scaleInput } from '../../contexts/SettingsContext';
 import VelocityTuningHelp from '../VelocityTuningHelp';
 import { velocityPidDefaults } from '../../commands/velocity_tuning';
@@ -17,12 +26,20 @@ function PlatformTab({ isActive = true }) {
     const angleScale = angleUnit === 'deg' ? 180 / Math.PI : 1;
     const [commandError, runCommand] = useCommandAction();
     const { controller, isConnected} = useContext(ControllerContext);
+    const mounting = useImuMount(controller, isConnected && isActive);
+    const [experimentOpen, setExperimentOpen] = useState(false);
     const pidDefaults = velocityPidDefaults(controller?.boardInfo);
 
     const [isPlatformInitialized, setIsPlatformInitialized] = useState(false);
+    const [configurationBusy, setConfigurationBusy] = useState(false);
+    const [configurationGeneration, setConfigurationGeneration] = useState(0);
+    const [encoderSetup, setEncoderSetup] = useState(null);
+    const platformEncodersReady = isConnected && encoderSetup?.controller === controller &&
+        encoderSetup.connection === controller?.boardInfo && encoderSetup.ready;
 
     // States for platform type and settings
     const [platformType, setPlatformType] = useState('omni');
+    const [mountPreviewSession, setMountPreviewSession] = useState(null);
     const [isReversed, setIsReversed] = useState({
         mecanum: [false, false, false, false],
         omni: [false, false, false],
@@ -38,6 +55,59 @@ function PlatformTab({ isActive = true }) {
     const [mecanumWheelDiameter, setMecanumWheelDiameter] = useState(0.1);
     const [mecanumLength, setMecanumLength] = useState(0.5);
     const [mecanumWidth, setMecanumWidth] = useState(0.5);
+
+    const [orientationDrafts, setOrientationDrafts] = useState({});
+    const rollerDraft = orientationDrafts.mecanum;
+    const omniDraft = orientationDrafts.omni;
+    const connection = controller?.boardInfo;
+    const oriented = supportsMecanumOrientation(connection);
+    const rollerOrientation = rollerDraft && rollerDraft.connection === connection && (!isConnected || oriented)
+        ? rollerDraft.value : MecanumRollerOrientation.STANDARD;
+    const orientedOmni = supportsOmniOrientation(connection);
+    const wheelOrientation = omniDraft && omniDraft.connection === connection && (!isConnected || orientedOmni)
+        ? omniDraft.value : OmniWheelOrientation.REAR;
+    const frontWheel = wheelOrientation === OmniWheelOrientation.FRONT;
+    const mirrored = rollerOrientation === MecanumRollerOrientation.MIRRORED;
+    const singular = mirrored && Number(mecanumWidth) > 0 && Number(mecanumLength) === Number(mecanumWidth);
+    const orientationRequest = useRef(0);
+    const platformInit = useRef(0);
+    const pendingSetupRefresh = useRef(null);
+    useEffect(() => () => {
+        orientationRequest.current++;
+        platformInit.current++;
+        pendingSetupRefresh.current = null;
+    }, [controller, connection, isConnected]);
+    const invalidateOrientationRead = useCallback(() => {
+        const request = ++orientationRequest.current;
+        setOrientationDrafts(drafts => {
+            if (!drafts.mecanum?.read && !drafts.omni?.read) return drafts;
+            return Object.fromEntries(Object.entries(drafts).map(([platform, draft]) =>
+                [platform, { ...draft, read: false }]));
+        });
+        return request;
+    }, []);
+    const startSetupRead = useCallback(automatic => {
+        // A post-initialization reload belongs to the draft that dispatched it.
+        if (automatic && pendingSetupRefresh.current !== null) return pendingSetupRefresh.current;
+        pendingSetupRefresh.current = null;
+        return invalidateOrientationRead();
+    }, [invalidateOrientationRead]);
+    const editOrientation = (platform, value) => {
+        orientationRequest.current++;
+        setMountPreviewSession(connection);
+        setOrientationDrafts(drafts => ({ ...drafts, [platform]: { connection, value } }));
+    };
+    const loadOrientation = async platform => {
+        const request = invalidateOrientationRead();
+        try {
+            const value = platform === 'omni' ? await readOmniWheelOrientation(controller)
+                : await readMecanumRollerOrientation(controller);
+            if (request === orientationRequest.current)
+                setOrientationDrafts(drafts => ({ ...drafts, [platform]: { connection, value, read: true } }));
+        } catch (error) {
+            if (request === orientationRequest.current) throw error;
+        }
+    };
 
     // Omni platform properties
     const [omniWheelDiameter, setOmniWheelDiameter] = useState(0.1);
@@ -87,9 +157,41 @@ function PlatformTab({ isActive = true }) {
     const [controllerFrequency, setControllerFrequency] = useState('10');
     const [odometryFrequency, setOdometryFrequency] = useState('50');
 
+    const loadRunningSetup = useCallback((setup, request) => {
+        setMountPreviewSession(setup ? controller?.boardInfo : null);
+        setIsPlatformInitialized(Boolean(setup));
+        const ready = Boolean(setup && setup.encoders.slice(0, setup.channelCount)
+            .every(encoder => encoder.resolution > 0));
+        setEncoderSetup({ controller, connection: controller?.boardInfo, ready });
+        if (!ready) {
+            setIsControllerInitialized(false);
+            setIsOdometryInitialized(false);
+        }
+        if (!setup) return;
+        const { platform, wheelDiameter, trackOrLength, widthOrRadius, encoders, motorReversed } = setup;
+        const updateSelection = request === orientationRequest.current;
+        if (updateSelection) setPlatformType(platform);
+        setIsReversed(previous => ({ ...previous, [platform]: motorReversed }));
+        setIsEncoderReversed(previous => ({ ...previous, [platform]: encoders.map(encoder => encoder.reversed) }));
+        setEncoderResolution(String(encoders[0].resolution));
+        if (updateSelection && (platform === 'mecanum' || platform === 'omni')) {
+            const value = platform === 'omni' ? setup.wheelOrientation : setup.rollerOrientation;
+            setOrientationDrafts(drafts => ({ ...drafts, [platform]: { connection: controller.boardInfo, value, read: true } }));
+        }
+        if (platform === 'mecanum') {
+            setMecanumWheelDiameter(wheelDiameter); setMecanumLength(trackOrLength); setMecanumWidth(widthOrRadius);
+        } else if (platform === 'omni') {
+            setOmniWheelDiameter(wheelDiameter); setOmniRadius(widthOrRadius);
+        } else {
+            setDifferentialWheelDiameter(wheelDiameter); setDifferentialWheelBase(trackOrLength);
+        }
+    }, [controller]);
+
     // Handlers for changes in form elements
     const handlePlatformTypeChange = (event) => {
+        invalidateOrientationRead();
         setPlatformType(event.target.value);
+        setMountPreviewSession(controller?.boardInfo);
     };
 
     const handleReverseChange = (platform, index) => (event) => {
@@ -247,32 +349,26 @@ function PlatformTab({ isActive = true }) {
 
     // Handler for initializing the platform
     const initializePlatform = async (platform) => {
+        const initialization = ++platformInit.current;
+        const request = invalidateOrientationRead();
         console.log(`Initializing ${platform} platform with reversed motors: ${isReversed[platform]}`);
         if (platformType === 'mecanum'){
-            await controller.initialize_mecanum_platform(
-                isReversed.mecanum[0],
-                isReversed.mecanum[1],
-                isReversed.mecanum[2],
-                isReversed.mecanum[3],
-                isEncoderReversed.mecanum[0],
-                isEncoderReversed.mecanum[1],
-                isEncoderReversed.mecanum[2],
-                isEncoderReversed.mecanum[3],
-                mecanumLength,
-                mecanumWidth,
-                mecanumWheelDiameter,
-                encoderResolution);
+            const geometry = [
+                ...isReversed.mecanum, ...isEncoderReversed.mecanum,
+                Number(mecanumLength), Number(mecanumWidth), Number(mecanumWheelDiameter), Number(encoderResolution)
+            ];
+            if (oriented) {
+                await controller.initialize_mecanum_platform_oriented(...geometry, rollerOrientation);
+            } else {
+                await controller.initialize_mecanum_platform(...geometry);
+            }
         } else if (platformType === 'omni'){
-            await controller.initialize_omni_platform(
-                isReversed.omni[0],
-                isReversed.omni[1],
-                isReversed.omni[2],
-                isEncoderReversed.omni[0],
-                isEncoderReversed.omni[1],
-                isEncoderReversed.omni[2],
-                omniWheelDiameter,
-                omniRadius,
-                encoderResolution);
+            const geometry = [
+                ...isReversed.omni.slice(0, 3), ...isEncoderReversed.omni.slice(0, 3),
+                Number(omniWheelDiameter), Number(omniRadius), Number(encoderResolution)
+            ];
+            if (orientedOmni) await controller.initialize_omni_platform_oriented(...geometry, wheelOrientation);
+            else await controller.initialize_omni_platform(...geometry);
         } else if (platformType === 'differential'){
             await controller.initialize_differential_platform(
                 isReversed.differential[0],
@@ -287,11 +383,22 @@ function PlatformTab({ isActive = true }) {
             return
         }
 
+        if (initialization !== platformInit.current) return;
+        const refreshOrientation = request === orientationRequest.current;
+        const applied = invalidateOrientationRead();
+        if (supportsConfigurationPersistence(connection))
+            pendingSetupRefresh.current = refreshOrientation ? applied : request;
         setIsPlatformInitialized(true);
+        setMountPreviewSession(controller?.boardInfo);
+        setEncoderSetup({ controller, connection: controller?.boardInfo, ready: Number(encoderResolution) > 0 });
+        setConfigurationGeneration(value => value + 1);
         setIsControllerInitialized(false);
         setIsOdometryInitialized(false);
         setOdometry(null);
         setPositionGeneration(value => value + 1);
+        const canReadOrientation = (platform === 'mecanum' && oriented) || (platform === 'omni' && orientedOmni);
+        if (refreshOrientation && canReadOrientation && !supportsConfigurationPersistence(connection))
+            await loadOrientation(platform);
     };
 
     // Handler for setting the platform velocity
@@ -435,9 +542,22 @@ function PlatformTab({ isActive = true }) {
     return (
         <div id="tabPlatform" className="platform-tab page-layout">
             {commandError && <p className="conn-error" role="alert">{commandError}</p>}
+            {mounting.supported && !mounting.boardCenter && <MountReadback mounting={mounting}/>}
+            {mounting.boardCenter && <ImuMounting model={mounting} platform={mountPreviewSession === controller?.boardInfo ? {
+                type: platformType, rollerOrientation, wheelOrientation, track: Number(differentialWheelBase), length: Number(mecanumLength),
+                width: Number(mecanumWidth), radius: Number(omniRadius),
+                diameter: Number({ omni: omniWheelDiameter, differential: differentialWheelDiameter, mecanum: mecanumWheelDiameter }[platformType])
+            } : null}/>}
+            <TrackingSource controller={controller} isConnected={isConnected} isActive={isActive} mounting={mounting}/>
+            {supportsFeedbackSourceSelector(controller?.boardInfo) ?
+              <details onToggle={event => setExperimentOpen(event.currentTarget.open)}>
+                <summary>Experimental motion feedback controls</summary>
+                {experimentOpen && <FusionExperiment controller={controller} isConnected={isConnected} isActive={isActive} mounting={mounting}/>}
+              </details> : <FusionExperiment controller={controller} isConnected={isConnected} isActive={isActive} mounting={mounting}/>}
             <div className="platform-setup-grid">
                 <section className="panel-card platform-hardware">
                 <h2>Platform setup</h2>
+                <fieldset className="platform-fields" disabled={configurationBusy}>
                 <label htmlFor="platformSelector">Platform:</label>
                 <select id="platformSelector" value={platformType} onChange={handlePlatformTypeChange}>
                     <option value="mecanum">Mecanum Platform</option>
@@ -447,16 +567,27 @@ function PlatformTab({ isActive = true }) {
 
                 {platformType === 'mecanum' && (
                     <div id="mecanumPlatform">
-                        <h2>Mecanum Platform</h2>
-                        <div>
+                        <label htmlFor="rollerOrientation">Roller arrangement</label>
+                        <select id="rollerOrientation" value={rollerOrientation} disabled={isConnected && !oriented}
+                            onChange={event => editOrientation('mecanum', Number(event.target.value))}>
+                            <option value={MecanumRollerOrientation.STANDARD}>Standard (X)</option>
+                            <option value={MecanumRollerOrientation.MIRRORED}>Mirrored (O)</option>
+                        </select>
+                        {isConnected && !oriented && <p>Earlier firmware uses Standard (X). Mirrored setup requires protocol 2.25 or newer.</p>}
+                        {oriented && !supportsConfigurationPersistence(connection) && <button type="button" className="k-button"
+                            onClick={() => runCommand(() => loadOrientation('mecanum'))}>Read running roller arrangement</button>}
+                        {isConnected && oriented && rollerDraft?.connection === connection && rollerDraft?.read &&
+                            <p role="status">Running roller arrangement: {mirrored ? 'Mirrored (O)' : 'Standard (X)'}.</p>}
+                        <div className="platform-reversals">
                             Motor setup (is reversed):<br/>
                             {Array.from({ length: 4 }).map((_, index) => (
                                 <React.Fragment key={index}>
                                     <span className='span-check'>
-                                        <label className="checkbox-label" htmlFor={`mecanumPlatformIsReverse${index}`}>{index} </label>
+                                        <label className="checkbox-label" htmlFor={`mecanumPlatformIsReverse${index}`}>M{index}</label>
                                         <input
                                             type="checkbox"
                                             className='k-check'
+                                            aria-label={`Reverse motor M${index}`}
                                             id={`mecanumPlatformIsReverse${index}`} 
                                             checked={isReversed.mecanum[index]} 
                                             onChange={handleReverseChange('mecanum', index)}
@@ -470,10 +601,11 @@ function PlatformTab({ isActive = true }) {
                             {Array.from({ length: 4 }).map((_, index) => (
                                 <React.Fragment key={index}>
                                     <span className='span-check'>
-                                        <label className="checkbox-label" htmlFor={`mecanumPlatformEncoderReverse${index}`}>{index} </label>
+                                        <label className="checkbox-label" htmlFor={`mecanumPlatformEncoderReverse${index}`}>E{index}</label>
                                         <input
                                             type="checkbox"
                                             className='k-check'
+                                            aria-label={`Reverse encoder E${index}`}
                                             id={`mecanumPlatformEncoderReverse${index}`}
                                             checked={isEncoderReversed.mecanum[index]}
                                             onChange={handleEncoderReverseChange('mecanum', index)}
@@ -490,22 +622,34 @@ function PlatformTab({ isActive = true }) {
                         <input type='number' id='mecanum_width' value={mecanumWidth} onChange={handleMecanumWidthChange}/>
                         <label htmlFor='encoderResolution'>Encoder Resolution (ticks/rev):</label>
                         <input type='number' id='encoderResolution' value={encoderResolution} onChange={handleEncoderResolutionChange}/>
-                        <button className='k-button k-button-primary' onClick={() => runCommand(() => initializePlatform('mecanum'))}>Initialize</button>
+                        {singular && <p role="alert" className="conn-error">Mirrored rollers cannot control yaw with equal wheel-center length and width. Measure both spacings or check the installed roller arrangement.</p>}
+                        <button className='k-button k-button-primary' disabled={singular} onClick={() => runCommand(() => initializePlatform('mecanum'))}>Initialize</button>
                     </div>
                 )}
 
                 {platformType === 'omni' && (
                     <div id="omniPlatform">
-                        <h2>Omni Platform</h2>
-                        <div>
+                        <label htmlFor="wheelOrientation">Single wheel position</label>
+                        <select id="wheelOrientation" value={wheelOrientation} disabled={isConnected && !orientedOmni}
+                            onChange={event => editOrientation('omni', Number(event.target.value))}>
+                            <option value={OmniWheelOrientation.REAR}>Single wheel at rear (W2)</option>
+                            <option value={OmniWheelOrientation.FRONT}>Single wheel at front (W2)</option>
+                        </select>
+                        {isConnected && !orientedOmni && <p>Earlier firmware uses Rear (W2). Front setup requires protocol 2.26 or newer.</p>}
+                        {orientedOmni && !supportsConfigurationPersistence(connection) && <button type="button" className="k-button"
+                            onClick={() => runCommand(() => loadOrientation('omni'))}>Read running wheel arrangement</button>}
+                        {isConnected && orientedOmni && omniDraft?.connection === connection && omniDraft?.read &&
+                            <p role="status">Running wheel arrangement: {frontWheel ? 'Front (W2)' : 'Rear (W2)'}.</p>}
+                        <div className="platform-reversals">
                             Motor setup (is reversed):<br/>
                             {Array.from({ length: 3 }).map((_, index) => (
                                 <React.Fragment key={index}>
                                     <span className='span-check'>
-                                        <label className="checkbox-label" htmlFor={`omniPlatformIsReverse${index}`}>{index} </label>
+                                        <label className="checkbox-label" htmlFor={`omniPlatformIsReverse${index}`}>M{index}</label>
                                         <input 
                                             type="checkbox"
                                             className='k-check'
+                                            aria-label={`Reverse motor M${index}`}
                                             id={`omniPlatformIsReverse${index}`} 
                                             checked={isReversed.omni[index]} 
                                             onChange={handleReverseChange('omni', index)}
@@ -519,10 +663,11 @@ function PlatformTab({ isActive = true }) {
                             {Array.from({ length: 3 }).map((_, index) => (
                                 <React.Fragment key={index}>
                                     <span className='span-check'>
-                                        <label className="checkbox-label" htmlFor={`omniPlatformEncoderReverse${index}`}>{index} </label>
+                                        <label className="checkbox-label" htmlFor={`omniPlatformEncoderReverse${index}`}>E{index}</label>
                                         <input
                                             type="checkbox"
                                             className='k-check'
+                                            aria-label={`Reverse encoder E${index}`}
                                             id={`omniPlatformEncoderReverse${index}`}
                                             checked={isEncoderReversed.omni[index]}
                                             onChange={handleEncoderReverseChange('omni', index)}
@@ -543,16 +688,16 @@ function PlatformTab({ isActive = true }) {
 
                 {platformType === 'differential' && (
                     <div id="differentialPlatform">
-                        <h2>Differential Platform</h2>
-                        <div>
+                        <div className="platform-reversals">
                             Motor setup (is reversed):<br/>
                             {Array.from({ length: 2 }).map((_, index) => (
                                 <React.Fragment key={index}>
                                     <span className='span-check'>
-                                        <label className="checkbox-label" htmlFor={`differentialPlatformIsReverse${index}`}>{index} </label>
+                                        <label className="checkbox-label" htmlFor={`differentialPlatformIsReverse${index}`}>M{index}</label>
                                         <input
                                             type="checkbox"
                                             className='k-check'
+                                            aria-label={`Reverse motor M${index}`}
                                             id={`differentialPlatformIsReverse${index}`}
                                             checked={isReversed.differential[index]}
                                             onChange={handleReverseChange('differential', index)}
@@ -566,10 +711,11 @@ function PlatformTab({ isActive = true }) {
                             {Array.from({ length: 2 }).map((_, index) => (
                                 <React.Fragment key={index}>
                                     <span className='span-check'>
-                                        <label className="checkbox-label" htmlFor={`differentialPlatformEncoderReverse${index}`}>{index} </label>
+                                        <label className="checkbox-label" htmlFor={`differentialPlatformEncoderReverse${index}`}>E{index}</label>
                                         <input
                                             type="checkbox"
                                             className='k-check'
+                                            aria-label={`Reverse encoder E${index}`}
                                             id={`differentialPlatformEncoderReverse${index}`}
                                             checked={isEncoderReversed.differential[index]}
                                             onChange={handleEncoderReverseChange('differential', index)}
@@ -588,10 +734,13 @@ function PlatformTab({ isActive = true }) {
                     </div>
                 )}
 
+                </fieldset>
+                <ConfigurationSave key={configurationGeneration} controller={controller} isConnected={isConnected}
+                    onReadStart={startSetupRead} onLoaded={loadRunningSetup} onBusy={setConfigurationBusy} />
                 </section>
+                <PlatformLayout platformType={platformType} mirrored={mirrored} frontWheel={frontWheel} />
                 <section className="panel-card platform-manual">
                     <h2>Manual driving</h2>
-                    <p className="section-help">Set PWM output directly, or enable keyboard driving below.</p>
                 <div className={!isPlatformInitialized ? 'disabled-div' : ''}>
                     <label htmlFor="platformVelocityX">X <output>{velocity.x}%</output></label>
                     <input 
@@ -719,7 +868,7 @@ function PlatformTab({ isActive = true }) {
                             </span>
                         </div>
                         <div className="platform-odometry-actions">
-                            <button className='k-button' onClick={() => runCommand(handleOdometryStart)} disabled={!isPlatformInitialized || isOdometryInitialized}>Start odometry</button>
+                            <button className='k-button' onClick={() => runCommand(handleOdometryStart)} disabled={!isPlatformInitialized || !platformEncodersReady || isOdometryInitialized}>Start odometry</button>
                             <button className='k-button k-button-danger' onClick={() => runCommand(handleOdometryStop)} disabled={!isPlatformInitialized || !isOdometryInitialized}>Stop odometry</button>
                             <button className='k-button' onClick={() => runCommand(handleOdometryReset)} disabled={!isPlatformInitialized || !isOdometryInitialized}>Reset odometry</button>
                             <button className='k-button' onClick={() => runCommand(handleGetOdometry)} disabled={!isPlatformInitialized || !isOdometryInitialized}>Get odometry</button>
@@ -749,6 +898,7 @@ function PlatformTab({ isActive = true }) {
             <fieldset className="settings-card platform-velocity">
                 <legend>1. Velocity control</legend>
                 <p className="section-help">Tune wheel speed tracking first. Position control uses these settings for every wheel.</p>
+                {isPlatformInitialized && !platformEncodersReady && <p role="status">Velocity control, position control and odometry require an initialized encoder on every platform wheel. Apply a positive encoder resolution with Initialize, or configure the missing encoders and Read running setup. Open-loop driving and Save remain available.</p>}
                 <section className="control-section">
                     <h3>Loop frequency</h3>
                     <label htmlFor="controllerFrequency">Frequency (Hz, 1–1000)</label>
@@ -761,7 +911,7 @@ function PlatformTab({ isActive = true }) {
                 <section className="control-section">
                     <h3>PID tuning</h3>
                     <VelocityTuningHelp boardInfo={controller?.boardInfo} ki={ki} integralLimit={integralLimit} />
-                    <fieldset className="platform-fields" disabled={!isPlatformInitialized}>
+                    <fieldset className="platform-fields" disabled={!isPlatformInitialized || !platformEncodersReady}>
                         <div className="form-grid">
                             <label htmlFor="kp">Velocity Kp<input type="number" id="kp" step="any" value={kp} onChange={handleKpChange}/></label>
                             <label htmlFor="ki">Velocity Ki<input type="number" id="ki" step="any" value={ki} onChange={handleKiChange}/></label>
@@ -773,7 +923,7 @@ function PlatformTab({ isActive = true }) {
                 </section>
                 <section className="control-section">
                     <h3>Velocity target</h3>
-                    <fieldset className="platform-fields" disabled={!isPlatformInitialized || !isControllerInitialized}>
+                    <fieldset className="platform-fields" disabled={!isPlatformInitialized || !platformEncodersReady || !isControllerInitialized}>
                         <div className="form-grid">
                             <label htmlFor="platformVelocityTargetX">X (m/s)<input type="number" id="platformVelocityTargetX" step={0.1} value={velocityTarget.x} onChange={handleVelocityTargetChange('x')}/></label>
                             <label htmlFor="platformVelocityTargetY">Y (m/s)<input type="number" id="platformVelocityTargetY" step={0.1} value={velocityTarget.y} onChange={handleVelocityTargetChange('y')}/></label>
@@ -788,7 +938,7 @@ function PlatformTab({ isActive = true }) {
             </fieldset>
             <div className="platform-position">
                 <PositionControl platform key={`${positionGeneration}-${isConnected}-${keyboardControlEnabled}`}
-                    velocityReady={isControllerInitialized} keyboardEnabled={keyboardControlEnabled}
+                    velocityReady={isControllerInitialized && platformEncodersReady} keyboardEnabled={keyboardControlEnabled}
                     onOdometryChange={sample => { setIsOdometryInitialized(true); setOdometry(sample); }} />
             </div>
             </div>

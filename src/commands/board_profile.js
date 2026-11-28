@@ -61,3 +61,84 @@ export function getPwmFrequencyOptions(info) { return getBoardProfile(info)?.pwm
 export function supportsPwmFrequency(info) {
   return info?.protocol_major === 2 && info.protocol_minor >= 13 && getPwmFrequencyOptions(info) !== null;
 }
+
+/** Persistence is implemented only for the exact v0.4 hardware profile. */
+export function supportsConfigurationPersistence(info) {
+  const board = getBoardProfile(info)?.board;
+  return info?.protocol_major === 2 && Number.isInteger(info.protocol_minor) && info.protocol_minor >= 14 &&
+    board?.model === 1 && board.revision === '0.4.0';
+}
+
+/** The inhibit has different hardware behavior on the exact supported boards. */
+export function getDriverSleepKind(info) {
+  const profile = getBoardProfile(info);
+  if (profile?.power?.driver_sleep !== true || profile.board.model !== 1) return null;
+  if (['0.3.0', '0.3.1'].includes(profile.board.revision)) return 'input_low';
+  if (profile.board.revision === '0.4.0') return 'sleep_pin';
+  return null;
+}
+
+/** The same commands became available on DRV8870 boards in protocol 2.17. */
+export function supportsDriverSleep(info) {
+  const kind = getDriverSleepKind(info);
+  return kind !== null && info?.protocol_major === 2 && Number.isInteger(info.protocol_minor) &&
+    info.protocol_minor >= (kind === 'input_low' ? 17 : 15) && info.protocol_minor <= 255;
+}
+
+export function supportsBoardIdle(info) {
+  const profile = getBoardProfile(info);
+  const minimum = profile?.board.model === 1
+    ? { '0.3.0': 18, '0.3.1': 18, '0.4.0': 16 }[profile.board.revision] : undefined;
+  return minimum !== undefined && info?.protocol_major === 2 && Number.isInteger(info.protocol_minor) &&
+    info.protocol_minor >= minimum && info.protocol_minor <= 255 && profile.power?.board_idle === true;
+}
+
+/** Narrow volatile experiment; legacy encoder control remains the default. */
+export function supportsFusionExperiment(info) {
+  const profile = getBoardProfile(info);
+  return profile?.board.model === 1 && profile.board.revision === '0.4.0' &&
+    profile.capabilities?.fusion_experiment === true && info?.protocol_major === 2 &&
+    Number.isInteger(info.protocol_minor) && info.protocol_minor >= 19 && info.protocol_minor <= 255;
+}
+
+export function supportsFeedbackSourceSelector(info) {
+  const profile = getBoardProfile(info);
+  return profile?.board.model === 1 && profile.board.revision === '0.4.0' &&
+    profile.capabilities?.feedback_source_selector === true && info.protocol_major === 2 &&
+    Number.isInteger(info.protocol_minor) && info.protocol_minor >= 21 && info.protocol_minor <= 255;
+}
+
+export function supportsFeedbackSourceHealth(info) {
+  return supportsFeedbackSourceSelector(info) && info.protocol_minor >= 22 &&
+    getBoardProfile(info).capabilities.feedback_source_health === true;
+}
+
+export function supportsImuTracking(info) {
+  const profile = getBoardProfile(info);
+  return profile?.board.model === 1 && profile.board.revision === '0.4.0' &&
+    profile.capabilities?.imu_tracking === true && info?.protocol_major === 2 &&
+    Number.isInteger(info.protocol_minor) && info.protocol_minor >= 20 && info.protocol_minor <= 255;
+}
+
+export function supportsImuMounting(info) {
+  const profile = getBoardProfile(info);
+  return profile?.board.model === 1 && profile.board.revision === '0.4.0' &&
+    profile.capabilities?.imu_mounting === true && info.protocol_major === 2 &&
+    Number.isInteger(info.protocol_minor) && info.protocol_minor >= 23 && info.protocol_minor <= 255;
+}
+
+/** The board-center mount contract begins in protocol 2.24. */
+export function supportsBoardMounting(info) {
+  return supportsImuMounting(info) && info.protocol_minor >= 24;
+}
+
+export function supportsOmniOrientation(info) {
+  return info?.protocol_major === 2 && Number.isInteger(info.protocol_minor) &&
+    info.protocol_minor >= 26 && info.protocol_minor <= 255;
+}
+
+/** Protocol-wide oriented initializer and running roller-arrangement readback. */
+export function supportsMecanumOrientation(info) {
+  return info?.protocol_major === 2 && Number.isInteger(info.protocol_minor) &&
+    info.protocol_minor >= 25 && info.protocol_minor <= 255;
+}
