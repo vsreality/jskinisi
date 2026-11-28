@@ -23,6 +23,17 @@ class GeneratorTests(unittest.TestCase):
         """Load the complete schema rather than a reduced codec fixture."""
         self.schema = json.loads((ROOT / 'tools/commands.json').read_text(encoding='utf-8'))
 
+    def test_mecanum_orientation_catalog_and_layout(self):
+        for mutate in (
+                lambda s: s.pop('mecanum_roller_orientations'),
+                lambda s: s['mecanum_roller_orientations'][1].update(id=True),
+                lambda s: s['mecanum_roller_orientations'][1].update(name='UNKNOWN'),
+                lambda s: next(c for c in s['commands'] if c['command'] == 'INITIALIZE_MECANUM_PLATFORM_ORIENTED')['properties'].pop()):
+            schema = deepcopy(self.schema)
+            mutate(schema)
+            with self.assertRaises(ValueError):
+                generate_js_code(schema)
+
     def test_pwm_catalog_and_layout(self):
         for mutate in (
                 lambda s: s.pop('pwm_frequencies'),

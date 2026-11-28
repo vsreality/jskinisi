@@ -9,7 +9,7 @@ TYPES = {'bool':(1,'Uint8'), 'uint8_t':(1,'Uint8'), 'int8_t':(1,'Int8'),
          'int32_t':(4,'Int32'), 'uint64_t':(8,'BigUint64'), 'int64_t':(8,'BigInt64'), 'double':(8,'Float64')}
 # Additional user commands are generated freely; these support handwritten session behavior.
 # Sensor exports are required by the session even when connected firmware is older.
-SESSION_COMMANDS = {'PING', 'SET_HEARTBEAT_CONFIG', 'SUBSCRIBE_ODOMETRY',
+SESSION_COMMANDS = {'INITIALIZE_MECANUM_PLATFORM_ORIENTED', 'PING', 'SET_HEARTBEAT_CONFIG', 'SUBSCRIBE_ODOMETRY',
                     'SAVE_CONFIGURATION', 'GET_CONFIGURATION_FIELD', 'SET_DRIVER_SLEEP', 'GET_DRIVER_SLEEP', 'SET_BOARD_IDLE', 'GET_BOARD_IDLE',
                     'UNSUBSCRIBE_ODOMETRY', 'ENCODER_ODOMETRY_EVENT', 'PLATFORM_ODOMETRY_EVENT',
                     'GET_TEMPERATURE', 'GET_IMU', 'GET_MOTOR_CURRENT', 'GET_MOTOR_FAULTS', 'CLEAR_MOTOR_FAULTS', 'GET_PWM_FREQUENCY', 'SET_PWM_FREQUENCY', 'GET_MOTOR_CURRENT_LIMIT', 'SET_MOTOR_CURRENT_LIMIT', 'SUBSCRIBE', 'SUBSCRIBE_WITH_MODE', 'UNSUBSCRIBE', 'TELEMETRY_EVENT', 'SUBSCRIBE_CONFIGURED'}
@@ -204,6 +204,18 @@ def generate_js_code(schema, js_version='ES6'):
     missing = SESSION_COMMANDS - {c.get('command') for c in schema.get('commands', [])}
     if missing:
         raise ValueError('Schema is missing runtime commands: ' + ', '.join(sorted(missing)))
+    commands = {c['command']: c for c in schema['commands']}
+    oriented = commands.get('INITIALIZE_MECANUM_PLATFORM_ORIENTED')
+    orientations = schema.get('mecanum_roller_orientations')
+    if oriented or orientations is not None:
+        if not oriented or not isinstance(orientations, list) or [
+                (v.get('name'), v.get('id'), type(v.get('id'))) for v in orientations] != [
+                ('STANDARD', 0, int), ('MIRRORED', 1, int)]:
+            raise ValueError('Invalid mecanum roller orientation catalog')
+        legacy = commands.get('INITIALIZE_MECANUM_PLATFORM', {}).get('properties', [])
+        fields = [(v['name'], v['type']) for v in oriented['properties']]
+        if len(legacy) != 12 or fields != [(v['name'], v['type']) for v in legacy] + [('roller_orientation', 'uint8_t')]:
+            raise ValueError('Invalid oriented mecanum initializer payload')
     validate_retirement(schema)
     validate_pwm_frequency(schema)
     validate_driver_sleep(schema)
@@ -298,7 +310,7 @@ function payloadView(buffer, size) {
     : new DataView(buffer);
 }
 ''')
-    for key, name in [('subscription_triggers', 'SubscriptionTrigger'), ('subscription_deliveries', 'SubscriptionDelivery'), ('pwm_frequencies', 'PwmFrequency')] + [(key, name) for key, name, _, _ in FUSION_CATALOGS + IMU_TRACKING_CATALOGS + FEEDBACK_CATALOGS + HEALTH_CATALOGS]:
+    for key, name in [('subscription_triggers', 'SubscriptionTrigger'), ('subscription_deliveries', 'SubscriptionDelivery'), ('pwm_frequencies', 'PwmFrequency'), ('mecanum_roller_orientations', 'MecanumRollerOrientation')] + [(key, name) for key, name, _, _ in FUSION_CATALOGS + IMU_TRACKING_CATALOGS + FEEDBACK_CATALOGS + HEALTH_CATALOGS]:
         lines.append(f'export const {name} = Object.freeze({{\n')
         for item in schema.get(key, []):
             lines.append(f"  {item['name']}: {item['id']},\n")
@@ -401,6 +413,13 @@ export function decodeTelemetryEvent(payload) {
             lines.append("    if (sleeping !== 0 && sleeping !== 1) throw new RangeError('sleeping must be 0 (awake) or 1 (asleep)');\n")
         if c['command'] == 'SET_FEEDBACK_FUSION_MOUNT':
             lines.append("    if (!Number.isFinite(mounting_yaw_rad) || Math.abs(mounting_yaw_rad) > Math.PI) throw new RangeError('Invalid fusion mounting yaw');\n")
+        if c['command'] == 'INITIALIZE_MECANUM_PLATFORM_ORIENTED':
+            flags = ', '.join(p['name'] for p in props[:8])
+            lines.append(f"    if (![{flags}].every(v => v === true || v === false || v === 0 || v === 1)) throw new RangeError('Invalid motor or encoder reversal');\n")
+            lines.append("    if (!Object.values(MecanumRollerOrientation).includes(roller_orientation)) throw new RangeError('Unknown mecanum roller arrangement');\n")
+            lines.append("    if (![length, width, wheels_diameter].every(v => Number.isFinite(v) && v > 0) || !Number.isFinite(encoder_resolution) || encoder_resolution < 0) throw new RangeError('Enter positive dimensions and nonnegative encoder resolution');\n")
+            lines.append("    const lever = width * 0.5 + (roller_orientation === MecanumRollerOrientation.MIRRORED ? -length : length) * 0.5;\n")
+            lines.append("    if (!Number.isFinite(1 / lever) || !Number.isFinite(2 / wheels_diameter)) throw new RangeError('Unusable mecanum geometry: check wheel diameter and wheel-center spacings. Mirrored rollers require unequal length and width for yaw');\n")
         if c['command'] in ('SET_IMU_MOUNT', 'SET_BOARD_MOUNT'):
             for p in props:
                 name, (lo, hi) = p['name'], p['range']

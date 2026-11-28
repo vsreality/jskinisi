@@ -1,3 +1,4 @@
+import { MecanumRollerOrientation } from '../../commands/kinisi_commands';
 import { useId } from 'react';
 
 // Millimetres in board axes, with the PCB underside center at (0, 0, 0).
@@ -67,6 +68,7 @@ export default function MountDiagram({ values, platform, boardProfile }) {
   const angles = values.slice(0,3).map(n => Number(n) * Math.PI / 180);
   const [x,y,z] = values.slice(3).map(n => Number(n)*1000);
   const layout = platformLayout(platform);
+  const hand = platform?.rollerOrientation === MecanumRollerOrientation.MIRRORED ? -1 : 1;
   const { halfWidth, halfLength, diameter, wheels } = layout;
   const boardReach = Math.max(Math.hypot(length/2, width/2, thickness), Math.hypot(...chip));
   const scale = Math.min(.8, 94/(halfWidth+diameter*.5), 92/(halfLength+diameter*.5),
@@ -100,7 +102,7 @@ export default function MountDiagram({ values, platform, boardProfile }) {
           <rect x={-halfWidth*.93} y={-halfLength} width={halfWidth*1.86} height={halfLength*2} rx={halfWidth*.23} fill="#d9e4e8" stroke="#586e79" strokeWidth="3"/>}
         {wheels.map(([wx,wy,angle],i)=><g key={i} aria-label={`Wheel ${i}`} transform={`translate(${wx} ${wy}) rotate(${angle})`}>
           <rect x={-diameter*.14} y={-diameter/2} width={diameter*.28} height={diameter} rx={diameter*.075} fill="#435664"/>
-          {layout.name==='Mecanum' && [-.25,0,.25].map(pos=><path key={pos} d={`M${-diameter*.12} ${pos*diameter} l${diameter*.24} ${diameter*([0,2].includes(i) ? .16 : -.16)}`} stroke="#abbcc5" strokeWidth="3"/>)}
+          {layout.name==='Mecanum' && [-.25,0,.25].map(pos=><path key={pos} d={`M${-diameter*.12} ${pos*diameter} l${diameter*.24} ${diameter*hand*([0,2].includes(i) ? -.24 : .24)}`} stroke="#abbcc5" strokeWidth="3"/>)}
         </g>)}
         <path d={`M-15 ${-halfLength*.65} l15 -12 15 12`} fill="none" stroke="#647c88" strokeWidth="4"/>
       </g>

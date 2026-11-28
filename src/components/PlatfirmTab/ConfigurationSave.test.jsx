@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { it, expect, vi } from 'vitest';
 import { ErrorCode } from '../../commands/kinisi_commands';
 import ConfigurationSave from './ConfigurationSave';
@@ -151,4 +152,126 @@ it('allows different initialized wheel resolutions and clears saved confirmation
   expect(screen.queryByText(/running encoders use different resolutions/)).not.toBeInTheDocument();
   expect(screen.getByLabelText('Wheel base (meters)')).toHaveValue(0.8);
   expect(c.save_configuration).toHaveBeenCalledTimes(1);
+});
+
+it('lets installers match the mirrored drawing and rejects square geometry before applying any setup', async () => {
+  const c = client();
+  c.boardInfo = { ...boardInfo, board_minor: 3, protocol_minor: 25 };
+  c.get_configuration_field.mockResolvedValue(1);
+  c.initialize_mecanum_platform_oriented = vi.fn();
+  c.initialize_mecanum_platform = vi.fn();
+  render(<SettingsProvider><ControllerContext.Provider value={{controller:c,isConnected:true}}><PlatformTab /></ControllerContext.Provider></SettingsProvider>);
+  fireEvent.change(screen.getByLabelText('Platform:'), {target:{value:'mecanum'}});
+  const selector = screen.getByLabelText('Roller arrangement');
+  fireEvent.change(selector, {target:{value:'1'}});
+  expect(screen.getByRole('img', {name:/Mecanum chassis.*Mirrored/i})).toHaveAttribute('src', expect.stringContaining('mecanum-mirrored.svg'));
+  expect(screen.getByRole('alert')).toHaveTextContent('cannot control yaw');
+  expect(screen.getByRole('button',{name:'Initialize'})).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('Platform length (meters)'), {target:{value:'0.4'}});
+  fireEvent.change(screen.getByLabelText('Platform width (meters)'), {target:{value:'0.3'}});
+  fireEvent.click(screen.getByLabelText('Reverse motor M0'));
+  fireEvent.click(screen.getByLabelText('Reverse encoder E1'));
+  expect(c.initialize_mecanum_platform_oriented).not.toHaveBeenCalled();
+  click('Initialize');
+  await screen.findByText('Running roller arrangement: Mirrored (O).');
+  expect(c.initialize_mecanum_platform_oriented).toHaveBeenCalledExactlyOnceWith(
+    true,false,false,false,false,true,false,false,.4,.3,.1,1425.1,1);
+  expect(c.get_configuration_field).toHaveBeenCalledWith(7,0);
+  expect(c.initialize_mecanum_platform).not.toHaveBeenCalled();
+  expect(c.save_configuration).not.toHaveBeenCalled();
+  fireEvent.change(selector,{target:{value:'0'}});
+  expect(screen.queryByText('Running roller arrangement: Mirrored (O).')).not.toBeInTheDocument();
+  click('Read running roller arrangement');
+  await screen.findByText('Running roller arrangement: Mirrored (O).');
+  expect(selector).toHaveValue('1');
+});
+
+it('shows only the standard pattern on old firmware and uses its original initializer', async () => {
+  const c = client();
+  c.boardInfo = {...boardInfo, board_minor:3, protocol_minor:24};
+  c.initialize_mecanum_platform = vi.fn();
+  c.initialize_mecanum_platform_oriented = vi.fn();
+  render(<SettingsProvider><ControllerContext.Provider value={{controller:c,isConnected:true}}><PlatformTab /></ControllerContext.Provider></SettingsProvider>);
+  fireEvent.change(screen.getByLabelText('Platform:'),{target:{value:'mecanum'}});
+  expect(screen.getByLabelText('Roller arrangement')).toHaveValue('0');
+  expect(screen.getByLabelText('Roller arrangement')).toBeDisabled();
+  expect(screen.getByRole('img',{name:/Mecanum chassis.*Standard/i})).toHaveAttribute('src', expect.stringContaining('mecanum.svg'));
+  click('Initialize');
+  await waitFor(() => expect(c.initialize_mecanum_platform).toHaveBeenCalledExactlyOnceWith(
+    false,false,false,false,false,false,false,false,.5,.5,.1,1425.1));
+  expect(c.initialize_mecanum_platform_oriented).not.toHaveBeenCalled();
+  expect(c.get_configuration_field).not.toHaveBeenCalled();
+});
+
+it('clears direct roller confirmation on failed reads and discards a late response after another preset is applied', async () => {
+  const c = client();
+  c.boardInfo = {...boardInfo, board_minor:3, protocol_minor:25};
+  c.get_configuration_field.mockResolvedValue(1);
+  render(<SettingsProvider><ControllerContext.Provider value={{controller:c,isConnected:true}}><PlatformTab /></ControllerContext.Provider></SettingsProvider>);
+  const select = value => fireEvent.change(screen.getByLabelText('Platform:'),{target:{value}});
+  const confirmed = /Running roller arrangement:/;
+  const read = () => click('Read running roller arrangement');
+  select('mecanum');
+  read();
+  await screen.findByText(confirmed);
+  c.get_configuration_field.mockRejectedValueOnce(new Error('Field 7 read timed out'));
+  read();
+  await screen.findByText('Field 7 read timed out');
+  expect(screen.queryByText(confirmed)).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Roller arrangement')).toHaveValue('1');
+  read();
+  await screen.findByText(confirmed);
+  let resolve;
+  c.get_configuration_field.mockImplementationOnce(() => new Promise(done => {resolve = done;}));
+  read();
+  expect(screen.queryByText(confirmed)).not.toBeInTheDocument();
+  select('differential');
+  click('Initialize');
+  await waitFor(() => expect(c.initialize_differential_platform).toHaveBeenCalledTimes(1));
+  select('mecanum');
+  await act(async () => resolve(0));
+  expect(screen.queryByText(confirmed)).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Roller arrangement')).toHaveValue('1');
+});
+
+it('invalidates roller confirmation on v0.4 full reload failure and when the running platform changes', async () => {
+  const c = client();
+  c.boardInfo = {...boardInfo, protocol_minor:25};
+  let type = 3;
+  c.get_configuration_field.mockImplementation(async field => [type,.1,.4,.3,2048,0,0,1][field]);
+  render(<SettingsProvider><ControllerContext.Provider value={{controller:c,isConnected:true}}><PlatformTab isActive={false}/></ControllerContext.Provider></SettingsProvider>);
+  const confirmed = /Running roller arrangement:/;
+  await screen.findByText(confirmed);
+  c.get_configuration_field.mockRejectedValueOnce(new Error('Setup read timed out'));
+  click('Read running setup');
+  await screen.findByText(/Setup read timed out/);
+  expect(screen.queryByText(confirmed)).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Roller arrangement')).toHaveValue('1');
+  click('Read running setup');
+  await screen.findByText(confirmed);
+  type = 1;
+  click('Read running setup');
+  await screen.findByText(/Running differential setup loaded/);
+  fireEvent.change(screen.getByLabelText('Platform:'),{target:{value:'mecanum'}});
+  expect(screen.queryByText(confirmed)).not.toBeInTheDocument();
+});
+
+it.each([3, 4])('preserves a roller edit made during initialization on v0.%i', async boardMinor => {
+  const c = client();
+  c.boardInfo = {...boardInfo, board_minor:boardMinor, protocol_minor:25};
+  let acknowledge;
+  c.initialize_mecanum_platform_oriented = vi.fn(() => new Promise(resolve => {acknowledge = resolve;}));
+  let platform = 1;
+  c.get_configuration_field.mockImplementation(async field => [platform,.1,.4,.3,1000,0,0,0][field]);
+  render(<StrictMode><SettingsProvider><ControllerContext.Provider value={{controller:c,isConnected:true}}><PlatformTab /></ControllerContext.Provider></SettingsProvider></StrictMode>);
+  if (boardMinor === 4) await screen.findByText(/Running differential setup loaded/);
+  fireEvent.change(screen.getByLabelText('Platform:'),{target:{value:'mecanum'}});
+  click('Initialize');
+  expect(c.initialize_mecanum_platform_oriented).toHaveBeenCalledTimes(1);
+  fireEvent.change(screen.getByLabelText('Roller arrangement'),{target:{value:'1'}});
+  platform = 3;
+  await act(async () => acknowledge());
+  if (boardMinor === 4) await screen.findByText(/Running mecanum setup loaded/);
+  expect(screen.getByLabelText('Roller arrangement')).toHaveValue('1');
+  expect(screen.queryByText(/Running roller arrangement:/)).not.toBeInTheDocument();
 });

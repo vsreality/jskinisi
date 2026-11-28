@@ -1,7 +1,7 @@
 // File: kinisi_session.js
 // Shared API-v2 framing, readiness and clock exchange for serial and proxy transports.
 import { Commands, INIT, READY, ERROR, TIME_SYNC_REQUEST, TIME_SYNC_RESPONSE,
-  GET_IMU_MOUNT, SET_IMU_MOUNT, GET_BOARD_MOUNT, SET_BOARD_MOUNT,
+  INITIALIZE_MECANUM_PLATFORM_ORIENTED, GET_IMU_MOUNT, SET_IMU_MOUNT, GET_BOARD_MOUNT, SET_BOARD_MOUNT,
   GET_FEEDBACK_SOURCE_HEALTH, GET_FEEDBACK_IMU_CHANNELS, SET_FEEDBACK_FUSION_MOUNT, GET_FEEDBACK_FUSION_MOUNT, FeedbackSourceVectorKind, SET_FEEDBACK_SOURCE, GET_FEEDBACK_SOURCE_STATUS, GET_FEEDBACK_SOURCE_VECTOR,
   SET_IMU_TRACKING, GET_IMU_TRACKING_STATUS, GET_IMU_TRACKING_VECTOR, GET_IMU_TRACKING_CONFIGURATION,
   SET_FUSION_EXPERIMENT, GET_FUSION_STATUS, GET_FUSION_VECTOR, GET_FUSION_CONFIGURATION,
@@ -12,12 +12,13 @@ import { Commands, INIT, READY, ERROR, TIME_SYNC_REQUEST, TIME_SYNC_RESPONSE,
 import { POSITION_COMMANDS, supportsPositionControl, POSITION_PID_COMMANDS, supportsPositionPidControl } from './position_control.js';
 import { supportsTemperatureRead } from './temperature.js';
 import { supportsImuRead } from './imu.js';
-import { supportsBoardMounting, supportsImuMounting } from './board_profile.js';
+import { supportsMecanumOrientation, supportsBoardMounting, supportsImuMounting } from './board_profile.js';
+import { ConfigurationField, readMecanumRollerOrientation } from './configuration.js';
 import { mountToWire, mountGeometry } from './imu_mount.js';
 import { getBoardProfile, supportsBoardSensor, supportsMotorCurrent, supportsMotorFaults, getMotorCurrentLimitOptions, supportsMotorCurrentLimit, getPwmFrequencyOptions, supportsPwmFrequency, supportsConfigurationPersistence, supportsDriverSleep, supportsBoardIdle, supportsFusionExperiment, supportsImuTracking, supportsFeedbackSourceSelector, supportsFeedbackSourceHealth } from './board_profile.js';
 import { supportsTelemetry, supportsTopic } from './telemetry.js';
 
-export { PwmFrequency, Topic, SubscriptionMode, SubscriptionTrigger, SubscriptionDelivery } from './kinisi_commands.js';
+export { MecanumRollerOrientation, PwmFrequency, Topic, SubscriptionMode, SubscriptionTrigger, SubscriptionDelivery } from './kinisi_commands.js';
 
 // Existing controls need 2.1; additive commands are gated separately.
 const MIN_PROTOCOL_VERSION = [2, 1, 0];
@@ -330,6 +331,8 @@ export class KinisiSession extends Commands {
     throw new ProtocolError('Feedback source changed during read. No coherent snapshot available.');
   }
 
+  getMecanumRollerOrientation() { return readMecanumRollerOrientation(this); }
+  supportsMecanumOrientation() { return this.ready && supportsMecanumOrientation(this.boardInfo); }
   supportsImuTracking() { return this.ready && supportsImuTracking(this.boardInfo); }
   supportsFusionExperiment() { return this.ready && supportsFusionExperiment(this.boardInfo); }
 
@@ -351,7 +354,12 @@ export class KinisiSession extends Commands {
       throw new ProtocolError('Board idle requires a known supported board and compatible firmware: v0.3/Nano protocol 2.18+, or v0.4 protocol 2.16+');
     if ([SET_DRIVER_SLEEP, GET_DRIVER_SLEEP].includes(command) && !this.supportsDriverSleep())
       throw new ProtocolError('Driver sleep requires a known supported board and compatible firmware: v0.3/Nano protocol 2.17+, or v0.4 protocol 2.15+');
-    if ([SAVE_CONFIGURATION, GET_CONFIGURATION_FIELD].includes(command) && !this.supportsConfigurationPersistence())
+    const rollerRead = command === GET_CONFIGURATION_FIELD && bytes(payload)[0] === ConfigurationField.MECANUM_ROLLER_ORIENTATION;
+    if ((command === INITIALIZE_MECANUM_PLATFORM_ORIENTED || rollerRead) && !this.supportsMecanumOrientation())
+      throw new ProtocolError('Mecanum roller orientation requires firmware protocol 2.25 or newer');
+    if (rollerRead && bytes(payload)[1] !== 0)
+      throw new RangeError('Mecanum roller orientation requires field index zero');
+    if ((command === SAVE_CONFIGURATION || (command === GET_CONFIGURATION_FIELD && !rollerRead)) && !this.supportsConfigurationPersistence())
       throw new ProtocolError('Configuration persistence requires a known v0.4 board and firmware protocol 2.14 or newer');
     if ([SUBSCRIBE, SUBSCRIBE_WITH_MODE, SUBSCRIBE_CONFIGURED, UNSUBSCRIBE].includes(command)) {
       if (!supportsTelemetry(this.boardInfo)) throw new ProtocolError('Subscriptions require firmware protocol 2.6 or newer');

@@ -16,31 +16,32 @@ function failureMessage(error, saving) {
   return `Could not read the running setup. Reconnect or try Read running setup again. ${error.message || ''}`;
 }
 
-export default function ConfigurationSave({ controller, isConnected, onLoaded, onBusy }) {
+export default function ConfigurationSave({ controller, isConnected, onReadStart, onLoaded, onBusy }) {
   const connection = controller?.boardInfo;
   const supported = supportsConfigurationPersistence(connection);
   const available = isConnected && controller?.ready && supported;
   const [state, setState] = useState(null);
   const operation = useRef({ id: 0 });
   const current = state?.controller === controller && state.connection === connection ? state : null;
-  const read = useCallback(async () => {
+  const read = useCallback(async (automatic = false) => {
     const id = ++operation.current.id;
+    const request = onReadStart?.(automatic);
     onBusy(true);
     setState({ controller, connection, busy: true });
     try {
       const setup = await readRunningConfiguration(controller);
       if (operation.current.id !== id) return;
       setState({ controller, connection, setup, busy: false });
-      onLoaded(setup);
+      onLoaded(setup, request);
     } catch (error) {
       if (operation.current.id === id) setState({ controller, connection, busy: false, error: failureMessage(error, false) });
     } finally { if (operation.current.id === id) onBusy(false); }
-  }, [controller, connection, onLoaded, onBusy]);
+  }, [controller, connection, onReadStart, onLoaded, onBusy]);
   useEffect(() => {
     const requests = operation.current;
     // Synchronize the new external board session, including its loading state.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (available) read();
+    if (available) read(true);
     return () => { requests.id++; onBusy(false); };
   }, [available, read, onBusy]);
   const save = async () => {
@@ -62,7 +63,7 @@ export default function ConfigurationSave({ controller, isConnected, onLoaded, o
     <p className="section-help">On startup, saved setup is restored with motors stopped. Motion targets, PID controllers and driver current-limit settings are not restored. Reading the running setup does not initialize or move the platform.</p>
     {!supported ? <p>Requires a known Kinisi v0.4 board and firmware protocol 2.14 or newer.</p>
       : !available ? <p>Connect and wait for the controller to be ready.</p> : <>
-        <button type="button" className="k-button" disabled={current?.busy} onClick={read}>Read running setup</button>
+        <button type="button" className="k-button" disabled={current?.busy} onClick={() => read()}>Read running setup</button>
         <button type="button" className="k-button" disabled={current?.busy} onClick={save}>{current?.busy ? 'Working…' : 'Save configuration'}</button>
         {current?.setup && <p role="status">Running {current.setup.platform} setup loaded. PWM: {current.setup.pwmHz / 1000} kHz. This read does not confirm a saved copy.</p>}
         {current?.setup && current.setup.encoders.slice(0, current.setup.channelCount).some(encoder => encoder.resolution === 0) &&

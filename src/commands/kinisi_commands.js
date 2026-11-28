@@ -1,6 +1,6 @@
 // Generated from tools/commands.json by tools/sdkgenerator.py. Do not edit.
 export const SDK_VERSION = Object.freeze([2, 6, 0]);
-export const PROTOCOL_VERSION = Object.freeze([2, 24, 0]);
+export const PROTOCOL_VERSION = Object.freeze([2, 25, 0]);
 export const GET_TEMPERATURE = 0x50;
 export const GET_IMU = 0x51;
 export const GET_MOTOR_CURRENT = 0x52;
@@ -107,6 +107,7 @@ export const SET_IMU_MOUNT = 0x6e;
 export const GET_IMU_MOUNT = 0x6f;
 export const SET_BOARD_MOUNT = 0x85;
 export const GET_BOARD_MOUNT = 0x86;
+export const INITIALIZE_MECANUM_PLATFORM_ORIENTED = 0x87;
 export const ErrorCode = Object.freeze({
   INCOMPATIBLE_PROTOCOL: 1,
   INVALID_ARGUMENT: 2,
@@ -188,6 +189,10 @@ export const PwmFrequency = Object.freeze({
   KHZ_25: 25000,
   KHZ_50: 50000,
   KHZ_100: 100000,
+});
+export const MecanumRollerOrientation = Object.freeze({
+  STANDARD: 0,
+  MIRRORED: 1,
 });
 export const FusionMode = Object.freeze({
   LEGACY_ENCODER: 0,
@@ -1701,7 +1706,7 @@ export class Commands {
     await this._request(TOGGLE_STATUS_LED_STATE, payload, 0);
   }
 
-  /** This command initializes a mecanum (4-wheel) platform and prepares it for use. It uses motor and encoder indices 0, 1, 2 and 3 (one per wheel), which correspond to the is_reversed_0..3 and is_encoder_reversed_0..3 parameters. All four motor slots are occupied by this platform. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
+  /** This command initializes a mecanum (4-wheel) platform and prepares it for use. It uses motor and encoder indices 0, 1, 2 and 3 (one per wheel), which correspond to the is_reversed_0..3 and is_encoder_reversed_0..3 parameters. All four motor slots are occupied by this platform. Selects the STANDARD roller layout. Errors: DRIVERS_ASLEEP, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED. */
   async initialize_mecanum_platform(is_reversed_0, is_reversed_1, is_reversed_2, is_reversed_3, is_encoder_reversed_0, is_encoder_reversed_1, is_encoder_reversed_2, is_encoder_reversed_3, length, width, wheels_diameter, encoder_resolution) {
     const payload = new ArrayBuffer(40);
     const requestView = new DataView(payload);
@@ -2184,7 +2189,7 @@ export class Commands {
     await this._request(SAVE_CONFIGURATION, payload, 0);
   }
 
-  /** Read one field of the running v0.4 configuration. Use GET_PWM_FREQUENCY to read the board-wide switching frequency. Errors: INVALID_LENGTH, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INVALID_ARGUMENT, PLATFORM_NOT_INITIALIZED. */
+  /** Read a running configuration field. Fields 0 through 6 require v0.4. Field 7 is available on all boards with protocol 2.25 and a configured mecanum platform. Use GET_PWM_FREQUENCY for the board-wide switching frequency. Errors: INVALID_LENGTH, INIT_REQUIRED, CLOCK_NOT_READY, SENSOR_NOT_AVAILABLE, INVALID_ARGUMENT, PLATFORM_NOT_INITIALIZED. */
   async get_configuration_field(field, index) {
     const payload = new ArrayBuffer(2);
     const requestView = new DataView(payload);
@@ -2439,5 +2444,30 @@ export class Commands {
     const payload = new ArrayBuffer(0);
     const response = await this._request(GET_BOARD_MOUNT, payload, 19);
     return BoardMountConfiguration.decode(response);
+  }
+
+  /** Initialize four mecanum wheels with an explicit 45-degree roller layout. Requires protocol 2.25 and a READY session. Motor/encoder indices 0, 1, 2, 3 are front right, rear right, rear left, front left. Length and width are positive front-to-rear and side-to-side wheel-center spacings in meters. STANDARD uses yaw lever (width + length)/2. MIRRORED uses (width - length)/2 and requires unequal spacings. Invalid orientation or geometry leaves the running setup unchanged. Errors: DRIVERS_ASLEEP, BOARD_IDLE, INVALID_LENGTH, INVALID_ARGUMENT, INTERNAL_ERROR, INIT_REQUIRED, CLOCK_NOT_READY. */
+  async initialize_mecanum_platform_oriented(is_reversed_0, is_reversed_1, is_reversed_2, is_reversed_3, is_encoder_reversed_0, is_encoder_reversed_1, is_encoder_reversed_2, is_encoder_reversed_3, length, width, wheels_diameter, encoder_resolution, roller_orientation) {
+    if (![is_reversed_0, is_reversed_1, is_reversed_2, is_reversed_3, is_encoder_reversed_0, is_encoder_reversed_1, is_encoder_reversed_2, is_encoder_reversed_3].every(v => v === true || v === false || v === 0 || v === 1)) throw new RangeError('Invalid motor or encoder reversal');
+    if (!Object.values(MecanumRollerOrientation).includes(roller_orientation)) throw new RangeError('Unknown mecanum roller arrangement');
+    if (![length, width, wheels_diameter].every(v => Number.isFinite(v) && v > 0) || !Number.isFinite(encoder_resolution) || encoder_resolution < 0) throw new RangeError('Enter positive dimensions and nonnegative encoder resolution');
+    const lever = width * 0.5 + (roller_orientation === MecanumRollerOrientation.MIRRORED ? -length : length) * 0.5;
+    if (!Number.isFinite(1 / lever) || !Number.isFinite(2 / wheels_diameter)) throw new RangeError('Unusable mecanum geometry: check wheel diameter and wheel-center spacings. Mirrored rollers require unequal length and width for yaw');
+    const payload = new ArrayBuffer(41);
+    const requestView = new DataView(payload);
+    requestView.setUint8(0, is_reversed_0);
+    requestView.setUint8(1, is_reversed_1);
+    requestView.setUint8(2, is_reversed_2);
+    requestView.setUint8(3, is_reversed_3);
+    requestView.setUint8(4, is_encoder_reversed_0);
+    requestView.setUint8(5, is_encoder_reversed_1);
+    requestView.setUint8(6, is_encoder_reversed_2);
+    requestView.setUint8(7, is_encoder_reversed_3);
+    requestView.setFloat64(8, length, true);
+    requestView.setFloat64(16, width, true);
+    requestView.setFloat64(24, wheels_diameter, true);
+    requestView.setFloat64(32, encoder_resolution, true);
+    requestView.setUint8(40, roller_orientation);
+    await this._request(INITIALIZE_MECANUM_PLATFORM_ORIENTED, payload, 0);
   }
 }

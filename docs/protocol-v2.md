@@ -362,6 +362,29 @@ omni wheel uses `0.09` meters. Fields 4–6 report each channel's encoder resolu
 flag and motor-reversed flag; flags are 0 or 1. Use `get_pwm_frequency()` for the
 running switching frequency. `readRunningConfiguration(controller)` from
 `configuration.js` reads a validated snapshot including all four channel slots.
+On protocol 2.25 and later, every controller with a running Mecanum setup
+supports `getMecanumRollerOrientation()` (field 7, index 0). It returns
+`MecanumRollerOrientation.STANDARD` (0) or `.MIRRORED` (1). The oriented
+initializer takes the original arguments plus that integer as its final
+argument. For example, the following sets a 0.40 × 0.30 m rectangle and
+reads its running layout. Each motor and encoder reversal is independent.
+
+```js
+if (controller.supportsMecanumOrientation()) {
+  await controller.initialize_mecanum_platform_oriented(
+    false, false, false, false, false, false, false, false,
+    0.40, 0.30, 0.10, 2048, MecanumRollerOrientation.MIRRORED
+  );
+  const orientation = await controller.getMecanumRollerOrientation();
+}
+```
+
+Import the enum from `kinisi_commands.js` or `kinisi_session.js`.
+Mirrored rollers require unequal wheel-center length and width for yaw.
+The original `initialize_mecanum_platform(...)` keeps its 12 arguments and
+always selects Standard. Earlier firmware supports only that initializer.
+Configuration storage and fields 0–6 retain their original v0.4 requirements.
+
 An encoder resolution of zero denotes an uninitialized encoder and is valid for
 open-loop platform setup; it does not prevent saving. Separately configured
 channels outside the active platform are included in the readback. Velocity and

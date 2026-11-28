@@ -6,9 +6,10 @@ import useImuMount from '../../hooks/useImuMount';
 import PlatformLayout from './PlatformLayout';
 import FusionExperiment from './FusionExperiment';
 import TrackingSource from './TrackingSource';
-import { supportsFeedbackSourceSelector } from '../../commands/board_profile';
+import { supportsMecanumOrientation, supportsFeedbackSourceSelector, supportsConfigurationPersistence } from '../../commands/board_profile';
 import TelemetryControl from '../TelemetryControl/TelemetryControl';
-import { Topic } from '../../commands/kinisi_commands';
+import { readMecanumRollerOrientation } from '../../commands/configuration';
+import { MecanumRollerOrientation, Topic } from '../../commands/kinisi_commands';
 import { useSettings, scaleInput } from '../../contexts/SettingsContext';
 import VelocityTuningHelp from '../VelocityTuningHelp';
 import { velocityPidDefaults } from '../../commands/velocity_tuning';
@@ -54,6 +55,46 @@ function PlatformTab({ isActive = true }) {
     const [mecanumWheelDiameter, setMecanumWheelDiameter] = useState(0.1);
     const [mecanumLength, setMecanumLength] = useState(0.5);
     const [mecanumWidth, setMecanumWidth] = useState(0.5);
+
+    const [rollerDraft, setRollerDraft] = useState(null);
+    const connection = controller?.boardInfo;
+    const oriented = supportsMecanumOrientation(connection);
+    const rollerOrientation = rollerDraft && rollerDraft.connection === connection && (!isConnected || oriented)
+        ? rollerDraft.value : MecanumRollerOrientation.STANDARD;
+    const mirrored = rollerOrientation === MecanumRollerOrientation.MIRRORED;
+    const singular = mirrored && Number(mecanumWidth) > 0 && Number(mecanumLength) === Number(mecanumWidth);
+    const rollerRequest = useRef(0);
+    const platformInit = useRef(0);
+    const pendingSetupRefresh = useRef(null);
+    useEffect(() => () => {
+        rollerRequest.current++;
+        platformInit.current++;
+        pendingSetupRefresh.current = null;
+    }, [controller, connection, isConnected]);
+    const invalidateRollerRead = useCallback(() => {
+        const request = ++rollerRequest.current;
+        setRollerDraft(draft => draft?.read ? { ...draft, read: false } : draft);
+        return request;
+    }, []);
+    const startSetupRead = useCallback(automatic => {
+        // A post-initialization reload belongs to the draft that dispatched it.
+        if (automatic && pendingSetupRefresh.current !== null) return pendingSetupRefresh.current;
+        pendingSetupRefresh.current = null;
+        return invalidateRollerRead();
+    }, [invalidateRollerRead]);
+    const editRollers = value => {
+        rollerRequest.current++;
+        setRollerDraft({ connection, value });
+    };
+    const loadRollerReadback = async () => {
+        const request = invalidateRollerRead();
+        try {
+            const value = await readMecanumRollerOrientation(controller);
+            if (request === rollerRequest.current) setRollerDraft({ connection, value, read: true });
+        } catch (error) {
+            if (request === rollerRequest.current) throw error;
+        }
+    };
 
     // Omni platform properties
     const [omniWheelDiameter, setOmniWheelDiameter] = useState(0.1);
@@ -103,7 +144,7 @@ function PlatformTab({ isActive = true }) {
     const [controllerFrequency, setControllerFrequency] = useState('10');
     const [odometryFrequency, setOdometryFrequency] = useState('50');
 
-    const loadRunningSetup = useCallback(setup => {
+    const loadRunningSetup = useCallback((setup, request) => {
         setMountPreviewSession(setup ? controller?.boardInfo : null);
         setIsPlatformInitialized(Boolean(setup));
         const ready = Boolean(setup && setup.encoders.slice(0, setup.channelCount)
@@ -115,11 +156,14 @@ function PlatformTab({ isActive = true }) {
         }
         if (!setup) return;
         const { platform, wheelDiameter, trackOrLength, widthOrRadius, encoders, motorReversed } = setup;
-        setPlatformType(platform);
+        const updateSelection = request === rollerRequest.current;
+        if (updateSelection) setPlatformType(platform);
         setIsReversed(previous => ({ ...previous, [platform]: motorReversed }));
         setIsEncoderReversed(previous => ({ ...previous, [platform]: encoders.map(encoder => encoder.reversed) }));
         setEncoderResolution(String(encoders[0].resolution));
         if (platform === 'mecanum') {
+            if (updateSelection)
+                setRollerDraft({ connection: controller.boardInfo, value: setup.rollerOrientation, read: true });
             setMecanumWheelDiameter(wheelDiameter); setMecanumLength(trackOrLength); setMecanumWidth(widthOrRadius);
         } else if (platform === 'omni') {
             setOmniWheelDiameter(wheelDiameter); setOmniRadius(widthOrRadius);
@@ -130,6 +174,7 @@ function PlatformTab({ isActive = true }) {
 
     // Handlers for changes in form elements
     const handlePlatformTypeChange = (event) => {
+        invalidateRollerRead();
         setPlatformType(event.target.value);
         setMountPreviewSession(controller?.boardInfo);
     };
@@ -289,21 +334,19 @@ function PlatformTab({ isActive = true }) {
 
     // Handler for initializing the platform
     const initializePlatform = async (platform) => {
+        const initialization = ++platformInit.current;
+        const request = invalidateRollerRead();
         console.log(`Initializing ${platform} platform with reversed motors: ${isReversed[platform]}`);
         if (platformType === 'mecanum'){
-            await controller.initialize_mecanum_platform(
-                isReversed.mecanum[0],
-                isReversed.mecanum[1],
-                isReversed.mecanum[2],
-                isReversed.mecanum[3],
-                isEncoderReversed.mecanum[0],
-                isEncoderReversed.mecanum[1],
-                isEncoderReversed.mecanum[2],
-                isEncoderReversed.mecanum[3],
-                mecanumLength,
-                mecanumWidth,
-                mecanumWheelDiameter,
-                encoderResolution);
+            const geometry = [
+                ...isReversed.mecanum, ...isEncoderReversed.mecanum,
+                Number(mecanumLength), Number(mecanumWidth), Number(mecanumWheelDiameter), Number(encoderResolution)
+            ];
+            if (oriented) {
+                await controller.initialize_mecanum_platform_oriented(...geometry, rollerOrientation);
+            } else {
+                await controller.initialize_mecanum_platform(...geometry);
+            }
         } else if (platformType === 'omni'){
             await controller.initialize_omni_platform(
                 isReversed.omni[0],
@@ -329,6 +372,11 @@ function PlatformTab({ isActive = true }) {
             return
         }
 
+        if (initialization !== platformInit.current) return;
+        const refreshRollers = request === rollerRequest.current;
+        const applied = invalidateRollerRead();
+        if (supportsConfigurationPersistence(connection))
+            pendingSetupRefresh.current = refreshRollers ? applied : request;
         setIsPlatformInitialized(true);
         setMountPreviewSession(controller?.boardInfo);
         setEncoderSetup({ controller, connection: controller?.boardInfo, ready: Number(encoderResolution) > 0 });
@@ -337,6 +385,8 @@ function PlatformTab({ isActive = true }) {
         setIsOdometryInitialized(false);
         setOdometry(null);
         setPositionGeneration(value => value + 1);
+        if (refreshRollers && platform === 'mecanum' && oriented && !supportsConfigurationPersistence(connection))
+            await loadRollerReadback();
     };
 
     // Handler for setting the platform velocity
@@ -482,7 +532,7 @@ function PlatformTab({ isActive = true }) {
             {commandError && <p className="conn-error" role="alert">{commandError}</p>}
             {mounting.supported && !mounting.boardCenter && <MountReadback mounting={mounting}/>}
             {mounting.boardCenter && <ImuMounting model={mounting} platform={mountPreviewSession === controller?.boardInfo ? {
-                type: platformType, track: Number(differentialWheelBase), length: Number(mecanumLength),
+                type: platformType, rollerOrientation, track: Number(differentialWheelBase), length: Number(mecanumLength),
                 width: Number(mecanumWidth), radius: Number(omniRadius),
                 diameter: Number({ omni: omniWheelDiameter, differential: differentialWheelDiameter, mecanum: mecanumWheelDiameter }[platformType])
             } : null}/>}
@@ -506,6 +556,17 @@ function PlatformTab({ isActive = true }) {
                 {platformType === 'mecanum' && (
                     <div id="mecanumPlatform">
                         <h2>Mecanum Platform</h2>
+                        <label htmlFor="rollerOrientation">Roller arrangement</label>
+                        <select id="rollerOrientation" value={rollerOrientation} disabled={isConnected && !oriented}
+                            onChange={event => editRollers(Number(event.target.value))}>
+                            <option value={MecanumRollerOrientation.STANDARD}>Standard (X)</option>
+                            <option value={MecanumRollerOrientation.MIRRORED}>Mirrored (O)</option>
+                        </select>
+                        {isConnected && !oriented && <p>Earlier firmware uses Standard (X). Mirrored setup requires protocol 2.25 or newer.</p>}
+                        {oriented && !supportsConfigurationPersistence(connection) && <button type="button" className="k-button"
+                            onClick={() => runCommand(loadRollerReadback)}>Read running roller arrangement</button>}
+                        {isConnected && oriented && rollerDraft?.connection === connection && rollerDraft?.read &&
+                            <p role="status">Running roller arrangement: {mirrored ? 'Mirrored (O)' : 'Standard (X)'}.</p>}
                         <div>
                             Motor setup (is reversed):<br/>
                             {Array.from({ length: 4 }).map((_, index) => (
@@ -550,7 +611,8 @@ function PlatformTab({ isActive = true }) {
                         <input type='number' id='mecanum_width' value={mecanumWidth} onChange={handleMecanumWidthChange}/>
                         <label htmlFor='encoderResolution'>Encoder Resolution (ticks/rev):</label>
                         <input type='number' id='encoderResolution' value={encoderResolution} onChange={handleEncoderResolutionChange}/>
-                        <button className='k-button k-button-primary' onClick={() => runCommand(() => initializePlatform('mecanum'))}>Initialize</button>
+                        {singular && <p role="alert" className="conn-error">Mirrored rollers cannot control yaw with equal wheel-center length and width. Measure both spacings or check the installed roller arrangement.</p>}
+                        <button className='k-button k-button-primary' disabled={singular} onClick={() => runCommand(() => initializePlatform('mecanum'))}>Initialize</button>
                     </div>
                 )}
 
@@ -654,9 +716,9 @@ function PlatformTab({ isActive = true }) {
 
                 </fieldset>
                 <ConfigurationSave key={configurationGeneration} controller={controller} isConnected={isConnected}
-                    onLoaded={loadRunningSetup} onBusy={setConfigurationBusy} />
+                    onReadStart={startSetupRead} onLoaded={loadRunningSetup} onBusy={setConfigurationBusy} />
                 </section>
-                <PlatformLayout platformType={platformType} />
+                <PlatformLayout platformType={platformType} mirrored={mirrored} />
                 <section className="panel-card platform-manual">
                     <h2>Manual driving</h2>
                     <p className="section-help">Set PWM output directly, or enable keyboard driving below.</p>

@@ -2,6 +2,8 @@ import differentialDrawing from '../../../docs/img/platform-layouts/differential
 import omniDrawing from '../../../docs/img/platform-layouts/omni.svg';
 import mecanumDrawing from '../../../docs/img/platform-layouts/mecanum.svg';
 
+import mirroredDrawing from '../../../docs/img/platform-layouts/mecanum-mirrored.svg';
+
 const presets = {
     differential: {
         name: 'Differential',
@@ -18,7 +20,7 @@ const presets = {
     mecanum: {
         name: 'Mecanum',
         drawing: mecanumDrawing,
-        wheels: 'W0 is front-right, W1 rear-right, W2 rear-left and W3 front-left. All four wheels roll forward along +X. The dashed diagonals show the direction each roller can move freely at ground contact.',
+        wheels: 'W0 is front-right, W1 rear-right, W2 rear-left and W3 front-left. All four wheels roll forward along +X.',
         dimensions: [
             ['L · Platform length', '0.40 m between front and rear wheel centers.'],
             ['W · Platform width', '0.30 m between left and right wheel centers.'],
@@ -44,17 +46,22 @@ function PresetExample({ preset }) {
     </>;
 }
 
-export default function PlatformLayout({ platformType }) {
+export default function PlatformLayout({ platformType, mirrored = false }) {
     const preset = presets[platformType];
+    const mecanum = platformType === 'mecanum';
+    const drawing = mecanum && mirrored ? mirroredDrawing : preset.drawing;
+    const pattern = mirrored ? 'Mirrored (O)' : 'Standard (X)';
     return (
         <section className="panel-card platform-layout-reference" aria-labelledby="platform-layout-heading">
             <h2 id="platform-layout-heading">{preset.name} layout</h2>
             <figure>
-                <img src={preset.drawing} alt={`${preset.name} chassis from above, with wheel indices, rolling directions and dimensions.`} />
+                <img src={drawing} alt={`${preset.name} chassis from above${mecanum ? `, ${pattern} rollers, front marked` : ''}, with wheel indices, rolling directions and dimensions.`} />
                 <figcaption>O marks the chassis origin. +X points forward, +Y points left, and positive yaw turns counterclockwise.{' '}
-                    <a href={preset.drawing} target="_blank" rel="noreferrer">Open full-size drawing in a new tab</a>
+                    <a href={drawing} target="_blank" rel="noreferrer">Open full-size drawing in a new tab</a>
                 </figcaption>
             </figure>
+            {mecanum && <p>Look down at the tops of the tires with the front pointing up. The orange stripes show
+                the visible roller axles. On W0 (front right), they slope {mirrored ? 'forward-left' : 'forward-right'}.</p>}
             <PresetExample preset={preset} />
         </section>
     );

@@ -66,3 +66,55 @@ it('preserves encoder-free and mixed channel setup in readback', async () => {
   expect(setup.encoders.map(encoder => encoder.resolution)).toEqual([0, 0, 0, 2048]);
   expect(setup.encoders[3].reversed).toBe(true);
 });
+
+it('gates the oriented initializer and field 7 independently of v0.4 storage', async () => {
+  const c = new KinisiSession();
+  c.ready = true;
+  c._sendRequest = vi.fn();
+  const flags = [true, false, false, false, false, true, false, false];
+  const args = [...flags, .4, .3, .1, 2048];
+  c.boardInfo = { ...info, board_minor: 3, protocol_minor: 24 };
+  await expect(c.initialize_mecanum_platform_oriented(...args, 1)).rejects.toThrow('2.25');
+  await expect(c.getMecanumRollerOrientation()).rejects.toThrow('2.25');
+  c.boardInfo = { ...c.boardInfo, protocol_minor: 25, protocol_major: 3 };
+  await expect(c.getMecanumRollerOrientation()).rejects.toThrow('2.25');
+  expect(c._sendRequest).not.toHaveBeenCalled();
+  c.boardInfo = { ...c.boardInfo, protocol_major: 2 };
+  await expect(c.save_configuration()).rejects.toThrow('known v0.4');
+  await expect(c.get_configuration_field(0, 0)).rejects.toThrow('known v0.4');
+  await expect(c.get_configuration_field(7, 1)).rejects.toThrow('index zero');
+  for (const bad of [2, true, NaN, '1']) {
+    await expect(c.initialize_mecanum_platform_oriented(...args, bad)).rejects.toThrow('roller arrangement');
+  }
+  await expect(c.initialize_mecanum_platform_oriented(...flags, .4, .4, .1, 0, 1)).rejects.toThrow('yaw');
+  expect(c._sendRequest).not.toHaveBeenCalled();
+  c._sendRequest.mockResolvedValue(new ArrayBuffer(0));
+  await c.initialize_mecanum_platform_oriented(...args, 1);
+  const [command, payload] = c._sendRequest.mock.lastCall;
+  expect(command).toBe(0x87);
+  expect(payload.byteLength).toBe(41);
+  expect([...new Uint8Array(payload, 0, 8)]).toEqual([1,0,0,0,0,1,0,0]);
+  const view = new DataView(payload);
+  expect([8,16,24,32].map(offset => view.getFloat64(offset, true))).toEqual([.4,.3,.1,2048]);
+  expect(view.getUint8(40)).toBe(1);
+  await c.initialize_mecanum_platform_oriented(...flags, .4, .4, .1, 0, 0);
+  expect(new DataView(c._sendRequest.mock.lastCall[1]).getUint8(40)).toBe(0);
+  for (const orientation of [0, 1, 2, NaN]) {
+    const scalar = new ArrayBuffer(8);
+    new DataView(scalar).setFloat64(0, orientation, true);
+    c._sendRequest.mockResolvedValue(scalar);
+    if (orientation === 0 || orientation === 1) expect(await c.getMecanumRollerOrientation()).toBe(orientation);
+    else await expect(c.getMecanumRollerOrientation()).rejects.toThrow('unknown mecanum');
+    expect(c._sendRequest).toHaveBeenLastCalledWith(GET_CONFIGURATION_FIELD, new Uint8Array([7,0]).buffer, 8, false);
+  }
+});
+
+it('reads the running orientation only for a 2.25+ Mecanum configuration', async () => {
+  const c = { boardInfo:{ ...info, protocol_minor:25 }, get_pwm_frequency:vi.fn(async () => 25000),
+    get_configuration_field:vi.fn(async field => [3,.1,.4,.3,2048,0,0,1][field]) };
+  expect((await readRunningConfiguration(c)).rollerOrientation).toBe(1);
+  expect(c.get_configuration_field).toHaveBeenCalledWith(7,0);
+  c.get_configuration_field.mockClear(); c.boardInfo.protocol_minor = 24;
+  expect((await readRunningConfiguration(c)).rollerOrientation).toBe(0);
+  expect(c.get_configuration_field).not.toHaveBeenCalledWith(7,0);
+});
